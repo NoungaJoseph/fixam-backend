@@ -1,0 +1,50 @@
+const { createClient } = require('@supabase/supabase-js');
+const fs = require('fs/promises');
+const path = require('path');
+
+const hasSupabase = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE);
+const supabase = hasSupabase ? createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE
+) : null;
+
+const uploadLocal = async (file, bucket, fileName) => {
+  const dir = path.join(process.cwd(), 'uploads', bucket);
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, fileName), file.buffer);
+  const baseUrl = process.env.PUBLIC_URL || `http://192.168.1.185:${process.env.PORT || 5000}`;
+  return `${baseUrl}/uploads/${bucket}/${fileName}`;
+};
+
+const uploadFile = async (file, bucket) => {
+  try {
+    const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const fileName = `${Date.now()}-${safeName}`;
+
+    if (!supabase) {
+      return uploadLocal(file, bucket, fileName);
+    }
+
+    const { data, error } = await supabase.storage
+      .from(bucket)
+      .upload(fileName, file.buffer, {
+        contentType: file.mimetype,
+        upsert: true
+      });
+
+    if (error) throw error;
+
+    const { data: { publicUrl } } = supabase.storage
+      .from(bucket)
+      .getPublicUrl(fileName);
+
+    return publicUrl;
+  } catch (error) {
+    console.error('Storage Upload Error:', error);
+    const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const fileName = `${Date.now()}-${safeName}`;
+    return uploadLocal(file, bucket, fileName);
+  }
+};
+
+module.exports = { uploadFile };

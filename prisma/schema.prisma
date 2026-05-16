@@ -1,0 +1,318 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  CLIENT
+  PROVIDER
+  ADMIN
+}
+
+enum JobStatus {
+  PENDING
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum JobApprovalStatus {
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+}
+
+enum AssignmentStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+enum TransactionStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+enum TransactionType {
+  PURCHASE
+  DEDUCTION
+  REFUND
+}
+
+enum VerificationStatus {
+  UNVERIFIED
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  FILE
+  AUDIO
+  AUDIO_CALL
+  VIDEO_CALL
+}
+
+model User {
+  id            String    @id @default(uuid())
+  phone         String    @unique
+  fullName      String?
+  email         String?   @unique
+  password      String?
+  role          Role      @default(CLIENT)
+  avatar        String?
+  fcmToken      String?
+  lastSeen      DateTime  @default(now())
+  isOnline      Boolean   @default(false)
+  referralCode  String?   @unique
+  dob           DateTime?
+  lastNameChange DateTime?
+  lastPasswordChange DateTime?
+  pendingName   String?
+  isBlocked     Boolean   @default(false)
+  blockedReason String?
+  blockedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  providerProfile ProviderProfile?
+  wallet          Wallet?
+  jobsAsClient    Job[]             @relation("ClientJobs")
+  receivedReviews Review[]          @relation("TargetReviews")
+  sentReviews     Review[]          @relation("SentReviews")
+  sentMessages    Message[]         @relation("SentMessages")
+  notifications   Notification[]
+  conversations   ConversationParticipant[]
+  usersBlocked    User[]            @relation("BlockedUsers")
+  blockedBy       User[]            @relation("BlockedUsers")
+}
+
+model ProviderProfile {
+  id              String             @id @default(uuid())
+  userId          String             @unique
+  skills          String[]
+  bio             String?
+  rate            Float?
+  rating          Float              @default(0.0)
+  reviewCount     Int                @default(0)
+  availability    Json?
+  serviceArea     String?
+  experienceLevel String?
+  birthDay        String?
+  birthMonth      String?
+  birthYear       String?
+  age             String?
+  verification    VerificationStatus @default(UNVERIFIED)
+  portfolio       Json?
+  certificates    Json?
+  employmentHistory Json?
+  socialLinks     Json?
+  profileMode     String             @default("WORK")
+  profileScore    Int                @default(0)
+  
+  user            User               @relation(fields: [userId], references: [id])
+  assignments     JobAssignment[]
+  documents       VerificationDocument[]
+}
+
+model Job {
+  id              String        @id @default(uuid())
+  clientId        String
+  category        String
+  title           String
+  description     String
+  location        String
+  latitude        Float?
+  longitude       Float?
+  budget          Float
+  status          JobStatus     @default(PENDING)
+  approvalStatus  JobApprovalStatus @default(PENDING_APPROVAL)
+  rejectionReason String?
+  scheduledTime   DateTime?
+  coinCost        Int           @default(1)
+  selectedAssignmentId String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  client          User          @relation("ClientJobs", fields: [clientId], references: [id])
+  assignments     JobAssignment[]
+  reviews         Review[]
+}
+
+model JobAssignment {
+  id              String           @id @default(uuid())
+  jobId           String
+  providerId      String
+  status          AssignmentStatus @default(PENDING)
+  assignedAt      DateTime         @default(now())
+  selectedAt      DateTime?
+  refundedAt      DateTime?
+
+  job             Job              @relation(fields: [jobId], references: [id])
+  provider        ProviderProfile  @relation(fields: [providerId], references: [id])
+
+  @@unique([jobId, providerId])
+}
+
+model Wallet {
+  id              String        @id @default(uuid())
+  userId          String        @unique
+  balance         Int           @default(0)
+  updatedAt       DateTime      @updatedAt
+
+  user            User          @relation(fields: [userId], references: [id])
+  transactions    Transaction[]
+}
+
+model Transaction {
+  id              String            @id @default(uuid())
+  walletId        String
+  amount          Int
+  type            TransactionType
+  status          TransactionStatus @default(PENDING)
+  reference       String?           @unique
+  description     String?
+  paidPrice       String?
+  receiptUrl      String?
+  payerName       String?
+  payerPhone      String?
+  payerEmail      String?
+  jobId           String?
+  createdAt       DateTime          @default(now())
+
+  wallet          Wallet            @relation(fields: [walletId], references: [id])
+}
+
+model Conversation {
+  id              String    @id @default(uuid())
+  lastMessageAt   DateTime  @default(now()) @db.Timestamp(3)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  participants    ConversationParticipant[]
+  messages        Message[]
+
+  @@index([lastMessageAt]) // For ordering by latest message
+}
+
+model ConversationParticipant {
+  id              String    @id @default(uuid())
+  conversationId  String
+  userId          String
+  unreadCount     Int       @default(0)
+  joinedAt        DateTime  @default(now())
+
+  conversation    Conversation @relation(fields: [conversationId], references: [id])
+  user            User         @relation(fields: [userId], references: [id])
+
+  @@unique([conversationId, userId])
+  @@index([userId, conversationId]) // For finding conversations by user
+  @@index([conversationId]) // For finding participants by conversation
+}
+
+model Message {
+  id              String      @id @default(uuid())
+  conversationId  String
+  senderId        String
+  type            MessageType @default(TEXT)
+  content         String
+  mediaUrl        String?
+  isRead          Boolean     @default(false)
+  createdAt       DateTime    @default(now())
+
+  conversation    Conversation @relation(fields: [conversationId], references: [id])
+  sender          User         @relation("SentMessages", fields: [senderId], references: [id])
+
+  @@index([conversationId, createdAt]) // For fetching messages in a conversation
+  @@index([senderId]) // For finding messages by sender
+}
+
+model CallSession {
+  id              String    @id @default(uuid())
+  callerId        String
+  receiverId      String
+  type            String    @default("AUDIO") // AUDIO or VIDEO
+  status          String    @default("PENDING") // PENDING, ONGOING, ENDED, MISSED
+  startTime       DateTime?
+  endTime         DateTime?
+  createdAt       DateTime  @default(now())
+}
+
+model Notification {
+  id              String   @id @default(uuid())
+  userId          String
+  title           String
+  body            String
+  data            Json?
+  isRead          Boolean  @default(false)
+  archivedAt      DateTime?
+  createdAt       DateTime @default(now())
+
+  user            User     @relation(fields: [userId], references: [id])
+}
+
+model Review {
+  id              String   @id @default(uuid())
+  jobId           String
+  reviewerId      String
+  targetUserId    String
+  rating          Int
+  comment         String?
+  createdAt       DateTime @default(now())
+
+  job             Job      @relation(fields: [jobId], references: [id])
+  reviewer        User     @relation("SentReviews", fields: [reviewerId], references: [id])
+  targetUser      User     @relation("TargetReviews", fields: [targetUserId], references: [id])
+}
+
+model VerificationDocument {
+  id              String   @id @default(uuid())
+  providerId      String
+  type            String
+  url             String
+  status          VerificationStatus @default(PENDING)
+  createdAt       DateTime @default(now())
+
+  provider        ProviderProfile @relation(fields: [providerId], references: [id])
+}
+
+model Feedback {
+  id              String   @id @default(uuid())
+  userId          String
+  title           String
+  message         String
+  type            String   @default("GENERAL") // GENERAL, BUG, FEATURE_REQUEST, COMPLAINT
+  status          String   @default("NEW") // NEW, READ, RESOLVED
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model AdminMessage {
+  id              String   @id @default(uuid())
+  recipientId     String?  // NULL means broadcast to all
+  recipientRole   String?  // NULL means all, or "CLIENT", "PROVIDER", "BOTH"
+  subject         String
+  content         String
+  isRead          Boolean  @default(false)
+  readAt          DateTime?
+  createdAt       DateTime @default(now())
+}
+
+model Report {
+  id              String   @id @default(uuid())
+  reporterId      String
+  targetUserId    String
+  reason          String
+  description     String?
+  status          String   @default("PENDING") // PENDING, RESOLVED, DISMISSED
+  createdAt       DateTime @default(now())
+}

@@ -1,0 +1,18 @@
+const express = require('express');
+const router = express.Router();
+const jobController = require('../controllers/job.controller');
+const { protect, authorize } = require('../middlewares/auth.middleware');
+
+router.post('/', protect, authorize('CLIENT'), jobController.createJob);
+router.get('/client', protect, authorize('CLIENT'), jobController.getClientJobs);
+router.get('/available', protect, authorize('PROVIDER'), jobController.getAvailableJobsForProvider);
+router.get('/my-jobs', protect, authorize('PROVIDER'), jobController.getProviderJobs);
+router.get('/all', protect, authorize('ADMIN'), jobController.getAllJobs);
+router.get('/:jobId', protect, jobController.getJobById);
+router.post('/:jobId/apply', protect, authorize('PROVIDER'), jobController.applyForJob);
+router.post('/:jobId/applications/:assignmentId/select', protect, authorize('CLIENT'), jobController.selectProviderForJob);
+router.put('/:jobId/status', protect, jobController.updateJobStatus);
+router.patch('/:jobId/status', protect, jobController.updateJobStatus);
+router.put('/:jobId', protect, authorize('CLIENT', 'ADMIN'), jobController.updateJob);
+
+module.exports = router;
