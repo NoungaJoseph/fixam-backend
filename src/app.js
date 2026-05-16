@@ -55,9 +55,32 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/reviews', reviewRoutes);
 
 // Health Check
-app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'UP', timestamp: new Date() });
+app.get('/api/health', async (req, res) => {
+  let dbStatus = 'Disconnected';
+  try {
+    const prisma = require('./config/prisma');
+    await prisma.$queryRaw`SELECT 1`;
+    dbStatus = 'Connected';
+  } catch (error) {
+    dbStatus = `Error: ${error.message}`;
+  }
+
+  const status = dbStatus === 'Connected' ? 200 : 503;
+  
+  res.status(status).json({
+    success: dbStatus === 'Connected',
+    message: dbStatus === 'Connected' ? "Fixam backend is running" : "Fixam backend has connectivity issues",
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'production',
+    checks: {
+      database: dbStatus,
+      uptime: process.uptime(),
+      memory: process.memoryUsage()
+    }
+  });
 });
+
+app.get('/health', (req, res) => res.redirect('/api/health'));
 
 // Error Handling Middleware
 app.use(errorHandler);
