@@ -31,10 +31,7 @@ const getProviders = async (req, res, next) => {
   try {
     const providers = await prisma.providerProfile.findMany({
       where: { 
-        OR: [
-          { profileMode: 'WORK' },
-          { profileMode: null }
-        ]
+        profileMode: 'WORK'
       },
       include: { 
         user: { 
