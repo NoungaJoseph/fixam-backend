@@ -24,6 +24,7 @@ const uploadReceipt = multer({
 
 router.get('/balance', protect, walletController.getBalance);
 router.post('/topup', protect, walletController.topUpRequest);
+router.post('/mobile-money/initiate', protect, walletController.initiateMobileMoneyPurchase);
 router.post('/request-coins', protect, uploadReceipt.single('receipt'), walletController.requestCoinsWithReceipt);
 router.get('/transactions', protect, walletController.getCoinTransactions);
 

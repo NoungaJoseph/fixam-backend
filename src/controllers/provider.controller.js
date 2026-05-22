@@ -85,6 +85,69 @@ const getNearbyProviders = async (req, res, next) => {
   }
 };
 
+const getFavoriteProviders = async (req, res, next) => {
+  try {
+    const favorites = await prisma.clientFavoriteProvider.findMany({
+      where: { clientId: req.user.id },
+      include: {
+        provider: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                fullName: true,
+                avatar: true,
+                isOnline: true,
+                phone: true
+              }
+            }
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    res.status(200).json({ success: true, data: favorites.map((favorite) => favorite.provider) });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const addFavoriteProvider = async (req, res, next) => {
+  try {
+    const { providerId } = req.params;
+
+    const provider = await prisma.providerProfile.findUnique({ where: { id: providerId } });
+    if (!provider) {
+      return res.status(404).json({ success: false, message: 'Provider not found' });
+    }
+
+    await prisma.clientFavoriteProvider.upsert({
+      where: { clientId_providerId: { clientId: req.user.id, providerId } },
+      update: {},
+      create: { clientId: req.user.id, providerId }
+    });
+
+    res.status(200).json({ success: true, message: 'Provider added to favorites' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const removeFavoriteProvider = async (req, res, next) => {
+  try {
+    const { providerId } = req.params;
+
+    await prisma.clientFavoriteProvider.deleteMany({
+      where: { clientId: req.user.id, providerId }
+    });
+
+    res.status(200).json({ success: true, message: 'Provider removed from favorites' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const uploadVerificationDocs = async (req, res, next) => {
   try {
     const { type, url } = req.body;
@@ -130,5 +193,8 @@ module.exports = {
   updateProviderStatus,
   getProviders,
   getNearbyProviders,
+  getFavoriteProviders,
+  addFavoriteProvider,
+  removeFavoriteProvider,
   uploadVerificationDocs,
 };

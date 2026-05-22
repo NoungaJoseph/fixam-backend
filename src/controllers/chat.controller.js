@@ -18,7 +18,16 @@ const getConversations = async (req, res, next) => {
             userId: true,
             unreadCount: true,
             user: {
-              select: { id: true, fullName: true, avatar: true, isOnline: true, role: true }
+              select: { 
+                id: true, 
+                fullName: true, 
+                avatar: true, 
+                isOnline: true, 
+                role: true,
+                providerProfile: {
+                  select: { profileMode: true }
+                }
+              }
             }
           }
         },
@@ -90,6 +99,50 @@ const findActiveTaskBetweenUsers = async (currentUserId, otherUserId) => {
     },
     orderBy: { updatedAt: 'desc' }
   });
+};
+
+const openSupportConversation = async (req, res, next) => {
+  try {
+    const admin = await prisma.user.findFirst({
+      where: { role: 'ADMIN' },
+      select: { id: true, fullName: true, avatar: true, isOnline: true, role: true }
+    });
+
+    if (!admin) {
+      return res.status(404).json({ success: false, message: 'Support is not available yet.' });
+    }
+
+    const existing = await prisma.$queryRaw`
+      SELECT c.id FROM "Conversation" c
+      INNER JOIN "ConversationParticipant" cp1 ON c.id = cp1."conversationId" AND cp1."userId" = ${req.user.id}
+      INNER JOIN "ConversationParticipant" cp2 ON c.id = cp2."conversationId" AND cp2."userId" = ${admin.id}
+      LIMIT 1
+    `;
+
+    const conversationId = existing?.[0]?.id || (await prisma.conversation.create({
+      data: {
+        participants: {
+          create: [
+            { userId: req.user.id },
+            { userId: admin.id }
+          ]
+        }
+      },
+      select: { id: true }
+    })).id;
+
+    res.status(200).json({
+      success: true,
+      data: {
+        id: conversationId,
+        participants: [{ ...admin, fullName: admin.fullName || 'Fixam Support' }],
+        isSystem: true,
+        unreadCount: 0
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
 };
 
 const getActiveTaskForChat = async (req, res, next) => {
@@ -179,7 +232,7 @@ const getMessages = async (req, res, next) => {
 
 const sendMessage = async (req, res, next) => {
   try {
-    const { conversationId, content, type, receiverId } = req.body;
+    const { conversationId, content, type, receiverId, clientMessageId } = req.body;
     console.log('[Chat] sendMessage:', { userId: req.user.id, conversationId, receiverId, contentLength: content?.length, type });
     let actualConvId = conversationId;
 
@@ -252,19 +305,18 @@ const sendMessage = async (req, res, next) => {
       })
     ]);
 
+    const outgoingMessage = clientMessageId ? { ...message, clientMessageId } : message;
+
     // 4. Emit via Socket.io (Wrap in try-catch to prevent crashes)
     try {
       const io = getIO();
       
       // Emit to conversation room (for users already in the room)
-      io.to(actualConvId).emit('message:new', message);
-      
-      // Also emit DIRECTLY to sender by userId (they haven't joined room yet)
-      io.to(req.user.id).emit('message:new', message);
+      io.to(actualConvId).emit('message:new', outgoingMessage);
       
       // Also emit directly to receiver by userId (in case they're not in room)
       if (receiverId) {
-        io.to(receiverId).emit('message:new', message);
+        io.to(receiverId).emit('message:new', outgoingMessage);
         io.to(receiverId).emit('notification:chat', { 
           title: 'New Message', 
           body: content, 
@@ -273,12 +325,12 @@ const sendMessage = async (req, res, next) => {
         });
       }
       
-      console.log('[Chat] Socket events emitted - ConvId room:', actualConvId, '| Sender:', req.user.id, '| Receiver:', receiverId);
+      console.log('[Chat] Socket events emitted - ConvId room:', actualConvId, '| Receiver:', receiverId);
     } catch (socketErr) {
       console.error('[Socket Error] Failed to emit message:', socketErr.message);
     }
 
-    res.status(201).json({ success: true, data: message });
+    res.status(201).json({ success: true, data: outgoingMessage });
   } catch (error) {
     next(error);
   }
@@ -307,6 +359,7 @@ const markAsRead = async (req, res, next) => {
 
 module.exports = {
   getConversations,
+  openSupportConversation,
   getActiveTaskForChat,
   getMessages,
   sendMessage,

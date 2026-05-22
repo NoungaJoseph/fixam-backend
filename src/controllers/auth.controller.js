@@ -2,6 +2,7 @@ const prisma = require('../config/prisma');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const { sendOTP } = require('../services/email.service');
+const { registerSchema } = require('../validators/auth.validator');
 
 const otpCache = new Map();
 
@@ -17,6 +18,10 @@ const register = async (req, res, next) => {
     
     if (email) email = email.trim().toLowerCase();
     if (phone) phone = phone.replace(/\D/g, '');
+    const validation = registerSchema.safeParse({ fullName, email, phone, password, role });
+    if (!validation.success) {
+      return res.status(400).json({ success: false, message: 'Full name, valid email, valid phone number and password are required.' });
+    }
     
     const existing = await prisma.user.findFirst({
       where: { OR: [{ email }, { phone }] }
@@ -77,7 +82,7 @@ const register = async (req, res, next) => {
         if (referrer && referrer.id !== newUser.id) {
           await tx.wallet.update({
             where: { userId: referrer.id },
-            data: { balance: { increment: 3 } }
+            data: { balance: { increment: 1 } }
           });
           await tx.wallet.update({
             where: { userId: newUser.id },
@@ -87,7 +92,7 @@ const register = async (req, res, next) => {
             data: [
               {
                 walletId: referrer.wallet.id,
-                amount: 3,
+                amount: 1,
                 type: 'REFUND',
                 status: 'SUCCESS',
                 description: `Referral bonus for inviting ${fullName || phone}`
@@ -105,7 +110,7 @@ const register = async (req, res, next) => {
             data: {
               userId: referrer.id,
               title: 'Referral bonus earned',
-              body: 'You earned 3 coins because someone joined with your referral code.',
+              body: 'You earned 1 coin because someone joined with your referral code.',
               data: { type: 'TRANSACTION', status: 'SUCCESS' }
             }
           });

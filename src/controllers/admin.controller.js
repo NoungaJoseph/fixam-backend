@@ -1,4 +1,63 @@
 const prisma = require('../config/prisma');
+
+const getSupportConversations = async (req, res, next) => {
+  try {
+    const conversations = await prisma.conversation.findMany({
+      where: {
+        participants: {
+          some: { userId: req.user.id }
+        }
+      },
+      select: {
+        id: true,
+        lastMessageAt: true,
+        createdAt: true,
+        participants: {
+          select: {
+            userId: true,
+            unreadCount: true,
+            user: {
+              select: {
+                id: true,
+                fullName: true,
+                email: true,
+                phone: true,
+                role: true,
+                avatar: true,
+                isOnline: true
+              }
+            }
+          }
+        },
+        messages: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: { id: true, content: true, createdAt: true, type: true }
+        }
+      },
+      orderBy: { lastMessageAt: 'desc' }
+    });
+
+    const formatted = conversations
+      .map((conversation) => {
+        const other = conversation.participants.find((participant) => participant.userId !== req.user.id);
+        return {
+          id: conversation.id,
+          lastMessageAt: conversation.lastMessageAt,
+          createdAt: conversation.createdAt,
+          user: other?.user,
+          unreadCount: conversation.participants.find((participant) => participant.userId === req.user.id)?.unreadCount || 0,
+          lastMessage: conversation.messages[0] || null,
+          isSupport: true
+        };
+      })
+      .filter((conversation) => conversation.user && conversation.user.role !== 'ADMIN');
+
+    res.status(200).json({ success: true, data: formatted });
+  } catch (error) {
+    next(error);
+  }
+};
 const { getIO } = require('../services/socket.service');
 const { sendEmail } = require('../services/email.service');
 
@@ -277,36 +336,67 @@ const getPendingTransactions = async (req, res, next) => {
   }
 };
 
+const getTransactions = async (req, res, next) => {
+  try {
+    const transactions = await prisma.transaction.findMany({
+      include: { wallet: { include: { user: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: 1000
+    });
+    res.status(200).json({ success: true, data: transactions });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const getFinancialStats = async (req, res, next) => {
   try {
-    // Get stats for the last 30 days
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
     const transactions = await prisma.transaction.findMany({
       where: {
-        status: 'SUCCESS',
-        createdAt: { gte: thirtyDaysAgo }
+        status: 'SUCCESS'
       },
       select: {
+        id: true,
         createdAt: true,
-        amount: true
+        amount: true,
+        paidPrice: true,
+        type: true,
+        wallet: { select: { user: { select: { id: true, fullName: true, phone: true, email: true } } } }
       },
       orderBy: { createdAt: 'asc' }
     });
 
-    // Group by date in memory
-    const dailyStats = transactions.reduce((acc, curr) => {
-      const date = curr.createdAt.toISOString().split('T')[0];
-      if (!acc[date]) {
-        acc[date] = { createdAt: date, _sum: { amount: 0 }, _count: { id: 0 } };
+    const sumPaid = (tx) => {
+      const paid = String(tx.paidPrice || '').replace(/[^\d]/g, '');
+      return Number(paid || 0);
+    };
+
+    const buildBuckets = (mode) => transactions.reduce((acc, tx) => {
+      const date = new Date(tx.createdAt);
+      let key = date.toISOString().slice(0, 10);
+      if (mode === 'weekly') {
+        const first = new Date(date);
+        first.setDate(date.getDate() - date.getDay());
+        key = first.toISOString().slice(0, 10);
+      } else if (mode === 'monthly') {
+        key = date.toISOString().slice(0, 7);
       }
-      acc[date]._sum.amount += curr.amount;
-      acc[date]._count.id += 1;
+      if (!acc[key]) acc[key] = { period: key, coins: 0, revenue: 0, count: 0 };
+      acc[key].coins += Math.abs(tx.amount || 0);
+      acc[key].revenue += sumPaid(tx);
+      acc[key].count += 1;
       return acc;
     }, {});
 
-    res.status(200).json({ success: true, data: Object.values(dailyStats) });
+    res.status(200).json({
+      success: true,
+      data: {
+        daily: Object.values(buildBuckets('daily')),
+        weekly: Object.values(buildBuckets('weekly')),
+        monthly: Object.values(buildBuckets('monthly')),
+        transactions
+      }
+    });
   } catch (error) {
     next(error);
   }
@@ -643,9 +733,11 @@ module.exports = {
   updateUserStatus,
   getProviders,
   getPendingTransactions,
+  getTransactions,
   getFinancialStats,
   getBroadcasts,
   getReports,
+  getSupportConversations,
   updateReportStatus,
   getFeedback,
   updateFeedbackStatus,

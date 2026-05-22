@@ -40,6 +40,60 @@ const topUpRequest = async (req, res, next) => {
   }
 };
 
+const initiateMobileMoneyPurchase = async (req, res, next) => {
+  try {
+    const { coins, price, provider, phone, fullName, email } = req.body;
+    const coinAmount = Number(coins);
+    const paymentProvider = String(provider || '').toUpperCase();
+
+    if (!coinAmount || coinAmount < 1) {
+      return res.status(400).json({ success: false, message: 'A valid coin amount is required' });
+    }
+
+    if (!['MTN', 'ORANGE'].includes(paymentProvider)) {
+      return res.status(400).json({ success: false, message: 'Choose MTN Mobile Money or Orange Money' });
+    }
+
+    if (!phone || String(phone).replace(/\D/g, '').length < 8) {
+      return res.status(400).json({ success: false, message: 'A valid mobile money phone number is required' });
+    }
+
+    const wallet = req.user.wallet || await prisma.wallet.create({
+      data: { userId: req.user.id, balance: 0 }
+    });
+    const reference = `FIX-${paymentProvider}-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+
+    // API-ready transaction record. The provider collection request can be
+    // attached here with MTN/Orange credentials from env and a webhook callback.
+    const transaction = await prisma.transaction.create({
+      data: {
+        walletId: wallet.id,
+        amount: coinAmount,
+        type: 'PURCHASE',
+        status: 'PENDING',
+        reference,
+        paidPrice: price,
+        payerName: fullName || req.user.fullName,
+        payerPhone: phone,
+        payerEmail: email || req.user.email,
+        description: `${paymentProvider} mobile money coin purchase: ${coinAmount} coins | Phone: ${phone}`
+      }
+    });
+
+    res.status(201).json({
+      success: true,
+      data: {
+        ...transaction,
+        provider: paymentProvider,
+        checkoutStatus: 'PENDING_CUSTOMER_APPROVAL'
+      },
+      message: `Payment request sent to ${phone}. Confirm it on your ${paymentProvider === 'MTN' ? 'MTN MoMo' : 'Orange Money'} phone.`
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const requestCoinsWithReceipt = async (req, res, next) => {
   try {
     const { amount, price, paymentId, fullName, phone, email } = req.body;
@@ -152,6 +206,7 @@ const getCoinTransactions = async (req, res, next) => {
 module.exports = {
   getBalance,
   topUpRequest,
+  initiateMobileMoneyPurchase,
   requestCoinsWithReceipt,
   getCoinTransactions
 };

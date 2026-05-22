@@ -94,6 +94,7 @@ model User {
   conversations   ConversationParticipant[]
   usersBlocked    User[]            @relation("BlockedUsers")
   blockedBy       User[]            @relation("BlockedUsers")
+  favoriteProviders ClientFavoriteProvider[] @relation("ClientFavoriteProviders")
 }
 
 model ProviderProfile {
@@ -122,6 +123,7 @@ model ProviderProfile {
   user            User               @relation(fields: [userId], references: [id])
   assignments     JobAssignment[]
   documents       VerificationDocument[]
+  favoritedBy      ClientFavoriteProvider[]
 }
 
 model Job {
@@ -283,6 +285,20 @@ model VerificationDocument {
   createdAt       DateTime @default(now())
 
   provider        ProviderProfile @relation(fields: [providerId], references: [id])
+}
+
+model ClientFavoriteProvider {
+  id         String          @id @default(uuid())
+  clientId   String
+  providerId String
+  createdAt  DateTime        @default(now())
+
+  client     User            @relation("ClientFavoriteProviders", fields: [clientId], references: [id])
+  provider   ProviderProfile @relation(fields: [providerId], references: [id])
+
+  @@unique([clientId, providerId])
+  @@index([clientId])
+  @@index([providerId])
 }
 
 model Feedback {

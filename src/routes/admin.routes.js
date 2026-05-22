@@ -12,8 +12,10 @@ router.get('/users', adminController.getUsers);
 router.get('/users/:id', adminController.getUserDetails);
 router.get('/providers', adminController.getProviders);
 router.get('/pending-transactions', adminController.getPendingTransactions);
+router.get('/transactions', adminController.getTransactions);
 router.get('/reports', adminController.getReports);
 router.get('/feedback', adminController.getFeedback);
+router.get('/support-conversations', adminController.getSupportConversations);
 router.get('/pending-jobs', adminController.getPendingJobs);
 router.get('/approved-jobs', adminController.getApprovedJobs);
 

@@ -1,6 +1,14 @@
 const prisma = require('../config/prisma');
 const { createJobSchema } = require('../validators/job.validator');
 
+const calculateJobCoinCost = (budget) => {
+  const amount = Number(budget || 0);
+  if (amount > 10000) {
+    return Math.max(2, Math.ceil((amount - 10000) / 25000) + 1);
+  }
+  return 1;
+};
+
 const createJob = async (req, res, next) => {
   try {
     const validatedData = createJobSchema.parse(req.body);
@@ -9,6 +17,7 @@ const createJob = async (req, res, next) => {
       data: {
         ...validatedData,
         clientId: req.user.id,
+        coinCost: calculateJobCoinCost(validatedData.budget),
         approvalStatus: 'PENDING_APPROVAL',  // New jobs require admin approval
         scheduledTime: validatedData.scheduledTime ? new Date(validatedData.scheduledTime) : null
       }
@@ -208,36 +217,16 @@ const applyForJob = async (req, res, next) => {
       return res.status(409).json({ success: false, data: existing, message: 'You have already applied for this task.' });
     }
 
-    // Check Wallet for Coins
+    // Providers can apply for free, but must have enough coins for the task before applying.
+    // The coins are deducted only if the client selects this provider.
     const wallet = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
-    if (!wallet || wallet.balance < 1) {
-      return res.status(403).json({ success: false, message: 'You need at least 1 coin to accept a task. Please top up your wallet.' });
+    if (!wallet || wallet.balance < job.coinCost) {
+      return res.status(403).json({ success: false, message: `You need at least ${job.coinCost} coin${job.coinCost > 1 ? 's' : ''} in your balance to apply for this task.` });
     }
 
-    if (wallet.balance < job.coinCost) {
-      return res.status(400).json({ success: false, message: 'Insufficient coins for this specific job. Please top up.' });
-    }
-
-    // Atomic transaction: create application and hold the coin until the task is resolved.
-    const result = await prisma.$transaction([
-      prisma.jobAssignment.create({
-        data: { jobId, providerId, status: 'PENDING' }
-      }),
-      prisma.wallet.update({
-        where: { userId: req.user.id },
-        data: { balance: { decrement: job.coinCost } }
-      }),
-      prisma.transaction.create({
-        data: {
-          walletId: wallet.id,
-          amount: -job.coinCost,
-          type: 'DEDUCTION',
-          status: 'SUCCESS',
-          jobId,
-          description: `Applied for task: ${job.title}`
-        }
-      })
-    ]);
+    const assignment = await prisma.jobAssignment.create({
+      data: { jobId, providerId, status: 'PENDING' }
+    });
 
     const applicationCount = await prisma.jobAssignment.count({ where: { jobId } });
 
@@ -246,7 +235,7 @@ const applyForJob = async (req, res, next) => {
         userId: job.clientId,
         title: 'New provider application',
         body: `${req.user.fullName || 'A provider'} applied for "${job.title}".`,
-        data: { type: 'JOB_APPLICATION', jobId, assignmentId: result[0].id }
+        data: { type: 'JOB_APPLICATION', jobId, assignmentId: assignment.id }
       }
     });
 
@@ -255,12 +244,11 @@ const applyForJob = async (req, res, next) => {
       const io = getIO();
       io.to(job.clientId).emit('job:application-count', { jobId, applicationCount });
       io.to(job.clientId).emit('notification:new', notification);
-      io.to(req.user.id).emit('wallet:update', { balance: result[1].balance });
     } catch (err) {
       console.error('[Socket Error] Job application notification failed:', err.message);
     }
 
-    res.status(200).json({ success: true, data: result[0], applicationCount, message: 'Application sent successfully. Your coin is held for this task.' });
+    res.status(200).json({ success: true, data: assignment, applicationCount, message: 'Application sent successfully. Coins are only deducted if the client selects you.' });
   } catch (error) {
     next(error);
   }
@@ -297,30 +285,29 @@ const selectProviderForJob = async (req, res, next) => {
     }
 
     const updated = await prisma.$transaction(async (tx) => {
-      const clientWallet = await tx.wallet.findUnique({ where: { userId: req.user.id } });
-      if (!clientWallet || clientWallet.balance < job.coinCost) {
-        const error = new Error(`You need at least ${job.coinCost} coin${job.coinCost > 1 ? 's' : ''} to choose a provider.`);
+      const selectedUserId = selected.provider?.userId;
+      const providerWallet = selectedUserId ? await tx.wallet.findUnique({ where: { userId: selectedUserId } }) : null;
+      if (!providerWallet || providerWallet.balance < job.coinCost) {
+        const error = new Error(`This provider does not have the ${job.coinCost} coin${job.coinCost > 1 ? 's' : ''} required for this task.`);
         error.statusCode = 403;
         throw error;
       }
 
       await tx.wallet.update({
-        where: { userId: req.user.id },
+        where: { id: providerWallet.id },
         data: { balance: { decrement: job.coinCost } }
       });
 
       await tx.transaction.create({
         data: {
-          walletId: clientWallet.id,
+          walletId: providerWallet.id,
           amount: -job.coinCost,
           type: 'DEDUCTION',
           status: 'SUCCESS',
           jobId,
-          description: `Selected provider for task: ${job.title}`
+          description: `Selected for task: ${job.title}`
         }
       });
-
-      const rejectedAssignments = job.assignments.filter((assignment) => assignment.id !== assignmentId);
 
       const assignment = await tx.jobAssignment.update({
         where: { id: assignmentId },
@@ -335,35 +322,8 @@ const selectProviderForJob = async (req, res, next) => {
 
       await tx.jobAssignment.updateMany({
         where: { jobId, id: { not: assignmentId } },
-        data: { status: 'REJECTED', refundedAt: new Date() }
+        data: { status: 'REJECTED' }
       });
-
-      for (const rejected of rejectedAssignments) {
-        const rejectedUserId = rejected.provider?.userId;
-        if (!rejectedUserId) continue;
-
-        const providerWallet = await tx.wallet.findUnique({
-          where: { userId: rejectedUserId }
-        });
-
-        if (providerWallet && !rejected.refundedAt) {
-          await tx.wallet.update({
-            where: { id: providerWallet.id },
-            data: { balance: { increment: job.coinCost } }
-          });
-
-          await tx.transaction.create({
-            data: {
-              walletId: providerWallet.id,
-              amount: job.coinCost,
-              type: 'REFUND',
-              status: 'SUCCESS',
-              jobId,
-              description: `Coin returned because another provider was selected for: ${job.title}`
-            }
-          });
-        }
-      }
 
       const selectedJob = await tx.job.findUnique({
         where: { id: jobId },
@@ -392,22 +352,12 @@ const selectProviderForJob = async (req, res, next) => {
       io.emit('job:updated', updated.job);
 
       const selectedWallet = await prisma.wallet.findUnique({ where: { userId: updated.assignment.provider.userId } });
-      const clientWallet = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
       if (selectedWallet) io.to(updated.assignment.provider.userId).emit('wallet:update', { balance: selectedWallet.balance });
-      if (clientWallet) io.to(req.user.id).emit('wallet:update', { balance: clientWallet.balance });
-      const refundedUserIds = updated.job.assignments
-        .filter((assignment) => assignment.status === 'REJECTED')
-        .map((assignment) => assignment.provider?.userId)
-        .filter(Boolean);
-      for (const userId of refundedUserIds) {
-        const wallet = await prisma.wallet.findUnique({ where: { userId } });
-        if (wallet) io.to(userId).emit('wallet:update', { balance: wallet.balance });
-      }
     } catch (err) {
       console.error('[Socket Error] Provider selection notification failed:', err.message);
     }
 
-    res.status(200).json({ success: true, data: updated.job, message: 'Provider selected successfully. Client coin was deducted and unselected providers were refunded.' });
+    res.status(200).json({ success: true, data: updated.job, message: 'Provider selected successfully. Provider coins were deducted.' });
   } catch (error) {
     next(error);
   }
@@ -475,7 +425,10 @@ const updateJob = async (req, res, next) => {
       if (req.body[field] !== undefined) data[field] = req.body[field];
     });
 
-    if (data.budget !== undefined) data.budget = Number(data.budget);
+    if (data.budget !== undefined) {
+      data.budget = Number(data.budget);
+      data.coinCost = calculateJobCoinCost(data.budget);
+    }
     if (data.scheduledTime !== undefined) data.scheduledTime = data.scheduledTime ? new Date(data.scheduledTime) : null;
 
     const job = await prisma.job.update({
@@ -493,8 +446,8 @@ const getAllJobs = async (req, res, next) => {
   try {
     const jobs = await prisma.job.findMany({
       include: { 
-        client: { select: { id: true, fullName: true, email: true } },
-        assignments: { include: { provider: { include: { user: { select: { id: true, fullName: true } } } } } }
+        client: { select: { id: true, fullName: true, email: true, avatar: true } },
+        assignments: { include: { provider: { include: { user: { select: { id: true, fullName: true, avatar: true } } } } } }
       },
       orderBy: { createdAt: 'desc' }
     });
