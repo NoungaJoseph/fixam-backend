@@ -46,6 +46,33 @@ enum TransactionType {
   REFUND
 }
 
+enum PaymentMethod {
+  MTN_MOMO
+  ORANGE_MONEY
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  SUCCESS
+  FAILED
+  CANCELLED
+}
+
+enum BookingStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  CANCELLED
+  COMPLETED
+}
+
+enum SupportConversationStatus {
+  OPEN
+  WAITING
+  RESOLVED
+}
+
 enum VerificationStatus {
   UNVERIFIED
   PENDING
@@ -92,6 +119,11 @@ model User {
   sentMessages    Message[]         @relation("SentMessages")
   notifications   Notification[]
   conversations   ConversationParticipant[]
+  payments        Payment[]
+  coinPurchases   CoinPurchase[]
+  bookingsAsClient Booking[]       @relation("ClientBookings")
+  bookingsAsProvider Booking[]     @relation("ProviderBookings")
+  supportConversations SupportConversation[]
   usersBlocked    User[]            @relation("BlockedUsers")
   blockedBy       User[]            @relation("BlockedUsers")
   favoriteProviders ClientFavoriteProvider[] @relation("ClientFavoriteProviders")
@@ -136,6 +168,8 @@ model Job {
   latitude        Float?
   longitude       Float?
   budget          Float
+  budgetMin       Float?
+  budgetMax       Float?
   status          JobStatus     @default(PENDING)
   approvalStatus  JobApprovalStatus @default(PENDING_APPROVAL)
   rejectionReason String?
@@ -148,6 +182,7 @@ model Job {
   client          User          @relation("ClientJobs", fields: [clientId], references: [id])
   assignments     JobAssignment[]
   reviews         Review[]
+  bookings        Booking[]
 }
 
 model JobAssignment {
@@ -189,9 +224,59 @@ model Transaction {
   payerPhone      String?
   payerEmail      String?
   jobId           String?
+  paymentMethod   PaymentMethod?
+  providerReference String?
+  phoneNumber     String?
   createdAt       DateTime          @default(now())
 
   wallet          Wallet            @relation(fields: [walletId], references: [id])
+  payment         Payment?
+  coinPurchase    CoinPurchase?
+}
+
+model Payment {
+  id                String        @id @default(uuid())
+  userId            String
+  transactionId     String?       @unique
+  amount            Int
+  coins             Int
+  paymentMethod     PaymentMethod
+  providerReference String?       @unique
+  status            PaymentStatus @default(PENDING)
+  phoneNumber       String
+  providerPayload   Json?
+  failureReason     String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  user              User          @relation(fields: [userId], references: [id])
+  transaction       Transaction?  @relation(fields: [transactionId], references: [id])
+  coinPurchase      CoinPurchase?
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@index([paymentMethod, createdAt])
+}
+
+model CoinPurchase {
+  id                String        @id @default(uuid())
+  userId            String
+  paymentId         String        @unique
+  transactionId     String?       @unique
+  amount            Int
+  coins             Int
+  paymentMethod     PaymentMethod
+  providerReference String?
+  status            PaymentStatus @default(PENDING)
+  phoneNumber       String
+  createdAt         DateTime      @default(now())
+
+  user              User          @relation(fields: [userId], references: [id])
+  payment           Payment       @relation(fields: [paymentId], references: [id])
+  transaction       Transaction?  @relation(fields: [transactionId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
 }
 
 model Conversation {
@@ -202,6 +287,7 @@ model Conversation {
 
   participants    ConversationParticipant[]
   messages        Message[]
+  support         SupportConversation?
 
   @@index([lastMessageAt]) // For ordering by latest message
 }
@@ -229,6 +315,8 @@ model Message {
   content         String
   mediaUrl        String?
   isRead          Boolean     @default(false)
+  deliveredAt     DateTime?
+  readAt          DateTime?
   createdAt       DateTime    @default(now())
 
   conversation    Conversation @relation(fields: [conversationId], references: [id])
@@ -236,6 +324,47 @@ model Message {
 
   @@index([conversationId, createdAt]) // For fetching messages in a conversation
   @@index([senderId]) // For finding messages by sender
+}
+
+model SupportConversation {
+  id              String                    @id @default(uuid())
+  conversationId  String                    @unique
+  userId          String
+  assignedAdminId String?
+  status          SupportConversationStatus @default(OPEN)
+  lastReadAt      DateTime?
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+
+  conversation    Conversation              @relation(fields: [conversationId], references: [id])
+  user            User                      @relation(fields: [userId], references: [id])
+
+  @@index([userId, status])
+  @@index([status, updatedAt])
+}
+
+model Booking {
+  id              String        @id @default(uuid())
+  clientId        String
+  providerId      String
+  taskId          String?
+  bookingDate     DateTime
+  bookingTime     String
+  status          BookingStatus @default(PENDING)
+  budget          Float
+  location        String
+  notes           String?
+  paymentStatus   PaymentStatus @default(PENDING)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  client          User          @relation("ClientBookings", fields: [clientId], references: [id])
+  provider        User          @relation("ProviderBookings", fields: [providerId], references: [id])
+  task            Job?          @relation(fields: [taskId], references: [id])
+
+  @@index([clientId, createdAt])
+  @@index([providerId, createdAt])
+  @@index([status, bookingDate])
 }
 
 model CallSession {

@@ -56,16 +56,16 @@ const register = async (req, res, next) => {
           ...(role === 'PROVIDER' ? { 
             providerProfile: { 
               create: {
-                skills: providerProfile.skills || [],
-                bio: providerProfile.bio || '',
-                rate: parseFloat(providerProfile.rate) || 0,
-                serviceArea: providerProfile.serviceArea || '',
-                experienceLevel: providerProfile.experienceLevel || '',
-                availability: providerProfile.availability || {},
-                birthDay: String(providerProfile.birthDay || ''),
-                birthMonth: String(providerProfile.birthMonth || ''),
-                birthYear: String(providerProfile.birthYear || ''),
-                age: String(providerProfile.age || '')
+                skills: providerProfile?.skills || [],
+                bio: providerProfile?.bio || '',
+                rate: parseFloat(providerProfile?.rate) || 0,
+                serviceArea: providerProfile?.serviceArea || '',
+                experienceLevel: providerProfile?.experienceLevel || '',
+                availability: providerProfile?.availability || {},
+                birthDay: String(providerProfile?.birthDay || ''),
+                birthMonth: String(providerProfile?.birthMonth || ''),
+                birthYear: String(providerProfile?.birthYear || ''),
+                age: String(providerProfile?.age || '')
               } 
             } 
           } : {})

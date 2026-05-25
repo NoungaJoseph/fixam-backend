@@ -9,15 +9,27 @@ const calculateJobCoinCost = (budget) => {
   return 1;
 };
 
+const normalizeBudgetRange = (data) => {
+  const budgetMin = Number(data.budgetMin ?? data.budget);
+  const budgetMax = Number(data.budgetMax ?? data.budget);
+  return {
+    budgetMin,
+    budgetMax,
+    budget: Number(data.budget ?? budgetMax),
+  };
+};
+
 const createJob = async (req, res, next) => {
   try {
     const validatedData = createJobSchema.parse(req.body);
+    const budgetRange = normalizeBudgetRange(validatedData);
 
     const job = await prisma.job.create({
       data: {
         ...validatedData,
+        ...budgetRange,
         clientId: req.user.id,
-        coinCost: calculateJobCoinCost(validatedData.budget),
+        coinCost: calculateJobCoinCost(budgetRange.budgetMax),
         approvalStatus: 'PENDING_APPROVAL',  // New jobs require admin approval
         scheduledTime: validatedData.scheduledTime ? new Date(validatedData.scheduledTime) : null
       }
@@ -98,7 +110,7 @@ const getJobById = async (req, res, next) => {
 
 const getAvailableJobsForProvider = async (req, res, next) => {
   try {
-    const { page = 1, limit = 10, search = '', location = '', sortBy = 'newest' } = req.query;
+    const { page = 1, limit = 10, search = '', location = '', sortBy = 'newest', budgetMin, budgetMax } = req.query;
     const skip = (page - 1) * limit;
 
     // Build where clause for filtering
@@ -119,6 +131,12 @@ const getAvailableJobsForProvider = async (req, res, next) => {
     // Add location filter
     if (location) {
       whereClause.location = { contains: location, mode: 'insensitive' };
+    }
+    if (budgetMin || budgetMax) {
+      whereClause.AND = [
+        ...(budgetMin ? [{ budgetMax: { gte: Number(budgetMin) } }] : []),
+        ...(budgetMax ? [{ budgetMin: { lte: Number(budgetMax) } }] : []),
+      ];
     }
 
     // Determine sort order
@@ -418,16 +436,19 @@ const updateJob = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Completed or cancelled jobs cannot be edited' });
     }
 
-    const allowed = ['category', 'title', 'description', 'location', 'latitude', 'longitude', 'budget', 'scheduledTime'];
+    const allowed = ['category', 'title', 'description', 'location', 'latitude', 'longitude', 'budget', 'budgetMin', 'budgetMax', 'scheduledTime'];
     const data = {};
 
     allowed.forEach((field) => {
       if (req.body[field] !== undefined) data[field] = req.body[field];
     });
 
-    if (data.budget !== undefined) {
-      data.budget = Number(data.budget);
-      data.coinCost = calculateJobCoinCost(data.budget);
+    if (data.budget !== undefined || data.budgetMin !== undefined || data.budgetMax !== undefined) {
+      const budgetRange = normalizeBudgetRange({ ...existing, ...data });
+      data.budget = budgetRange.budget;
+      data.budgetMin = budgetRange.budgetMin;
+      data.budgetMax = budgetRange.budgetMax;
+      data.coinCost = calculateJobCoinCost(budgetRange.budgetMax);
     }
     if (data.scheduledTime !== undefined) data.scheduledTime = data.scheduledTime ? new Date(data.scheduledTime) : null;
 

@@ -351,27 +351,28 @@ const getTransactions = async (req, res, next) => {
 
 const getFinancialStats = async (req, res, next) => {
   try {
-    const transactions = await prisma.transaction.findMany({
-      where: {
-        status: 'SUCCESS'
-      },
-      select: {
-        id: true,
-        createdAt: true,
-        amount: true,
-        paidPrice: true,
-        type: true,
-        wallet: { select: { user: { select: { id: true, fullName: true, phone: true, email: true } } } }
-      },
-      orderBy: { createdAt: 'asc' }
-    });
+    const [payments, activePayments, successCount, pendingCount, failedCount] = await Promise.all([
+      prisma.payment.findMany({
+        include: {
+          user: { select: { id: true, fullName: true, phone: true, email: true, avatar: true } },
+          transaction: true
+        },
+        orderBy: { createdAt: 'asc' },
+        take: 1000
+      }),
+      prisma.payment.count({ where: { status: { in: ['PENDING', 'PROCESSING'] } } }),
+      prisma.payment.count({ where: { status: 'SUCCESS' } }),
+      prisma.payment.count({ where: { status: { in: ['PENDING', 'PROCESSING'] } } }),
+      prisma.payment.count({ where: { status: 'FAILED' } })
+    ]);
+
+    const successfulPayments = payments.filter((payment) => payment.status === 'SUCCESS');
 
     const sumPaid = (tx) => {
-      const paid = String(tx.paidPrice || '').replace(/[^\d]/g, '');
-      return Number(paid || 0);
+      return Number(tx.amount || 0);
     };
 
-    const buildBuckets = (mode) => transactions.reduce((acc, tx) => {
+    const buildBuckets = (mode) => successfulPayments.reduce((acc, tx) => {
       const date = new Date(tx.createdAt);
       let key = date.toISOString().slice(0, 10);
       if (mode === 'weekly') {
@@ -382,11 +383,28 @@ const getFinancialStats = async (req, res, next) => {
         key = date.toISOString().slice(0, 7);
       }
       if (!acc[key]) acc[key] = { period: key, coins: 0, revenue: 0, count: 0 };
-      acc[key].coins += Math.abs(tx.amount || 0);
+      acc[key].coins += Math.abs(tx.coins || 0);
       acc[key].revenue += sumPaid(tx);
       acc[key].count += 1;
       return acc;
     }, {});
+
+    const methodStats = payments.reduce((acc, payment) => {
+      const key = payment.paymentMethod || 'UNKNOWN';
+      if (!acc[key]) acc[key] = { method: key, count: 0, revenue: 0, success: 0, failed: 0, pending: 0 };
+      acc[key].count += 1;
+      if (payment.status === 'SUCCESS') {
+        acc[key].success += 1;
+        acc[key].revenue += payment.amount;
+      } else if (payment.status === 'FAILED') {
+        acc[key].failed += 1;
+      } else {
+        acc[key].pending += 1;
+      }
+      return acc;
+    }, {});
+
+    const totalRevenue = successfulPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
 
     res.status(200).json({
       success: true,
@@ -394,7 +412,15 @@ const getFinancialStats = async (req, res, next) => {
         daily: Object.values(buildBuckets('daily')),
         weekly: Object.values(buildBuckets('weekly')),
         monthly: Object.values(buildBuckets('monthly')),
-        transactions
+        transactions: payments,
+        methodStats: Object.values(methodStats),
+        widgets: {
+          totalRevenue,
+          activePayments,
+          successfulTransactions: successCount,
+          pendingTransactions: pendingCount,
+          failedTransactions: failedCount
+        }
       }
     });
   } catch (error) {

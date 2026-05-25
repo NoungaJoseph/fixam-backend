@@ -131,6 +131,17 @@ const openSupportConversation = async (req, res, next) => {
       select: { id: true }
     })).id;
 
+    await prisma.supportConversation.upsert({
+      where: { conversationId },
+      update: { status: 'OPEN', assignedAdminId: admin.id },
+      create: {
+        conversationId,
+        userId: req.user.id,
+        assignedAdminId: admin.id,
+        status: 'OPEN'
+      }
+    });
+
     res.status(200).json({
       success: true,
       data: {
@@ -277,7 +288,8 @@ const sendMessage = async (req, res, next) => {
         senderId: req.user.id,
         content,
         mediaUrl: type && type !== 'TEXT' ? content : null,
-        type: type || 'TEXT'
+        type: type || 'TEXT',
+        deliveredAt: new Date()
       },
       select: {
         id: true,
@@ -302,6 +314,10 @@ const sendMessage = async (req, res, next) => {
       prisma.conversationParticipant.updateMany({
         where: { conversationId: actualConvId, NOT: { userId: req.user.id } },
         data: { unreadCount: { increment: 1 } }
+      }),
+      prisma.supportConversation.updateMany({
+        where: { conversationId: actualConvId },
+        data: { status: 'WAITING' }
       })
     ]);
 
@@ -347,6 +363,14 @@ const markAsRead = async (req, res, next) => {
         userId: req.user.id 
       },
       data: { unreadCount: 0 }
+    });
+    await prisma.message.updateMany({
+      where: { conversationId, senderId: { not: req.user.id }, readAt: null },
+      data: { isRead: true, readAt: new Date() }
+    });
+    await prisma.supportConversation.updateMany({
+      where: { conversationId, OR: [{ userId: req.user.id }, { assignedAdminId: req.user.id }] },
+      data: { lastReadAt: new Date() }
     });
     
     res.status(200).json({ success: true });

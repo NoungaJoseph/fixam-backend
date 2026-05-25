@@ -11,11 +11,13 @@ const providerRoutes = require('./routes/provider.routes');
 const jobRoutes = require('./routes/job.routes');
 const walletRoutes = require('./routes/wallet.routes');
 const chatRoutes = require('./routes/chat.routes');
+const bookingRoutes = require('./routes/booking.routes');
 const uploadRoutes = require('./routes/upload.routes');
 const callRoutes = require('./routes/call.routes');
 const adminRoutes = require('./routes/admin.routes');
 const notificationRoutes = require('./routes/notification.routes');
 const reviewRoutes = require('./routes/review.routes');
+const paymentRoutes = require('./routes/payment.routes');
 const { errorHandler } = require('./middlewares/error.middleware');
 
 const app = express();
@@ -25,6 +27,10 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' }
 }));
 app.use(cors());
+
+// Raw body MUST come before express.json() — required for Kora webhook HMAC verification
+app.use('/api/payments/webhook/kora', express.raw({ type: 'application/json' }));
+
 app.use(express.json());
 app.use('/uploads', express.static('uploads'));
 app.use(morgan('dev'));
@@ -48,11 +54,13 @@ app.use('/api/jobs', jobRoutes);
 app.use('/api/wallet', walletRoutes);
 app.use('/api/transactions', walletRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/bookings', bookingRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/calls', callRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/reviews', reviewRoutes);
+app.use('/api/payments', paymentRoutes);
 
 
 // Health Check
