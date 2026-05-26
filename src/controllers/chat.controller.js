@@ -37,7 +37,7 @@ const getConversations = async (req, res, next) => {
         messages: {
           orderBy: { createdAt: 'desc' },
           take: 1,
-          select: { id: true, content: true, createdAt: true, type: true }
+          select: { id: true, content: true, createdAt: true, type: true, deliveredAt: true, readAt: true, isRead: true }
         }
       },
       orderBy: { lastMessageAt: 'desc' }
@@ -215,6 +215,9 @@ const getMessages = async (req, res, next) => {
         content: true,
         mediaUrl: true,
         type: true,
+        deliveredAt: true,
+        readAt: true,
+        isRead: true,
         createdAt: true,
         sender: {
           select: { id: true, fullName: true, avatar: true }
@@ -301,6 +304,9 @@ const sendMessage = async (req, res, next) => {
         content: true,
         mediaUrl: true,
         type: true,
+        deliveredAt: true,
+        readAt: true,
+        isRead: true,
         createdAt: true,
         sender: {
           select: { id: true, fullName: true, avatar: true }

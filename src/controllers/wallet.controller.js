@@ -104,9 +104,13 @@ const topUpRequest = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'A valid coin amount is required' });
     }
 
+    const wallet = req.user.wallet || await prisma.wallet.create({
+      data: { userId: req.user.id, balance: 0 }
+    });
+
     const transaction = await prisma.transaction.create({
       data: {
-        walletId: req.user.wallet.id,
+        walletId: wallet.id,
         amount: coinAmount,
         type: 'PURCHASE',
         status: 'PENDING',
