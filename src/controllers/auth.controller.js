@@ -5,6 +5,9 @@ const { sendOTP } = require('../services/email.service');
 const { registerSchema } = require('../validators/auth.validator');
 
 const otpCache = new Map();
+const debugLog = (...args) => {
+  if (process.env.NODE_ENV !== 'production') console.log(...args);
+};
 
 const generateToken = (id, role) => {
   return jwt.sign({ id, role }, process.env.JWT_SECRET, { expiresIn: '30d' });
@@ -12,7 +15,7 @@ const generateToken = (id, role) => {
 
 const register = async (req, res, next) => {
   try {
-    console.log('Registering user:', req.body);
+    debugLog('Registering user:', { email: req.body.email, phone: req.body.phone, role: req.body.role });
     let { fullName, email, phone, password, role, referralCode, referral, providerProfile } = req.body;
     referralCode = referralCode || referral;
     
@@ -28,7 +31,7 @@ const register = async (req, res, next) => {
     });
 
     if (existing) {
-      console.log('User already exists:', email, phone);
+      debugLog('User already exists:', email, phone);
       return res.status(400).json({ success: false, message: 'User with this email or phone already exists' });
     }
 
@@ -125,7 +128,7 @@ const register = async (req, res, next) => {
       include: { wallet: true, providerProfile: true }
     });
     const token = generateToken(freshUser.id, freshUser.role);
-    console.log('User registered successfully:', freshUser.id);
+    debugLog('User registered successfully:', freshUser.id);
     res.status(201).json({ success: true, token, user: freshUser });
   } catch (error) {
     console.error('Registration error details:', error);
@@ -135,7 +138,7 @@ const register = async (req, res, next) => {
 
 const login = async (req, res, next) => {
   try {
-    console.log('Login attempt:', req.body);
+    debugLog('Login attempt:', { email: req.body.email, phone: req.body.phone });
     let { email, phone, password } = req.body;
     
     if (email) email = email.trim().toLowerCase();
@@ -147,7 +150,7 @@ const login = async (req, res, next) => {
     });
 
     if (!user) {
-      console.log('User not found for:', email || phone);
+      debugLog('User not found for:', email || phone);
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
@@ -156,12 +159,12 @@ const login = async (req, res, next) => {
     }
 
     if (!user.password) {
-      console.log('User has no password set (OTP only account):', user.id);
+      debugLog('User has no password set (OTP only account):', user.id);
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
-    console.log('Password match result:', isMatch);
+    debugLog('Password match result:', isMatch);
     
     if (!isMatch) {
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
@@ -191,7 +194,7 @@ const requestOTP = async (req, res, next) => {
       await sendOTP(email, otp);
       return res.status(200).json({ success: true, message: 'OTP sent to email' });
     } else {
-      console.log(`[SMS MOCK] OTP generated for ${phone}`);
+      debugLog(`[SMS MOCK] OTP generated for ${phone}`);
       return res.status(200).json({ success: true, message: 'OTP sent via SMS' });
     }
   } catch (error) {

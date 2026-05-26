@@ -33,11 +33,9 @@ app.use('/api/payments/webhook/kora', express.raw({ type: 'application/json' }))
 
 app.use(express.json());
 app.use('/uploads', express.static('uploads'));
-app.use(morgan('dev'));
-app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
-  next();
-});
+if (process.env.NODE_ENV !== 'production') {
+  app.use(morgan('dev'));
+}
 
 // Rate Limiting
 const limiter = rateLimit({

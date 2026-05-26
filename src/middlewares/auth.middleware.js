@@ -1,5 +1,8 @@
 const jwt = require('jsonwebtoken');
 const prisma = require('../config/db.config');
+const debugLog = (...args) => {
+  if (process.env.NODE_ENV !== 'production') console.log(...args);
+};
 
 const protect = async (req, res, next) => {
   let token;
@@ -8,7 +11,7 @@ const protect = async (req, res, next) => {
     try {
       token = req.headers.authorization.split(' ')[1];
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      console.log('Token decoded:', decoded.id, decoded.role);
+      debugLog('Token decoded:', decoded.id, decoded.role);
 
       try {
         req.user = await prisma.user.findUnique({
@@ -17,7 +20,7 @@ const protect = async (req, res, next) => {
         });
 
         if (!req.user) {
-          console.log('User from token not found in DB:', decoded.id);
+          debugLog('User from token not found in DB:', decoded.id);
           return res.status(401).json({ success: false, message: 'User not found' });
         }
 

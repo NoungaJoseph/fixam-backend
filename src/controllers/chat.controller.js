@@ -1,5 +1,8 @@
 const prisma = require('../config/prisma');
 const { getIO } = require('../services/socket.service');
+const debugLog = (...args) => {
+  if (process.env.NODE_ENV !== 'production') console.log(...args);
+};
 
 const getConversations = async (req, res, next) => {
   try {
@@ -53,7 +56,7 @@ const getConversations = async (req, res, next) => {
       activeTask: null,
     }));
 
-    console.log('[Chat] getConversations returned', formatted.length, 'conversations (no per-row task lookup)');
+    debugLog('[Chat] getConversations returned', formatted.length, 'conversations (no per-row task lookup)');
     res.status(200).json({ success: true, data: formatted });
   } catch (error) {
     next(error);
@@ -233,7 +236,7 @@ const getMessages = async (req, res, next) => {
       data: { unreadCount: 0 }
     });
 
-    console.log('[Chat] getMessages fetched', messages.length, 'messages for conv:', conversationId);
+    debugLog('[Chat] getMessages fetched', messages.length, 'messages for conv:', conversationId);
     res.status(200).json({ success: true, data: messages });
   } catch (error) {
     console.error('[Chat] Error in getMessages:', error.message);
@@ -244,7 +247,7 @@ const getMessages = async (req, res, next) => {
 const sendMessage = async (req, res, next) => {
   try {
     const { conversationId, content, type, receiverId, clientMessageId } = req.body;
-    console.log('[Chat] sendMessage:', { userId: req.user.id, conversationId, receiverId, contentLength: content?.length, type });
+    debugLog('[Chat] sendMessage:', { userId: req.user.id, conversationId, receiverId, contentLength: content?.length, type });
     let actualConvId = conversationId;
 
     // 1. Create conversation if it doesn't exist (for new chats)
@@ -259,7 +262,7 @@ const sendMessage = async (req, res, next) => {
 
       if (existing && existing.length > 0) {
         actualConvId = existing[0].id;
-        console.log('[Chat] Found existing conversation:', actualConvId);
+        debugLog('[Chat] Found existing conversation:', actualConvId);
       } else {
         const newConv = await prisma.conversation.create({
           data: {
@@ -273,7 +276,7 @@ const sendMessage = async (req, res, next) => {
           select: { id: true }
         });
         actualConvId = newConv.id;
-        console.log('[Chat] Created new conversation:', actualConvId);
+        debugLog('[Chat] Created new conversation:', actualConvId);
       }
     }
 
@@ -341,7 +344,7 @@ const sendMessage = async (req, res, next) => {
         });
       }
       
-      console.log('[Chat] Socket events emitted - ConvId room:', actualConvId, '| Receiver:', receiverId);
+      debugLog('[Chat] Socket events emitted - ConvId room:', actualConvId, '| Receiver:', receiverId);
     } catch (socketErr) {
       console.error('[Socket Error] Failed to emit message:', socketErr.message);
     }
@@ -376,7 +379,7 @@ const markAsRead = async (req, res, next) => {
     res.status(200).json({ success: true });
   } catch (error) {
     // Log but don't fail the request
-    console.log('Error marking as read:', error.message);
+    debugLog('Error marking as read:', error.message);
     res.status(200).json({ success: true });
   }
 };

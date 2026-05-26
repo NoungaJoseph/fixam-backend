@@ -1,17 +1,37 @@
-CREATE TYPE "PaymentMethod" AS ENUM ('MTN_MOMO', 'ORANGE_MONEY');
-CREATE TYPE "PaymentStatus" AS ENUM ('PENDING', 'PROCESSING', 'SUCCESS', 'FAILED', 'CANCELLED');
-CREATE TYPE "BookingStatus" AS ENUM ('PENDING', 'ACCEPTED', 'REJECTED', 'CANCELLED', 'COMPLETED');
-CREATE TYPE "SupportConversationStatus" AS ENUM ('OPEN', 'WAITING', 'RESOLVED');
+DO $$ BEGIN
+  CREATE TYPE "PaymentMethod" AS ENUM ('MTN_MOMO', 'ORANGE_MONEY');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
 
-ALTER TABLE "Job" ADD COLUMN "budgetMin" DOUBLE PRECISION;
-ALTER TABLE "Job" ADD COLUMN "budgetMax" DOUBLE PRECISION;
-UPDATE "Job" SET "budgetMin" = "budget", "budgetMax" = "budget" WHERE "budgetMin" IS NULL OR "budgetMax" IS NULL;
+DO $$ BEGIN
+  CREATE TYPE "PaymentStatus" AS ENUM ('PENDING', 'PROCESSING', 'SUCCESS', 'FAILED', 'CANCELLED');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
 
-ALTER TABLE "Transaction" ADD COLUMN "paymentMethod" "PaymentMethod";
-ALTER TABLE "Transaction" ADD COLUMN "providerReference" TEXT;
-ALTER TABLE "Transaction" ADD COLUMN "phoneNumber" TEXT;
+DO $$ BEGIN
+  CREATE TYPE "BookingStatus" AS ENUM ('PENDING', 'ACCEPTED', 'REJECTED', 'CANCELLED', 'COMPLETED');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
 
-CREATE TABLE "Payment" (
+DO $$ BEGIN
+  CREATE TYPE "SupportConversationStatus" AS ENUM ('OPEN', 'WAITING', 'RESOLVED');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
+ALTER TABLE "Job" ADD COLUMN IF NOT EXISTS "budgetMin" DOUBLE PRECISION;
+ALTER TABLE "Job" ADD COLUMN IF NOT EXISTS "budgetMax" DOUBLE PRECISION;
+UPDATE "Job" SET "budgetMin" = "budget" WHERE "budgetMin" IS NULL;
+UPDATE "Job" SET "budgetMax" = "budget" WHERE "budgetMax" IS NULL;
+
+ALTER TABLE "Transaction" ADD COLUMN IF NOT EXISTS "paymentMethod" "PaymentMethod";
+ALTER TABLE "Transaction" ADD COLUMN IF NOT EXISTS "providerReference" TEXT;
+ALTER TABLE "Transaction" ADD COLUMN IF NOT EXISTS "phoneNumber" TEXT;
+
+CREATE TABLE IF NOT EXISTS "Payment" (
   "id" TEXT NOT NULL,
   "userId" TEXT NOT NULL,
   "transactionId" TEXT,
@@ -28,7 +48,7 @@ CREATE TABLE "Payment" (
   CONSTRAINT "Payment_pkey" PRIMARY KEY ("id")
 );
 
-CREATE TABLE "CoinPurchase" (
+CREATE TABLE IF NOT EXISTS "CoinPurchase" (
   "id" TEXT NOT NULL,
   "userId" TEXT NOT NULL,
   "paymentId" TEXT NOT NULL,
@@ -43,7 +63,7 @@ CREATE TABLE "CoinPurchase" (
   CONSTRAINT "CoinPurchase_pkey" PRIMARY KEY ("id")
 );
 
-CREATE TABLE "SupportConversation" (
+CREATE TABLE IF NOT EXISTS "SupportConversation" (
   "id" TEXT NOT NULL,
   "conversationId" TEXT NOT NULL,
   "userId" TEXT NOT NULL,
@@ -55,7 +75,7 @@ CREATE TABLE "SupportConversation" (
   CONSTRAINT "SupportConversation_pkey" PRIMARY KEY ("id")
 );
 
-CREATE TABLE "Booking" (
+CREATE TABLE IF NOT EXISTS "Booking" (
   "id" TEXT NOT NULL,
   "clientId" TEXT NOT NULL,
   "providerId" TEXT NOT NULL,
@@ -72,35 +92,84 @@ CREATE TABLE "Booking" (
   CONSTRAINT "Booking_pkey" PRIMARY KEY ("id")
 );
 
-ALTER TABLE "Message" ADD COLUMN "deliveredAt" TIMESTAMP(3);
-ALTER TABLE "Message" ADD COLUMN "readAt" TIMESTAMP(3);
+ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "deliveredAt" TIMESTAMP(3);
+ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "readAt" TIMESTAMP(3);
 
-CREATE UNIQUE INDEX "Payment_transactionId_key" ON "Payment"("transactionId");
-CREATE UNIQUE INDEX "Payment_providerReference_key" ON "Payment"("providerReference");
-CREATE INDEX "Payment_userId_createdAt_idx" ON "Payment"("userId", "createdAt");
-CREATE INDEX "Payment_status_createdAt_idx" ON "Payment"("status", "createdAt");
-CREATE INDEX "Payment_paymentMethod_createdAt_idx" ON "Payment"("paymentMethod", "createdAt");
+CREATE UNIQUE INDEX IF NOT EXISTS "Payment_transactionId_key" ON "Payment"("transactionId");
+CREATE UNIQUE INDEX IF NOT EXISTS "Payment_providerReference_key" ON "Payment"("providerReference");
+CREATE INDEX IF NOT EXISTS "Payment_userId_createdAt_idx" ON "Payment"("userId", "createdAt");
+CREATE INDEX IF NOT EXISTS "Payment_status_createdAt_idx" ON "Payment"("status", "createdAt");
+CREATE INDEX IF NOT EXISTS "Payment_paymentMethod_createdAt_idx" ON "Payment"("paymentMethod", "createdAt");
 
-CREATE UNIQUE INDEX "CoinPurchase_paymentId_key" ON "CoinPurchase"("paymentId");
-CREATE UNIQUE INDEX "CoinPurchase_transactionId_key" ON "CoinPurchase"("transactionId");
-CREATE INDEX "CoinPurchase_userId_createdAt_idx" ON "CoinPurchase"("userId", "createdAt");
-CREATE INDEX "CoinPurchase_status_createdAt_idx" ON "CoinPurchase"("status", "createdAt");
+CREATE UNIQUE INDEX IF NOT EXISTS "CoinPurchase_paymentId_key" ON "CoinPurchase"("paymentId");
+CREATE UNIQUE INDEX IF NOT EXISTS "CoinPurchase_transactionId_key" ON "CoinPurchase"("transactionId");
+CREATE INDEX IF NOT EXISTS "CoinPurchase_userId_createdAt_idx" ON "CoinPurchase"("userId", "createdAt");
+CREATE INDEX IF NOT EXISTS "CoinPurchase_status_createdAt_idx" ON "CoinPurchase"("status", "createdAt");
 
-CREATE UNIQUE INDEX "SupportConversation_conversationId_key" ON "SupportConversation"("conversationId");
-CREATE INDEX "SupportConversation_userId_status_idx" ON "SupportConversation"("userId", "status");
-CREATE INDEX "SupportConversation_status_updatedAt_idx" ON "SupportConversation"("status", "updatedAt");
+CREATE UNIQUE INDEX IF NOT EXISTS "SupportConversation_conversationId_key" ON "SupportConversation"("conversationId");
+CREATE INDEX IF NOT EXISTS "SupportConversation_userId_status_idx" ON "SupportConversation"("userId", "status");
+CREATE INDEX IF NOT EXISTS "SupportConversation_status_updatedAt_idx" ON "SupportConversation"("status", "updatedAt");
 
-CREATE INDEX "Booking_clientId_createdAt_idx" ON "Booking"("clientId", "createdAt");
-CREATE INDEX "Booking_providerId_createdAt_idx" ON "Booking"("providerId", "createdAt");
-CREATE INDEX "Booking_status_bookingDate_idx" ON "Booking"("status", "bookingDate");
+CREATE INDEX IF NOT EXISTS "Booking_clientId_createdAt_idx" ON "Booking"("clientId", "createdAt");
+CREATE INDEX IF NOT EXISTS "Booking_providerId_createdAt_idx" ON "Booking"("providerId", "createdAt");
+CREATE INDEX IF NOT EXISTS "Booking_status_bookingDate_idx" ON "Booking"("status", "bookingDate");
 
-ALTER TABLE "Payment" ADD CONSTRAINT "Payment_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-ALTER TABLE "Payment" ADD CONSTRAINT "Payment_transactionId_fkey" FOREIGN KEY ("transactionId") REFERENCES "Transaction"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-ALTER TABLE "CoinPurchase" ADD CONSTRAINT "CoinPurchase_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-ALTER TABLE "CoinPurchase" ADD CONSTRAINT "CoinPurchase_paymentId_fkey" FOREIGN KEY ("paymentId") REFERENCES "Payment"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-ALTER TABLE "CoinPurchase" ADD CONSTRAINT "CoinPurchase_transactionId_fkey" FOREIGN KEY ("transactionId") REFERENCES "Transaction"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-ALTER TABLE "SupportConversation" ADD CONSTRAINT "SupportConversation_conversationId_fkey" FOREIGN KEY ("conversationId") REFERENCES "Conversation"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-ALTER TABLE "SupportConversation" ADD CONSTRAINT "SupportConversation_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-ALTER TABLE "Booking" ADD CONSTRAINT "Booking_clientId_fkey" FOREIGN KEY ("clientId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-ALTER TABLE "Booking" ADD CONSTRAINT "Booking_providerId_fkey" FOREIGN KEY ("providerId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-ALTER TABLE "Booking" ADD CONSTRAINT "Booking_taskId_fkey" FOREIGN KEY ("taskId") REFERENCES "Job"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "Payment" ADD CONSTRAINT "Payment_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "Payment" ADD CONSTRAINT "Payment_transactionId_fkey" FOREIGN KEY ("transactionId") REFERENCES "Transaction"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "CoinPurchase" ADD CONSTRAINT "CoinPurchase_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "CoinPurchase" ADD CONSTRAINT "CoinPurchase_paymentId_fkey" FOREIGN KEY ("paymentId") REFERENCES "Payment"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "CoinPurchase" ADD CONSTRAINT "CoinPurchase_transactionId_fkey" FOREIGN KEY ("transactionId") REFERENCES "Transaction"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "SupportConversation" ADD CONSTRAINT "SupportConversation_conversationId_fkey" FOREIGN KEY ("conversationId") REFERENCES "Conversation"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "SupportConversation" ADD CONSTRAINT "SupportConversation_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "Booking" ADD CONSTRAINT "Booking_clientId_fkey" FOREIGN KEY ("clientId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "Booking" ADD CONSTRAINT "Booking_providerId_fkey" FOREIGN KEY ("providerId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "Booking" ADD CONSTRAINT "Booking_taskId_fkey" FOREIGN KEY ("taskId") REFERENCES "Job"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;

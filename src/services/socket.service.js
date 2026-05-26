@@ -5,6 +5,9 @@ const prisma = require('../config/prisma');
 let io;
 const users = new Map(); // userId -> socketId
 const userSockets = new Map(); // userId -> active socket count
+const debugLog = (...args) => {
+  if (process.env.NODE_ENV !== 'production') console.log(...args);
+};
 
 const initSocket = (server) => {
   io = socketio(server, {
@@ -29,7 +32,7 @@ const initSocket = (server) => {
   });
 
   io.on('connection', async (socket) => {
-    console.log(`User connected: ${socket.userId}`);
+    debugLog(`User connected: ${socket.userId}`);
     users.set(socket.userId, socket.id);
     userSockets.set(socket.userId, (userSockets.get(socket.userId) || 0) + 1);
 
@@ -55,7 +58,7 @@ const initSocket = (server) => {
     // --- CHAT EVENTS ---
     socket.on('join:conversation', (conversationId) => {
       socket.join(conversationId);
-      console.log(`User ${socket.userId} joined conversation: ${conversationId}`);
+      debugLog(`User ${socket.userId} joined conversation: ${conversationId}`);
     });
 
     socket.on('typing', ({ conversationId, isTyping }) => {
@@ -108,7 +111,7 @@ const initSocket = (server) => {
 
     // --- DISCONNECT ---
     socket.on('disconnect', async () => {
-      console.log(`User disconnected: ${socket.userId}`);
+      debugLog(`User disconnected: ${socket.userId}`);
       users.delete(socket.userId);
       const remaining = Math.max((userSockets.get(socket.userId) || 1) - 1, 0);
       if (remaining > 0) {
