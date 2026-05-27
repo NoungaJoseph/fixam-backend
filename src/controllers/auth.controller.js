@@ -3,6 +3,35 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const { sendOTP } = require('../services/email.service');
 const { registerSchema } = require('../validators/auth.validator');
+const twilio = require('twilio');
+
+// Normalize phone number to E.164 format for Cameroon
+const formatPhone = (phone) => {
+  const cleaned = phone.replace(/\s+/g, '').replace(/-/g, '');
+  if (cleaned.startsWith('+')) return cleaned;
+  if (cleaned.startsWith('00')) return '+' + cleaned.slice(2);
+  if (cleaned.startsWith('237')) return '+' + cleaned;
+  return '+237' + cleaned;
+};
+
+const sendSMSOTP = async (phoneNumber, otp) => {
+  try {
+    const twilioClient = twilio(
+      process.env.TWILIO_ACCOUNT_SID,
+      process.env.TWILIO_AUTH_TOKEN
+    );
+    const formattedPhone = formatPhone(phoneNumber);
+    await twilioClient.messages.create({
+      body: `Your Fixam verification code is: ${otp}. Valid for 10 minutes. Do not share this code.`,
+      from: process.env.TWILIO_PHONE_NUMBER,
+      to: formattedPhone
+    });
+    console.log(`[SMS] OTP sent to ${formattedPhone}`);
+  } catch (error) {
+    console.error(`Twilio Error: ${error.message} (Code: ${error.code})`);
+    throw new Error('Failed to send OTP. Please try again.');
+  }
+};
 
 const otpCache = new Map();
 const debugLog = (...args) => {
@@ -185,7 +214,7 @@ const login = async (req, res, next) => {
       if (user.email) {
         await sendOTP(user.email, otp);
       } else {
-        debugLog(`[SMS MOCK] Login OTP generated for ${user.phone}: ${otp}`);
+        await sendSMSOTP(user.phone, otp);
       }
 
       const tempToken = jwt.sign({ id: user.id, role: user.role, type: '2fa' }, process.env.JWT_SECRET, { expiresIn: '10m' });
@@ -216,7 +245,7 @@ const requestOTP = async (req, res, next) => {
       await sendOTP(email, otp);
       return res.status(200).json({ success: true, message: 'OTP sent to email' });
     } else {
-      debugLog(`[SMS MOCK] OTP generated for ${phone}`);
+      await sendSMSOTP(phone, otp);
       return res.status(200).json({ success: true, message: 'OTP sent via SMS' });
     }
   } catch (error) {
@@ -280,7 +309,7 @@ const enableTwoFactorOTP = async (req, res, next) => {
       await sendOTP(user.email, otp);
       return res.status(200).json({ success: true, message: 'OTP sent to your email' });
     } else {
-      debugLog(`[SMS MOCK] OTP generated for ${user.phone}: ${otp}`);
+      await sendSMSOTP(user.phone, otp);
       return res.status(200).json({ success: true, message: 'OTP sent to your phone' });
     }
   } catch (error) {
@@ -413,7 +442,7 @@ const resendLoginOTP = async (req, res, next) => {
       await sendOTP(user.email, otp);
       return res.status(200).json({ success: true, message: 'OTP sent to your email' });
     } else {
-      debugLog(`[SMS MOCK] Login OTP generated for ${user.phone}: ${otp}`);
+      await sendSMSOTP(user.phone, otp);
       return res.status(200).json({ success: true, message: 'OTP sent to your phone' });
     }
   } catch (error) {
