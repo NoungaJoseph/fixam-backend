@@ -1,11 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const chatController = require('../controllers/chat.controller');
-const { protect } = require('../middlewares/auth.middleware');
+const { protect, authorize } = require('../middlewares/auth.middleware');
 
 router.use(protect);
 
 router.get('/conversations', chatController.getConversations);
+router.get('/unread-count', authorize('ADMIN'), chatController.getUnreadCount);
 router.post('/conversations', chatController.createConversation);
 router.post('/support', chatController.openSupportConversation);
 router.get('/:conversationId/active-task', chatController.getActiveTaskForChat);

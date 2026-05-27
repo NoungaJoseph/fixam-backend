@@ -452,7 +452,22 @@ model AdminMessage {
   content         String
   isRead          Boolean  @default(false)
   readAt          DateTime?
+  sentCount       Int      @default(0)
+  status          String   @default("SENT")
   createdAt       DateTime @default(now())
+}
+
+model Settings {
+  id              String   @id @default("global")
+  platformName    String   @default("Fixam")
+  supportEmail    String   @default("support@fixam.cm")
+  serviceFee      Float    @default(10.0)
+  defaultLanguage String   @default("English")
+  baseCurrency    String   @default("XAF")
+  apiEndpoint     String   @default("https://api.fixam.cm/v1")
+  adminSecret     String   @default("secret")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 model Report {

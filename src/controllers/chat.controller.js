@@ -536,6 +536,22 @@ const markAsRead = async (req, res, next) => {
   }
 };
 
+const getUnreadCount = async (req, res, next) => {
+  try {
+    const result = await prisma.conversationParticipant.aggregate({
+      where: { userId: req.user.id },
+      _sum: { unreadCount: true }
+    });
+
+    res.status(200).json({
+      success: true,
+      data: { totalUnread: result._sum.unreadCount || 0 }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getConversations,
   openSupportConversation,
@@ -543,5 +559,6 @@ module.exports = {
   getActiveTaskForChat,
   getMessages,
   sendMessage,
-  markAsRead
+  markAsRead,
+  getUnreadCount
 };

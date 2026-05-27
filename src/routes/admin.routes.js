@@ -18,6 +18,8 @@ router.get('/feedback', adminController.getFeedback);
 router.get('/support-conversations', adminController.getSupportConversations);
 router.get('/pending-jobs', adminController.getPendingJobs);
 router.get('/approved-jobs', adminController.getApprovedJobs);
+router.get('/settings', adminController.getSettings);
+router.get('/wallet/wire-history', adminController.getWireHistory);
 
 router.post('/verify-provider', adminController.verifyProvider);
 router.post('/approve-transaction', adminController.approveTransaction);
@@ -27,5 +29,7 @@ router.put('/reports/:id/status', adminController.updateReportStatus);
 router.put('/feedback/:id/status', adminController.updateFeedbackStatus);
 router.put('/jobs/:id/approve', adminController.approveJob);
 router.put('/jobs/:id/reject', adminController.rejectJob);
+router.put('/settings', adminController.updateSettings);
+router.post('/wallet/wire-coins', adminController.wireCoins);
 
 module.exports = router;
