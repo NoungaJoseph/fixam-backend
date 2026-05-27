@@ -1,9 +1,23 @@
 const prisma = require('../config/prisma');
 const { updateProfileSchema } = require('../validators/user.validator');
 const bcrypt = require('bcrypt');
+const { calculateProviderStats } = require('../utils/providerStats');
 
 const getMe = async (req, res, next) => {
   try {
+    if (req.user.providerProfile?.id) {
+      const stats = await calculateProviderStats(req.user.providerProfile.id).catch(() => null);
+      if (stats) {
+        req.user.providerProfile = {
+          ...req.user.providerProfile,
+          rating: stats.trustScore,
+          skillRank: stats.skillRank,
+          jobsCompleted: stats.completedJobs,
+          completionRate: stats.completionRate,
+          profileCompleteness: stats.profileCompleteness,
+        };
+      }
+    }
     res.status(200).json({ success: true, data: req.user });
   } catch (error) {
     next(error);

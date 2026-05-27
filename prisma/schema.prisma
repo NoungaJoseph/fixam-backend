@@ -153,6 +153,7 @@ model ProviderProfile {
   socialLinks     Json?
   profileMode     String             @default("WORK")
   profileScore    Int                @default(0)
+  skillRank       String             @default("Newcomer")
   
   user            User               @relation(fields: [userId], references: [id])
   assignments     JobAssignment[]

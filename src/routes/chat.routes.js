@@ -6,6 +6,7 @@ const { protect } = require('../middlewares/auth.middleware');
 router.use(protect);
 
 router.get('/conversations', chatController.getConversations);
+router.post('/conversations', chatController.createConversation);
 router.post('/support', chatController.openSupportConversation);
 router.get('/:conversationId/active-task', chatController.getActiveTaskForChat);
 router.get('/:conversationId/messages', chatController.getMessages);

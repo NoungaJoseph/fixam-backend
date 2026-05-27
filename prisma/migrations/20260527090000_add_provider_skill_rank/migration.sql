@@ -1,0 +1,1 @@
+ALTER TABLE "ProviderProfile" ADD COLUMN IF NOT EXISTS "skillRank" TEXT NOT NULL DEFAULT 'Newcomer';

@@ -1,5 +1,6 @@
 const prisma = require('../config/prisma');
 const { createJobSchema } = require('../validators/job.validator');
+const { calculateProviderStats } = require('../utils/providerStats');
 
 const calculateJobCoinCost = (budget) => {
   const amount = Number(budget || 0);
@@ -80,7 +81,7 @@ const getJobById = async (req, res, next) => {
     const job = await prisma.job.findUnique({
       where: { id: jobId },
       include: {
-        client: { select: { id: true, fullName: true, avatar: true, phone: true } },
+        client: { select: { id: true, fullName: true, avatar: true, phone: true, providerProfile: { select: { verification: true } } } },
         assignments: {
           include: {
             provider: { include: { user: { select: { id: true, fullName: true, avatar: true, phone: true } } } }
@@ -102,7 +103,17 @@ const getJobById = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Not allowed to view this job' });
     }
 
-    res.status(200).json({ success: true, data: job });
+    res.status(200).json({
+      success: true,
+      data: {
+        ...job,
+        client: {
+          ...job.client,
+          isVerified: job.client?.providerProfile?.verification === 'VERIFIED',
+        },
+        clientVerified: job.client?.providerProfile?.verification === 'VERIFIED',
+      }
+    });
   } catch (error) {
     next(error);
   }
@@ -412,6 +423,14 @@ const updateJobStatus = async (req, res, next) => {
       where: { id: jobId },
       data: { status }
     });
+
+    if (status === 'COMPLETED') {
+      await Promise.all(
+        existing.assignments
+          .filter((assignment) => assignment.status === 'ACCEPTED')
+          .map((assignment) => calculateProviderStats(assignment.providerId).catch(() => null))
+      );
+    }
 
     res.status(200).json({ success: true, data: job });
   } catch (error) {

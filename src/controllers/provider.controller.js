@@ -1,5 +1,6 @@
 const prisma = require('../config/prisma');
 const { setupProviderSchema } = require('../validators/provider.validator');
+const { calculateProviderStats } = require('../utils/providerStats');
 
 const updateProviderProfile = async (req, res, next) => {
   try {
@@ -45,8 +46,12 @@ const getProviders = async (req, res, next) => {
         } 
       },
       orderBy: { rating: 'desc' }
-    }).then((providers) => {
-      return providers.sort((a, b) => {
+    }).then(async (providers) => {
+      const enriched = await Promise.all(providers.map(async (provider) => {
+        const stats = await calculateProviderStats(provider.id).catch(() => null);
+        return stats ? { ...provider, rating: stats.trustScore, skillRank: stats.skillRank, jobsCompleted: stats.completedJobs, completionRate: stats.completionRate, profileCompleteness: stats.profileCompleteness } : provider;
+      }));
+      return enriched.sort((a, b) => {
         const scoreA = (a.profileScore || 0) + (a.verification === 'VERIFIED' ? 5 : 0) + (a.user?.isOnline ? 2 : 0) + Number(a.rating || 0);
         const scoreB = (b.profileScore || 0) + (b.verification === 'VERIFIED' ? 5 : 0) + (b.user?.isOnline ? 2 : 0) + Number(b.rating || 0);
         return scoreB - scoreA;
@@ -79,7 +84,43 @@ const getNearbyProviders = async (req, res, next) => {
       }
     });
 
-    res.status(200).json({ success: true, data: providers });
+    const enriched = await Promise.all(providers.map(async (provider) => {
+      const stats = await calculateProviderStats(provider.id).catch(() => null);
+      return stats ? { ...provider, rating: stats.trustScore, skillRank: stats.skillRank, jobsCompleted: stats.completedJobs, completionRate: stats.completionRate, profileCompleteness: stats.profileCompleteness } : provider;
+    }));
+    res.status(200).json({ success: true, data: enriched });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const getProviderById = async (req, res, next) => {
+  try {
+    const provider = await prisma.providerProfile.findUnique({
+      where: { id: req.params.providerId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+            avatar: true,
+            isOnline: true,
+            phone: true,
+            createdAt: true,
+          }
+        }
+      }
+    });
+
+    if (!provider) {
+      return res.status(404).json({ success: false, message: 'Provider not found' });
+    }
+
+    const stats = await calculateProviderStats(provider.id).catch(() => null);
+    res.status(200).json({
+      success: true,
+      data: stats ? { ...provider, rating: stats.trustScore, skillRank: stats.skillRank, jobsCompleted: stats.completedJobs, completionRate: stats.completionRate, profileCompleteness: stats.profileCompleteness } : provider
+    });
   } catch (error) {
     next(error);
   }
@@ -191,6 +232,7 @@ const updateProviderStatus = async (req, res, next) => {
 module.exports = {
   updateProviderProfile,
   updateProviderStatus,
+  getProviderById,
   getProviders,
   getNearbyProviders,
   getFavoriteProviders,

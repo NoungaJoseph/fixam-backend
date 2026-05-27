@@ -1,4 +1,5 @@
 const prisma = require('../config/prisma');
+const { calculateProviderStats } = require('../utils/providerStats');
 
 const createReview = async (req, res, next) => {
   try {
@@ -61,15 +62,15 @@ const createReview = async (req, res, next) => {
 
         await tx.providerProfile.update({
           where: { userId: targetUserId },
-          data: {
-            rating: aggregate._avg.rating || parsedRating,
-            reviewCount: aggregate._count.rating
-          }
+          data: { reviewCount: aggregate._count.rating }
         });
       }
       
       return created;
     });
+
+    const targetProvider = await prisma.providerProfile.findUnique({ where: { userId: targetUserId }, select: { id: true } });
+    if (targetProvider) await calculateProviderStats(targetProvider.id).catch(() => null);
 
     // 2. Notifications (Outside transaction to prevent "Transaction already closed" errors)
     try {

@@ -4,6 +4,147 @@ const debugLog = (...args) => {
   if (process.env.NODE_ENV !== 'production') console.log(...args);
 };
 
+const findDirectConversationId = async (userId, participantId) => {
+  const existing = await prisma.$queryRaw`
+    SELECT c.id FROM "Conversation" c
+    INNER JOIN "ConversationParticipant" cp1 ON c.id = cp1."conversationId" AND cp1."userId" = ${userId}
+    INNER JOIN "ConversationParticipant" cp2 ON c.id = cp2."conversationId" AND cp2."userId" = ${participantId}
+    LIMIT 1
+  `;
+  return existing?.[0]?.id || null;
+};
+
+const formatConversationForUser = async (conversationId, userId) => {
+  const conversation = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+    select: {
+      id: true,
+      lastMessageAt: true,
+      createdAt: true,
+      updatedAt: true,
+      support: { select: { id: true } },
+      participants: {
+        select: {
+          userId: true,
+          unreadCount: true,
+          user: {
+            select: {
+              id: true,
+              fullName: true,
+              avatar: true,
+              isOnline: true,
+              role: true,
+              providerProfile: { select: { id: true, profileMode: true } }
+            }
+          }
+        }
+      },
+      messages: {
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+        select: { id: true, content: true, createdAt: true, type: true, deliveredAt: true, readAt: true, isRead: true }
+      }
+    }
+  });
+
+  return {
+    id: conversation.id,
+    lastMessageAt: conversation.lastMessageAt,
+    createdAt: conversation.createdAt,
+    updatedAt: conversation.updatedAt,
+    participants: conversation.participants.filter((p) => p.userId !== userId).map((p) => p.user),
+    lastMessage: conversation.messages[0] || null,
+    unreadCount: conversation.participants.find((p) => p.userId === userId)?.unreadCount || 0,
+    activeTask: null,
+    isSystem: Boolean(conversation.support),
+  };
+};
+
+const assertCanCreateDirectConversation = async (requester, target) => {
+  if (requester.role === 'ADMIN') return;
+
+  if (requester.role === 'PROVIDER' && target.role === 'CLIENT') {
+    const providerId = requester.providerProfile?.id;
+    const acceptedAssignment = providerId ? await prisma.jobAssignment.findFirst({
+      where: {
+        providerId,
+        status: 'ACCEPTED',
+        job: {
+          clientId: target.id,
+          selectedAssignmentId: { not: null },
+        },
+      },
+      select: { id: true },
+    }) : null;
+
+    if (!acceptedAssignment) {
+      const error = new Error('You can only message clients who have accepted your application');
+      error.statusCode = 403;
+      throw error;
+    }
+  }
+
+  if (requester.role === 'CLIENT' && target.role === 'PROVIDER') {
+    const targetProviderId = target.providerProfile?.id;
+    const paidAssignment = targetProviderId ? await prisma.jobAssignment.findFirst({
+      where: {
+        providerId: targetProviderId,
+        refundedAt: null,
+        job: { clientId: requester.id },
+      },
+      select: { id: true },
+    }) : null;
+
+    if (!paidAssignment) {
+      const error = new Error("You need to apply to a provider's service before messaging them");
+      error.statusCode = 403;
+      throw error;
+    }
+  }
+};
+
+const createOrGetConversation = async (requester, participantId) => {
+  if (!participantId || participantId === requester.id) {
+    const error = new Error('A valid participantId is required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const existingId = await findDirectConversationId(requester.id, participantId);
+  if (existingId) return formatConversationForUser(existingId, requester.id);
+
+  const target = await prisma.user.findUnique({
+    where: { id: participantId },
+    select: {
+      id: true,
+      role: true,
+      providerProfile: { select: { id: true } },
+    },
+  });
+
+  if (!target) {
+    const error = new Error('Participant not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  await assertCanCreateDirectConversation(requester, target);
+
+  const conversation = await prisma.conversation.create({
+    data: {
+      participants: {
+        create: [
+          { userId: requester.id },
+          { userId: participantId }
+        ]
+      }
+    },
+    select: { id: true }
+  });
+
+  return formatConversationForUser(conversation.id, requester.id);
+};
+
 const getConversations = async (req, res, next) => {
   try {
     // Optimized query: Get conversations with minimal nested queries
@@ -59,6 +200,9 @@ const getConversations = async (req, res, next) => {
     debugLog('[Chat] getConversations returned', formatted.length, 'conversations (no per-row task lookup)');
     res.status(200).json({ success: true, data: formatted });
   } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
     next(error);
   }
 };
@@ -155,6 +299,21 @@ const openSupportConversation = async (req, res, next) => {
       }
     });
   } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
+    next(error);
+  }
+};
+
+const createConversation = async (req, res, next) => {
+  try {
+    const conversation = await createOrGetConversation(req.user, req.body.participantId);
+    res.status(200).json({ success: true, data: conversation });
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
     next(error);
   }
 };
@@ -255,32 +414,9 @@ const sendMessage = async (req, res, next) => {
 
     // 1. Create conversation if it doesn't exist (for new chats)
     if (!actualConvId && receiverId) {
-      // Use raw SQL for faster query (single db hit vs nested queries)
-      const existing = await prisma.$queryRaw`
-        SELECT c.id FROM "Conversation" c
-        INNER JOIN "ConversationParticipant" cp1 ON c.id = cp1."conversationId" AND cp1."userId" = ${req.user.id}
-        INNER JOIN "ConversationParticipant" cp2 ON c.id = cp2."conversationId" AND cp2."userId" = ${receiverId}
-        LIMIT 1
-      `;
-
-      if (existing && existing.length > 0) {
-        actualConvId = existing[0].id;
-        debugLog('[Chat] Found existing conversation:', actualConvId);
-      } else {
-        const newConv = await prisma.conversation.create({
-          data: {
-            participants: {
-              create: [
-                { userId: req.user.id },
-                { userId: receiverId }
-              ]
-            }
-          },
-          select: { id: true }
-        });
-        actualConvId = newConv.id;
-        debugLog('[Chat] Created new conversation:', actualConvId);
-      }
+      const conversation = await createOrGetConversation(req.user, receiverId);
+      actualConvId = conversation.id;
+      debugLog('[Chat] Resolved conversation:', actualConvId);
     }
 
     // 2. Save Message
@@ -364,6 +500,9 @@ const sendMessage = async (req, res, next) => {
 
     res.status(201).json({ success: true, data: outgoingMessage });
   } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
     next(error);
   }
 };
@@ -400,6 +539,7 @@ const markAsRead = async (req, res, next) => {
 module.exports = {
   getConversations,
   openSupportConversation,
+  createConversation,
   getActiveTaskForChat,
   getMessages,
   sendMessage,
