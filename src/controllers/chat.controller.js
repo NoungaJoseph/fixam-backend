@@ -348,6 +348,13 @@ const sendMessage = async (req, res, next) => {
           conversationId: actualConvId,
           senderId: req.user.id
         });
+
+        // Send FCM Push Notification
+        const receiver = await prisma.user.findUnique({ where: { id: receiverId }, select: { fcmToken: true } });
+        if (receiver && receiver.fcmToken) {
+          const { sendChatNotification } = require('../services/notification.service');
+          await sendChatNotification(receiver.fcmToken, req.user.fullName || req.user.phone || 'Someone', content, actualConvId);
+        }
       }
       
       debugLog('[Chat] Socket events emitted - ConvId room:', actualConvId, '| Receiver:', receiverId);

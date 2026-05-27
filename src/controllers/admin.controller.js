@@ -522,11 +522,11 @@ const sendAdminMessage = async (req, res, next) => {
 
     let recipients = [];
     if (recipientId) {
-      recipients = await prisma.user.findMany({ where: { id: recipientId }, select: { id: true } });
+      recipients = await prisma.user.findMany({ where: { id: recipientId }, select: { id: true, fcmToken: true } });
     } else if (recipientRole && recipientRole !== 'ALL') {
-      recipients = await prisma.user.findMany({ where: { role: recipientRole }, select: { id: true } });
+      recipients = await prisma.user.findMany({ where: { role: recipientRole }, select: { id: true, fcmToken: true } });
     } else {
-      recipients = await prisma.user.findMany({ where: { role: { not: 'ADMIN' } }, select: { id: true } });
+      recipients = await prisma.user.findMany({ where: { role: { not: 'ADMIN' } }, select: { id: true, fcmToken: true } });
     }
 
     const adminMessage = await prisma.adminMessage.create({
@@ -562,6 +562,13 @@ const sendAdminMessage = async (req, res, next) => {
       });
     } catch (err) {
       console.error('[Socket Error] Admin message broadcast failed:', err.message);
+    }
+
+    // Send FCM Push Notification
+    const tokens = recipients.map(r => r.fcmToken).filter(Boolean);
+    if (tokens.length > 0) {
+      const { sendMulticastNotification } = require('../services/notification.service');
+      await sendMulticastNotification(tokens, { title: subject, body: content, data: { type: 'ADMIN_MESSAGE', adminMessageId: adminMessage.id } });
     }
 
     res.status(201).json({ success: true, data: adminMessage, delivered: notifications.count });

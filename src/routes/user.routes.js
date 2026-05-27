@@ -5,7 +5,9 @@ const { protect } = require('../middlewares/auth.middleware');
 
 router.get('/me', protect, userController.getMe);
 router.put('/profile', protect, userController.updateProfile);
+router.post('/change-password', protect, userController.changePassword);
 router.post('/feedback', protect, userController.submitFeedback);
 router.post('/reports', protect, userController.reportUser);
+router.put('/fcm-token', protect, userController.updateFcmToken);
 
 module.exports = router;

@@ -166,9 +166,66 @@ const reportUser = async (req, res, next) => {
   }
 };
 
+const changePassword = async (req, res, next) => {
+  try {
+    const { currentPassword, newPassword, confirmNewPassword } = req.body;
+
+    if (!currentPassword || !newPassword || !confirmNewPassword) {
+      return res.status(400).json({ success: false, message: 'All password fields are required' });
+    }
+
+    if (newPassword !== confirmNewPassword) {
+      return res.status(400).json({ success: false, message: 'New passwords do not match' });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({ success: false, message: 'New password must be at least 8 characters' });
+    }
+
+    const isCurrentPasswordValid = await bcrypt.compare(currentPassword, req.user.password || '');
+    if (!isCurrentPasswordValid) {
+      return res.status(401).json({ success: false, message: 'Current password is incorrect' });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await prisma.user.update({
+      where: { id: req.user.id },
+      data: {
+        password: hashedPassword,
+        lastPasswordChange: new Date()
+      }
+    });
+
+    res.status(200).json({ success: true, message: 'Password updated successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const updateFcmToken = async (req, res, next) => {
+  try {
+    const { fcmToken } = req.body;
+    
+    if (!fcmToken) {
+      return res.status(400).json({ success: false, message: 'FCM Token is required' });
+    }
+
+    await prisma.user.update({
+      where: { id: req.user.id },
+      data: { fcmToken }
+    });
+
+    res.status(200).json({ success: true, message: 'FCM Token updated successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getMe,
   updateProfile,
   submitFeedback,
   reportUser,
+  changePassword,
+  updateFcmToken,
 };

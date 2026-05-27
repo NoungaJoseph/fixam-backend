@@ -3,10 +3,11 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
-enum Role {
+enum Role { 
   CLIENT
   PROVIDER
   ADMIN
@@ -102,6 +103,9 @@ model User {
   dob           DateTime?
   lastNameChange DateTime?
   lastPasswordChange DateTime?
+  twoFactorEnabled Boolean   @default(false)
+  twoFactorCode    String?
+  twoFactorExpiry  DateTime?
   pendingName   String?
   isBlocked     Boolean   @default(false)
   blockedReason String?

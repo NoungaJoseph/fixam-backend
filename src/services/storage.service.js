@@ -2,10 +2,14 @@ const { createClient } = require('@supabase/supabase-js');
 const fs = require('fs/promises');
 const path = require('path');
 
-const hasSupabase = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE);
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE
+  || process.env.SUPABASE_SERVICE_ROLE_KEY
+  || process.env.SUPABASE_ANON_KEY
+  || process.env.SUPABASE_KEY;
+const hasSupabase = Boolean(process.env.SUPABASE_URL && supabaseServiceKey);
 const supabase = hasSupabase ? createClient(
   process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE
+  supabaseServiceKey
 ) : null;
 
 const uploadLocal = async (file, bucket, fileName) => {
@@ -16,15 +20,19 @@ const uploadLocal = async (file, bucket, fileName) => {
   return `${baseUrl}/uploads/${bucket}/${fileName}`;
 };
 
-const uploadFile = async (file, bucket) => {
-  try {
-    const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const fileName = `${Date.now()}-${safeName}`;
+const uploadFile = async (file, bucket, options = {}) => {
+  const { requireCloud = false } = options;
+  const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const fileName = `${Date.now()}-${safeName}`;
 
-    if (!supabase) {
-      return uploadLocal(file, bucket, fileName);
+  if (!supabase) {
+    if (requireCloud) {
+      throw new Error('Supabase Storage is not configured for persistent profile uploads.');
     }
+    return uploadLocal(file, bucket, fileName);
+  }
 
+  try {
     const { data, error } = await supabase.storage
       .from(bucket)
       .upload(fileName, file.buffer, {
@@ -41,8 +49,9 @@ const uploadFile = async (file, bucket) => {
     return publicUrl;
   } catch (error) {
     console.error('Storage Upload Error:', error);
-    const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const fileName = `${Date.now()}-${safeName}`;
+    if (requireCloud) {
+      throw error;
+    }
     return uploadLocal(file, bucket, fileName);
   }
 };

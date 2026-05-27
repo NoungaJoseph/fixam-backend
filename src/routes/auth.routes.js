@@ -2,9 +2,18 @@ const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/auth.controller');
 
+const { protect } = require('../middlewares/auth.middleware');
+
 router.post('/register', authController.register);
 router.post('/login', authController.login);
 router.post('/request-otp', authController.requestOTP);
 router.post('/verify-otp', authController.verifyOTP);
+
+// 2FA Routes
+router.post('/2fa/send-otp', protect, authController.enableTwoFactorOTP);
+router.post('/2fa/enable', protect, authController.enableTwoFactor);
+router.post('/2fa/disable', protect, authController.disableTwoFactor);
+router.post('/2fa/verify-login', authController.verifyLoginTwoFactor);
+router.post('/2fa/resend-login-otp', authController.resendLoginOTP);
 
 module.exports = router;

@@ -28,6 +28,13 @@ const initiateCall = async (req, res, next) => {
       console.error('[Socket Error] Call notification failed:', err.message);
     }
 
+    // Send FCM Push Notification
+    const receiver = await prisma.user.findUnique({ where: { id: receiverId }, select: { fcmToken: true } });
+    if (receiver && receiver.fcmToken) {
+      const { sendCallNotification } = require('../services/notification.service');
+      await sendCallNotification(receiver.fcmToken, req.user.fullName || req.user.phone || 'Someone', call.type, call.id);
+    }
+
     res.status(201).json({ success: true, data: call });
   } catch (error) {
     next(error);

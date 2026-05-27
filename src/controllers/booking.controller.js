@@ -60,6 +60,12 @@ const createBooking = async (req, res, next) => {
     emitBooking(booking);
     try { getIO().to(providerId).emit('notification:new', notification); } catch (_) {}
 
+    // Send FCM Push Notification
+    if (provider.fcmToken) {
+      const { sendBookingNotification } = require('../services/notification.service');
+      await sendBookingNotification(provider.fcmToken, notification.title, notification.body, booking.id);
+    }
+
     res.status(201).json({ success: true, data: booking });
   } catch (error) {
     next(error);

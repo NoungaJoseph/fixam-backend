@@ -170,6 +170,28 @@ const login = async (req, res, next) => {
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
+    if (user.twoFactorEnabled) {
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      const hashedOTP = await bcrypt.hash(otp, 10);
+      
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          twoFactorCode: hashedOTP,
+          twoFactorExpiry: new Date(Date.now() + 10 * 60 * 1000)
+        }
+      });
+
+      if (user.email) {
+        await sendOTP(user.email, otp);
+      } else {
+        debugLog(`[SMS MOCK] Login OTP generated for ${user.phone}: ${otp}`);
+      }
+
+      const tempToken = jwt.sign({ id: user.id, role: user.role, type: '2fa' }, process.env.JWT_SECRET, { expiresIn: '10m' });
+      return res.status(200).json({ success: true, requiresTwoFactor: true, tempToken });
+    }
+
     const token = generateToken(user.id, user.role);
     res.status(200).json({ success: true, token, user });
   } catch (error) {
@@ -234,9 +256,179 @@ const verifyOTP = async (req, res, next) => {
   }
 };
 
+const enableTwoFactorOTP = async (req, res, next) => {
+  try {
+    const user = req.user;
+    const identifier = user.email || user.phone;
+    
+    if (!identifier) {
+      return res.status(400).json({ success: false, message: 'Email or phone is required' });
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const hashedOTP = await bcrypt.hash(otp, 10);
+    
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        twoFactorCode: hashedOTP,
+        twoFactorExpiry: new Date(Date.now() + 10 * 60 * 1000)
+      }
+    });
+
+    if (user.email) {
+      await sendOTP(user.email, otp);
+      return res.status(200).json({ success: true, message: 'OTP sent to your email' });
+    } else {
+      debugLog(`[SMS MOCK] OTP generated for ${user.phone}: ${otp}`);
+      return res.status(200).json({ success: true, message: 'OTP sent to your phone' });
+    }
+  } catch (error) {
+    next(error);
+  }
+};
+
+const enableTwoFactor = async (req, res, next) => {
+  try {
+    const { otp } = req.body;
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    
+    if (!user.twoFactorCode || !user.twoFactorExpiry || user.twoFactorExpiry < new Date()) {
+      return res.status(400).json({ success: false, message: 'Invalid or expired OTP' });
+    }
+
+    const isMatch = await bcrypt.compare(otp, user.twoFactorCode);
+    if (!isMatch) {
+      return res.status(400).json({ success: false, message: 'Invalid or expired OTP' });
+    }
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        twoFactorEnabled: true,
+        twoFactorCode: null,
+        twoFactorExpiry: null
+      }
+    });
+
+    res.status(200).json({ success: true, message: 'Two-step verification enabled' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const disableTwoFactor = async (req, res, next) => {
+  try {
+    const { password } = req.body;
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    
+    const isMatch = await bcrypt.compare(password, user.password || '');
+    if (!isMatch) {
+      return res.status(401).json({ success: false, message: 'Incorrect password' });
+    }
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { twoFactorEnabled: false }
+    });
+
+    res.status(200).json({ success: true, message: 'Two-step verification disabled' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const verifyLoginTwoFactor = async (req, res, next) => {
+  try {
+    const { tempToken, otp } = req.body;
+    
+    let decoded;
+    try {
+      decoded = jwt.verify(tempToken, process.env.JWT_SECRET);
+      if (decoded.type !== '2fa') throw new Error('Invalid token type');
+    } catch (err) {
+      return res.status(401).json({ success: false, message: 'Invalid or expired token' });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.id },
+      include: { wallet: true, providerProfile: true }
+    });
+
+    if (!user || !user.twoFactorCode || !user.twoFactorExpiry || user.twoFactorExpiry < new Date()) {
+      return res.status(401).json({ success: false, message: 'Invalid or expired OTP' });
+    }
+
+    const isMatch = await bcrypt.compare(otp, user.twoFactorCode);
+    if (!isMatch) {
+      return res.status(401).json({ success: false, message: 'Invalid or expired OTP' });
+    }
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        twoFactorCode: null,
+        twoFactorExpiry: null
+      }
+    });
+
+    const token = generateToken(user.id, user.role);
+    res.status(200).json({ success: true, token, user });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const resendLoginOTP = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: 'No token provided' });
+    }
+    const tempToken = authHeader.split(' ')[1];
+    
+    let decoded;
+    try {
+      decoded = jwt.verify(tempToken, process.env.JWT_SECRET);
+      if (decoded.type !== '2fa') throw new Error('Invalid token type');
+    } catch (err) {
+      return res.status(401).json({ success: false, message: 'Invalid or expired token' });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: decoded.id } });
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const hashedOTP = await bcrypt.hash(otp, 10);
+    
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        twoFactorCode: hashedOTP,
+        twoFactorExpiry: new Date(Date.now() + 10 * 60 * 1000)
+      }
+    });
+
+    if (user.email) {
+      await sendOTP(user.email, otp);
+      return res.status(200).json({ success: true, message: 'OTP sent to your email' });
+    } else {
+      debugLog(`[SMS MOCK] Login OTP generated for ${user.phone}: ${otp}`);
+      return res.status(200).json({ success: true, message: 'OTP sent to your phone' });
+    }
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   register,
   login,
   requestOTP,
-  verifyOTP
+  verifyOTP,
+  enableTwoFactorOTP,
+  enableTwoFactor,
+  disableTwoFactor,
+  verifyLoginTwoFactor,
+  resendLoginOTP
 };
