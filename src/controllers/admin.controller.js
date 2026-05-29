@@ -703,6 +703,18 @@ const approveJob = async (req, res, next) => {
       console.error('[Socket Error] Job approval notification failed:', err.message);
     }
 
+    try {
+      const { sendPushNotification } = require('../services/notification.service');
+      await sendPushNotification(
+        job.clientId,
+        'Task Approved ✅',
+        `Your task "${job.title}" is now live!`,
+        { type: 'JOB_APPROVED', jobId: job.id }
+      );
+    } catch (pushErr) {
+      console.error('[Push Error] Job approve push failed:', pushErr.message);
+    }
+
     res.status(200).json({ success: true, data: job, message: 'Job approved successfully' });
   } catch (error) {
     next(error);
@@ -788,6 +800,18 @@ const rejectJob = async (req, res, next) => {
       io.to(job.clientId).emit('notification:new', notification);
     } catch (err) {
       console.error('[Socket Error] Job rejection notification failed:', err.message);
+    }
+
+    try {
+      const { sendPushNotification } = require('../services/notification.service');
+      await sendPushNotification(
+        job.clientId,
+        'Task Rejected ❌',
+        `Your task "${job.title}" was rejected.`,
+        { type: 'JOB_REJECTED', jobId: job.id, reason }
+      );
+    } catch (pushErr) {
+      console.error('[Push Error] Job reject push failed:', pushErr.message);
     }
 
     res.status(200).json({ success: true, data: job, message: 'Job rejected successfully' });

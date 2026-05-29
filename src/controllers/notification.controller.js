@@ -56,9 +56,73 @@ const archiveNotification = async (req, res, next) => {
   }
 };
 
+const testPush = async (req, res) => {
+  try {
+    const { userId, title, body, data } = req.body
+    
+    if (!userId || !title || !body) {
+      return res.status(400).json({
+        success: false,
+        message: 'userId, title and body are required'
+      })
+    }
+    
+    const { sendPushNotification, sendPushToMultiple } = 
+      require('../services/notification.service')
+    
+    // Broadcast to all users
+    if (userId === 'ALL') {
+      const users = await prisma.user.findMany({
+        where: { fcmToken: { not: null } },
+        select: { id: true, phone: true, fcmToken: true }
+      })
+      
+      console.log(`[Test] Broadcasting to ${users.length} users`)
+      
+      const results = await Promise.allSettled(
+        users.map(u => sendPushNotification(u.id, title, body, data || {}))
+      )
+      
+      const sent = results.filter(
+        r => r.status === 'fulfilled' && r.value?.success
+      ).length
+      
+      return res.json({
+        success: true,
+        message: `Broadcast sent`,
+        sent,
+        total: users.length,
+        users: users.map(u => u.phone)
+      })
+    }
+    
+    // Single user
+    const result = await sendPushNotification(
+      userId, title, body, data || {}
+    )
+    
+    return res.json({
+      success: result.success,
+      result,
+      userId,
+      title,
+      body
+    })
+    
+  } catch (error) {
+    console.error('[Test Push] Error:', error)
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    })
+  }
+};
+
 module.exports = {
   getNotifications,
   markAsRead,
   archiveNotification,
-  clearNotifications
+  clearNotifications,
+  testPush
 };
+

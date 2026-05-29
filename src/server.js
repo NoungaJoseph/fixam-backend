@@ -21,6 +21,13 @@ async function startServer() {
 
     console.log('Database connected successfully');
 
+    // Verify Firebase Admin initialization
+    try {
+      require('./config/firebase');
+    } catch (fbErr) {
+      console.error('[Firebase] Startup initialization failed:', fbErr.message);
+    }
+
     // Start server
     server.listen(PORT, '0.0.0.0', () => {
       console.log(`Fixam Backend running on port ${PORT}`);

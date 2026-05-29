@@ -484,18 +484,54 @@ const sendMessage = async (req, res, next) => {
           conversationId: actualConvId,
           senderId: req.user.id
         });
-
-        // Send FCM Push Notification
-        const receiver = await prisma.user.findUnique({ where: { id: receiverId }, select: { fcmToken: true } });
-        if (receiver && receiver.fcmToken) {
-          const { sendChatNotification } = require('../services/notification.service');
-          await sendChatNotification(receiver.fcmToken, req.user.fullName || req.user.phone || 'Someone', content, actualConvId);
-        }
       }
       
       debugLog('[Chat] Socket events emitted - ConvId room:', actualConvId, '| Receiver:', receiverId);
     } catch (socketErr) {
       console.error('[Socket Error] Failed to emit message:', socketErr.message);
+    }
+
+    // 5. Send FCM Push Notification
+    try {
+      const { sendPushNotification } = require('../services/notification.service');
+      const participants = await prisma.conversationParticipant.findMany({
+        where: { 
+          conversationId: actualConvId,
+          userId: { not: req.user.id }
+        },
+        select: { userId: true }
+      });
+
+      for (const participant of participants) {
+        const senderName = req.user.fullName || req.user.phone || 'Someone';
+        const safeContent = content ? (content.length > 100 ? content.substring(0, 97) + '...' : content) : 'Sent an attachment';
+        
+        await sendPushNotification(
+          participant.userId,
+          senderName,
+          safeContent,
+          {
+            type: 'NEW_MESSAGE',
+            conversationId: actualConvId,
+            messageId: message.id,
+            senderId: req.user.id
+          }
+        );
+        
+        await prisma.notification.create({
+          data: {
+            userId: participant.userId,
+            title: senderName,
+            body: safeContent,
+            data: {
+              type: 'NEW_MESSAGE',
+              conversationId: actualConvId
+            }
+          }
+        }).catch(err => console.error('[Notification] DB create failed:', err.message));
+      }
+    } catch (notifError) {
+      console.error('[Notification] Send failed:', notifError.message);
     }
 
     res.status(201).json({ success: true, data: outgoingMessage });

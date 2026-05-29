@@ -277,6 +277,18 @@ const applyForJob = async (req, res, next) => {
       console.error('[Socket Error] Job application notification failed:', err.message);
     }
 
+    try {
+      const { sendPushNotification } = require('../services/notification.service');
+      await sendPushNotification(
+        job.clientId,
+        'New Application',
+        `${req.user.fullName || 'A provider'} applied to your task: ${job.title}`,
+        { type: 'NEW_APPLICATION', jobId, assignmentId: assignment.id }
+      );
+    } catch (pushErr) {
+      console.error('[Push Error] Application push failed:', pushErr.message);
+    }
+
     res.status(200).json({ success: true, data: assignment, applicationCount, message: 'Application sent successfully. Coins are only deducted if the client selects you.' });
   } catch (error) {
     next(error);
@@ -386,6 +398,18 @@ const selectProviderForJob = async (req, res, next) => {
       console.error('[Socket Error] Provider selection notification failed:', err.message);
     }
 
+    try {
+      const { sendPushNotification } = require('../services/notification.service');
+      await sendPushNotification(
+        updated.assignment.provider.userId,
+        'Application Accepted! 🎉',
+        `You were selected for: ${job.title}`,
+        { type: 'APPLICATION_ACCEPTED', jobId }
+      );
+    } catch (pushErr) {
+      console.error('[Push Error] Selection push failed:', pushErr.message);
+    }
+
     res.status(200).json({ success: true, data: updated.job, message: 'Provider selected successfully. Provider coins were deducted.' });
   } catch (error) {
     next(error);
@@ -430,6 +454,33 @@ const updateJobStatus = async (req, res, next) => {
           .filter((assignment) => assignment.status === 'ACCEPTED')
           .map((assignment) => calculateProviderStats(assignment.providerId).catch(() => null))
       );
+
+      try {
+        const { sendPushNotification } = require('../services/notification.service');
+        const providerId = existing.assignments.find(a => a.status === 'ACCEPTED')?.provider?.userId;
+        
+        // Notify client
+        if (req.user.id !== existing.clientId) {
+          await sendPushNotification(
+            existing.clientId,
+            'Task Completed',
+            `${req.user.fullName || 'Your provider'} marked your task as complete`,
+            { type: 'JOB_COMPLETED', jobId }
+          );
+        }
+        
+        // Notify provider
+        if (providerId && req.user.id !== providerId) {
+          await sendPushNotification(
+            providerId,
+            'Task Marked Complete',
+            `Great work on: ${existing.title}`,
+            { type: 'JOB_COMPLETED', jobId }
+          );
+        }
+      } catch (pushErr) {
+        console.error('[Push Error] Job complete push failed:', pushErr.message);
+      }
     }
 
     res.status(200).json({ success: true, data: job });

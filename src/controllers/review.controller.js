@@ -102,6 +102,18 @@ const createReview = async (req, res, next) => {
       console.error('[Socket Error] Review notification failed:', err.message);
     }
 
+    try {
+      const { sendPushNotification } = require('../services/notification.service');
+      await sendPushNotification(
+        targetUserId,
+        'New Review! ⭐',
+        `You received a ${parsedRating} star review`,
+        { type: 'NEW_REVIEW', jobId, rating: parsedRating }
+      );
+    } catch (pushErr) {
+      console.error('[Push Error] Review push failed:', pushErr.message);
+    }
+
     res.status(201).json({ success: true, data: review });
   } catch (error) {
     next(error);
