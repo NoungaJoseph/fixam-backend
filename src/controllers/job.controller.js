@@ -60,6 +60,7 @@ const getClientJobs = async (req, res, next) => {
     const jobs = await prisma.job.findMany({
       where: { clientId: req.user.id },
       include: {
+        _count: { select: { assignments: true } },
         assignments: {
           include: {
             provider: { include: { user: true, documents: true } }

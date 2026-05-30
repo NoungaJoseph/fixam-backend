@@ -235,6 +235,28 @@ const updateFcmToken = async (req, res, next) => {
   }
 };
 
+const deleteAccount = async (req, res, next) => {
+  try {
+    const { password } = req.body;
+    if (!password) {
+      return res.status(400).json({ success: false, message: 'Password is required to delete account' });
+    }
+
+    const isCurrentPasswordValid = await bcrypt.compare(password, req.user.password || '');
+    if (!isCurrentPasswordValid) {
+      return res.status(401).json({ success: false, message: 'Incorrect password' });
+    }
+
+    await prisma.user.delete({
+      where: { id: req.user.id }
+    });
+
+    res.status(200).json({ success: true, message: 'Account deleted successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getMe,
   updateProfile,
@@ -242,4 +264,5 @@ module.exports = {
   reportUser,
   changePassword,
   updateFcmToken,
+  deleteAccount,
 };

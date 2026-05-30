@@ -9,5 +9,6 @@ router.post('/change-password', protect, userController.changePassword);
 router.post('/feedback', protect, userController.submitFeedback);
 router.post('/reports', protect, userController.reportUser);
 router.put('/fcm-token', protect, userController.updateFcmToken);
+router.delete('/me', protect, userController.deleteAccount);
 
 module.exports = router;
