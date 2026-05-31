@@ -89,7 +89,49 @@ const getBalance = async (req, res, next) => {
       where: { userId: req.user.id },
       include: { transactions: { orderBy: { createdAt: 'desc' }, take: 10 } }
     });
-    res.status(200).json({ success: true, data: wallet });
+
+    if (!wallet) {
+      return res.status(200).json({ 
+        success: true, 
+        data: { balance: 0, thisMonthTransactions: 0, thisMonthSpent: 0, completedTasks: 0, nextLevelTasks: 5, progressPercent: 0 } 
+      });
+    }
+
+    const now = new Date();
+    const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const thisMonthTxStats = await prisma.transaction.aggregate({
+      _count: { id: true },
+      _sum: { amount: true },
+      where: {
+        walletId: wallet.id,
+        status: 'SUCCESS',
+        createdAt: { gte: firstDayOfMonth }
+      }
+    });
+
+    const completedTasks = await prisma.job.count({
+      where: { clientId: req.user.id, status: 'COMPLETED' }
+    });
+
+    let nextLevelTasks = 5;
+    if (completedTasks >= 5) nextLevelTasks = 10;
+    if (completedTasks >= 10) nextLevelTasks = 20;
+    if (completedTasks >= 20) nextLevelTasks = 50;
+    if (completedTasks >= 50) nextLevelTasks = Math.floor(completedTasks / 10) * 10 + 10;
+
+    const progressPercent = Math.min(100, Math.round((completedTasks / nextLevelTasks) * 100));
+
+    const enrichedWallet = {
+      ...wallet,
+      thisMonthTransactions: thisMonthTxStats._count.id || 0,
+      thisMonthSpent: Math.abs(thisMonthTxStats._sum.amount || 0),
+      completedTasks,
+      nextLevelTasks,
+      progressPercent
+    };
+
+    res.status(200).json({ success: true, data: enrichedWallet });
   } catch (error) {
     next(error);
   }

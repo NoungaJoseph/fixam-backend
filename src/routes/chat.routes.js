@@ -8,6 +8,7 @@ router.use(protect);
 router.get('/conversations', chatController.getConversations);
 router.get('/unread-count', authorize('ADMIN'), chatController.getUnreadCount);
 router.post('/conversations', chatController.createConversation);
+router.get('/check-booking/:providerId', chatController.checkBooking);
 router.post('/support', chatController.openSupportConversation);
 router.get('/:conversationId/active-task', chatController.getActiveTaskForChat);
 router.get('/:conversationId/messages', chatController.getMessages);

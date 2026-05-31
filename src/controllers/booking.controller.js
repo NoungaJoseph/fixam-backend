@@ -125,8 +125,38 @@ const updateBookingStatus = async (req, res, next) => {
   }
 };
 
+const checkBooking = async (req, res, next) => {
+  try {
+    const { providerId } = req.query;
+    if (!providerId) {
+      return res.status(400).json({ success: false, message: 'providerId query parameter is required' });
+    }
+
+    const booking = await prisma.booking.findFirst({
+      where: {
+        clientId: req.user.id,
+        providerId,
+        status: { not: 'CANCELLED' },
+      },
+      select: { id: true, status: true },
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        hasBooking: !!booking,
+        bookingId: booking?.id || null,
+        status: booking?.status || null,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createBooking,
   getMyBookings,
   updateBookingStatus,
+  checkBooking,
 };

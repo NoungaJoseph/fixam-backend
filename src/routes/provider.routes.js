@@ -4,6 +4,7 @@ const providerController = require('../controllers/provider.controller');
 const { protect, authorize } = require('../middlewares/auth.middleware');
 
 router.get('/', providerController.getProviders);
+router.get('/top-of-month', providerController.getProvidersOfTheMonth);
 router.get('/favorites', protect, providerController.getFavoriteProviders);
 router.get('/nearby', providerController.getNearbyProviders);
 router.get('/:providerId', providerController.getProviderById);

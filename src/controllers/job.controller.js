@@ -30,6 +30,7 @@ const createJob = async (req, res, next) => {
         ...validatedData,
         ...budgetRange,
         clientId: req.user.id,
+        status: 'OPEN',
         coinCost: calculateJobCoinCost(budgetRange.budgetMax),
         approvalStatus: 'PENDING_APPROVAL',  // New jobs require admin approval
         scheduledTime: validatedData.scheduledTime ? new Date(validatedData.scheduledTime) : null
@@ -127,7 +128,7 @@ const getAvailableJobsForProvider = async (req, res, next) => {
 
     // Build where clause for filtering
     const whereClause = {
-      status: 'PENDING',
+      status: 'OPEN',
       approvalStatus: 'APPROVED'  // Only show approved jobs
     };
 
@@ -236,7 +237,7 @@ const applyForJob = async (req, res, next) => {
     const providerId = req.user.providerProfile.id;
 
     const job = await prisma.job.findUnique({ where: { id: jobId }, include: { client: true } });
-    if (!job || job.status !== 'PENDING' || job.approvalStatus !== 'APPROVED') {
+    if (!job || job.status !== 'OPEN' || job.approvalStatus !== 'APPROVED') {
       return res.status(400).json({ success: false, message: 'Job not available' });
     }
 
@@ -317,7 +318,7 @@ const selectProviderForJob = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Only the client can choose a provider for this task' });
     }
 
-    if (job.status !== 'PENDING') {
+    if (job.status !== 'OPEN') {
       return res.status(400).json({ success: false, message: 'A provider has already been selected for this task' });
     }
 
@@ -359,7 +360,7 @@ const selectProviderForJob = async (req, res, next) => {
 
       await tx.job.update({
         where: { id: jobId },
-        data: { status: 'ASSIGNED', selectedAssignmentId: assignmentId }
+        data: { status: 'IN_PROGRESS', selectedAssignmentId: assignmentId }
       });
 
       await tx.jobAssignment.updateMany({

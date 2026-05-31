@@ -150,8 +150,60 @@ async function sendMulticastNotification(tokens, payload = {}) {
   }
 }
 
+async function sendBookingNotification(fcmToken, title, body, bookingId) {
+  try {
+    if (!fcmToken) {
+      console.log(`[Push Booking] No FCM token provided for booking ${bookingId}`)
+      return { success: false, reason: 'no_fcm_token' }
+    }
+
+    const message = {
+      token: fcmToken,
+      notification: { title, body },
+      data: {
+        type: 'BOOKING',
+        bookingId: String(bookingId || ''),
+      },
+      android: {
+        priority: 'high',
+        notification: {
+          sound: 'default',
+          priority: 'high',
+          channelId: 'default'
+        }
+      },
+      apns: {
+        payload: {
+          aps: {
+            sound: 'default',
+            badge: 1
+          }
+        }
+      }
+    }
+
+    const response = await admin.messaging().send(message)
+    console.log(`[Push Booking] Sent for booking ${bookingId}: ${response}`)
+    return { success: true, messageId: response }
+  } catch (error) {
+    if (
+      error.code === 'messaging/invalid-registration-token' ||
+      error.code === 'messaging/registration-token-not-registered'
+    ) {
+      console.log(`[Push Booking] Invalid token, clearing from database`)
+      await prisma.user.updateMany({
+        where: { fcmToken },
+        data: { fcmToken: null }
+      }).catch(() => {})
+    }
+    console.error(`[Push Booking] Failed for booking ${bookingId}:`, error.message)
+    return { success: false, reason: error.message }
+  }
+}
+
 module.exports = { 
   sendPushNotification, 
   sendPushToMultiple,
-  sendMulticastNotification
+  sendMulticastNotification,
+  sendBookingNotification
 }

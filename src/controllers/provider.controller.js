@@ -63,6 +63,40 @@ const getProviders = async (req, res, next) => {
   }
 };
 
+const getProvidersOfTheMonth = async (req, res, next) => {
+  try {
+    const providers = await prisma.providerProfile.findMany({
+      where: { 
+        profileMode: 'WORK'
+      },
+      include: { 
+        user: { 
+          select: { 
+            id: true,
+            fullName: true, 
+            avatar: true, 
+            isOnline: true,
+            phone: true
+          } 
+        } 
+      }
+    }).then(async (providers) => {
+      const enriched = await Promise.all(providers.map(async (provider) => {
+        const stats = await calculateProviderStats(provider.id).catch(() => null);
+        return stats ? { ...provider, rating: stats.trustScore, skillRank: stats.skillRank, jobsCompleted: stats.completedJobs, completionRate: stats.completionRate, profileCompleteness: stats.profileCompleteness } : provider;
+      }));
+      return enriched.sort((a, b) => {
+        const scoreA = (a.profileScore || 0) + (a.verification === 'VERIFIED' ? 5 : 0) + (a.user?.isOnline ? 2 : 0) + Number(a.rating || 0) + (a.jobsCompleted || 0);
+        const scoreB = (b.profileScore || 0) + (b.verification === 'VERIFIED' ? 5 : 0) + (b.user?.isOnline ? 2 : 0) + Number(b.rating || 0) + (b.jobsCompleted || 0);
+        return scoreB - scoreA;
+      }).slice(0, 3).map(p => ({ ...p, isProviderOfMonth: true }));
+    });
+    res.status(200).json({ success: true, data: providers });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const getNearbyProviders = async (req, res, next) => {
   try {
     const { category, latitude, longitude, distance = 10 } = req.query;
@@ -234,6 +268,7 @@ module.exports = {
   updateProviderStatus,
   getProviderById,
   getProviders,
+  getProvidersOfTheMonth,
   getNearbyProviders,
   getFavoriteProviders,
   addFavoriteProvider,

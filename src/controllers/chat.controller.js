@@ -78,7 +78,7 @@ const assertCanCreateDirectConversation = async (requester, target) => {
     }) : null;
 
     if (!acceptedAssignment) {
-      const error = new Error('You can only message clients who have accepted your application');
+      const error = new Error('You can only message clients who have selected you for a job');
       error.statusCode = 403;
       throw error;
     }
@@ -86,17 +86,17 @@ const assertCanCreateDirectConversation = async (requester, target) => {
 
   if (requester.role === 'CLIENT' && target.role === 'PROVIDER') {
     const targetProviderId = target.providerProfile?.id;
-    const paidAssignment = targetProviderId ? await prisma.jobAssignment.findFirst({
+    const booking = targetProviderId ? await prisma.booking.findFirst({
       where: {
-        providerId: targetProviderId,
-        refundedAt: null,
-        job: { clientId: requester.id },
+        clientId: requester.id,
+        providerId: target.id,
+        status: { not: 'CANCELLED' },
       },
       select: { id: true },
     }) : null;
 
-    if (!paidAssignment) {
-      const error = new Error("You need to apply to a provider's service before messaging them");
+    if (!booking) {
+      const error = new Error('Book this provider first to start chatting');
       error.statusCode = 403;
       throw error;
     }
@@ -424,6 +424,28 @@ const sendMessage = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Recipient ID or Conversation ID is required' });
     }
 
+    if (req.user.role === 'CLIENT') {
+      const participants = await prisma.conversationParticipant.findMany({
+        where: { conversationId: actualConvId, userId: { not: req.user.id } },
+        include: { user: { include: { providerProfile: true } } }
+      });
+      const providerParticipant = participants.find(p => p.user.role === 'PROVIDER');
+      if (providerParticipant && providerParticipant.user.providerProfile) {
+        const targetProviderId = providerParticipant.user.providerProfile.id;
+        const acceptedAssignment = await prisma.jobAssignment.findFirst({
+          where: {
+            providerId: targetProviderId,
+            status: 'ACCEPTED',
+            job: { clientId: req.user.id },
+          },
+          select: { id: true },
+        });
+        if (!acceptedAssignment) {
+          return res.status(403).json({ success: false, message: "You must book this provider before sending a message." });
+        }
+      }
+    }
+
     const message = await prisma.message.create({
       data: {
         conversationId: actualConvId,
@@ -588,6 +610,26 @@ const getUnreadCount = async (req, res, next) => {
   }
 };
 
+const checkBooking = async (req, res, next) => {
+  try {
+    const { providerId } = req.params;
+    const providerUser = await prisma.user.findFirst({
+      where: { providerProfile: { id: providerId } },
+      include: { providerProfile: true }
+    });
+    if (!providerUser) return res.status(404).json({ success: false, message: 'Provider not found' });
+    
+    try {
+      await assertCanCreateDirectConversation(req.user, providerUser);
+      res.status(200).json({ success: true, canMessage: true });
+    } catch (err) {
+      res.status(200).json({ success: true, canMessage: false, message: err.message });
+    }
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getConversations,
   openSupportConversation,
@@ -596,5 +638,6 @@ module.exports = {
   getMessages,
   sendMessage,
   markAsRead,
-  getUnreadCount
+  getUnreadCount,
+  checkBooking
 };
