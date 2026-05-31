@@ -6,6 +6,7 @@ const { protect, authorize } = require('../middlewares/auth.middleware');
 router.use(protect, authorize('ADMIN'));
 
 router.get('/stats', adminController.getDashboardStats);
+router.get('/analytics', adminController.getAnalytics);
 router.get('/financial-stats', adminController.getFinancialStats);
 router.get('/wallet/stats', adminController.getWalletStats);
 router.get('/broadcasts', adminController.getBroadcasts);

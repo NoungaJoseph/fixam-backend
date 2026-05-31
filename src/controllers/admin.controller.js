@@ -629,6 +629,125 @@ const getWalletStats = async (req, res, next) => {
   }
 };
 
+const getAnalytics = async (req, res, next) => {
+  try {
+    const [
+      userGrowthRows,
+      jobStatsRows,
+      revenueRows,
+      categoryRows,
+      totalJobs,
+      verificationRows,
+      avgRating,
+      topProviders,
+      completedJobs,
+      activeUsers
+    ] = await Promise.all([
+      prisma.$queryRaw`
+        SELECT
+          date_trunc('month', "createdAt")::date AS month,
+          COUNT(*) FILTER (WHERE role = 'CLIENT') AS "newUsers",
+          COUNT(*) FILTER (WHERE role = 'PROVIDER') AS "newProviders"
+        FROM "User"
+        WHERE "createdAt" >= date_trunc('month', CURRENT_DATE) - interval '11 months'
+        GROUP BY date_trunc('month', "createdAt")::date
+        ORDER BY month ASC
+      `,
+      prisma.$queryRaw`
+        SELECT
+          date_trunc('month', "createdAt")::date AS month,
+          COUNT(*) AS posted,
+          COUNT(*) FILTER (WHERE status = 'COMPLETED') AS completed,
+          COUNT(*) FILTER (WHERE status = 'CANCELLED') AS cancelled
+        FROM "Job"
+        WHERE "createdAt" >= date_trunc('month', CURRENT_DATE) - interval '11 months'
+        GROUP BY date_trunc('month', "createdAt")::date
+        ORDER BY month ASC
+      `,
+      prisma.$queryRaw`
+        SELECT
+          date_trunc('month', "createdAt")::date AS month,
+          COALESCE(SUM(NULLIF(regexp_replace("paidPrice", '[^0-9.]', '', 'g'), '')::float), 0) AS "revenueFCFA",
+          COALESCE(SUM(amount), 0) AS "coinsIssued"
+        FROM "Transaction"
+        WHERE type = 'PURCHASE' AND status = 'SUCCESS' AND "createdAt" >= date_trunc('month', CURRENT_DATE) - interval '11 months'
+        GROUP BY date_trunc('month', "createdAt")::date
+        ORDER BY month ASC
+      `,
+      prisma.job.groupBy({ by: ['category'], _count: { category: true }, orderBy: { _count: { category: 'desc' } }, take: 10 }),
+      prisma.job.count(),
+      prisma.providerProfile.groupBy({ by: ['verification'], _count: { verification: true } }),
+      prisma.providerProfile.aggregate({ _avg: { rating: true } }),
+      prisma.providerProfile.findMany({
+        orderBy: [{ profileScore: 'desc' }, { rating: 'desc' }],
+        take: 5,
+        include: { user: { select: { fullName: true, avatar: true } } }
+      }),
+      prisma.job.count({ where: { status: 'COMPLETED' } }),
+      prisma.user.count({ where: { lastSeen: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } } })
+    ]);
+
+    const monthLabel = (value) => new Date(value).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+    const verification = Object.fromEntries(verificationRows.map((row) => [row.verification, toNumber(row._count.verification)]));
+    const providerIds = topProviders.map((provider) => provider.id);
+    const completedAssignments = providerIds.length
+      ? await prisma.jobAssignment.groupBy({
+          by: ['providerId'],
+          where: { providerId: { in: providerIds }, status: 'ACCEPTED', job: { status: 'COMPLETED' } },
+          _count: { providerId: true }
+        })
+      : [];
+    const completedByProvider = new Map(completedAssignments.map((row) => [row.providerId, toNumber(row._count.providerId)]));
+
+    res.status(200).json({
+      success: true,
+      data: {
+        userGrowth: userGrowthRows.map((row) => ({
+          month: monthLabel(row.month),
+          newUsers: toNumber(row.newUsers),
+          newProviders: toNumber(row.newProviders)
+        })),
+        jobStats: jobStatsRows.map((row) => ({
+          month: monthLabel(row.month),
+          posted: toNumber(row.posted),
+          completed: toNumber(row.completed),
+          cancelled: toNumber(row.cancelled)
+        })),
+        revenueStats: revenueRows.map((row) => ({
+          month: monthLabel(row.month),
+          revenueFCFA: toNumber(row.revenueFCFA),
+          coinsIssued: toNumber(row.coinsIssued)
+        })),
+        topCategories: categoryRows.map((row) => ({
+          category: row.category || 'Uncategorized',
+          count: row._count.category,
+          percentage: totalJobs ? Math.round((row._count.category / totalJobs) * 100) : 0
+        })),
+        providerStats: {
+          totalVerified: verification.VERIFIED || 0,
+          totalPending: verification.PENDING || 0,
+          totalUnverified: verification.UNVERIFIED || 0,
+          averageRating: Number((avgRating._avg.rating || 0).toFixed(1)),
+          topRanked: topProviders.map((provider) => ({
+            name: provider.user?.fullName || 'Provider',
+            avatar: provider.user?.avatar || null,
+            rating: provider.rating,
+            skillRank: provider.skillRank,
+            completedJobs: completedByProvider.get(provider.id) || 0
+          }))
+        },
+        platformHealth: {
+          avgJobCompletionRate: totalJobs ? Math.round((completedJobs / totalJobs) * 100) : 0,
+          avgProviderResponseTime: 'N/A',
+          totalActiveUsers: activeUsers
+        }
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const getBroadcasts = async (req, res, next) => {
   try {
     const notifications = await prisma.adminMessage.findMany({
@@ -1086,6 +1205,7 @@ module.exports = {
   getTransactions,
   getFinancialStats,
   getWalletStats,
+  getAnalytics,
   getBroadcasts,
   getReports,
   getSupportConversations,
