@@ -467,6 +467,141 @@ const getFinancialStats = async (req, res, next) => {
   }
 };
 
+const toNumber = (value) => Number(value || 0);
+
+const formatDateKey = (date) => date.toISOString().slice(0, 10);
+
+const getWalletStats = async (req, res, next) => {
+  try {
+    const now = new Date();
+    const dailyStart = new Date(now);
+    dailyStart.setDate(now.getDate() - 29);
+    dailyStart.setHours(0, 0, 0, 0);
+
+    const monthlyStart = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+    const weeklyStart = new Date(now);
+    weeklyStart.setDate(now.getDate() - 7 * 7);
+    weeklyStart.setHours(0, 0, 0, 0);
+
+    const [
+      overviewRows,
+      dailyRows,
+      weeklyRows,
+      monthlyRows,
+      recentTransactions
+    ] = await Promise.all([
+      prisma.$queryRaw`
+        SELECT
+          COALESCE(SUM(CASE WHEN status = 'SUCCESS' THEN NULLIF(regexp_replace("paidPrice", '[^0-9.]', '', 'g'), '')::float ELSE 0 END), 0) AS "totalRevenueFCFA",
+          COALESCE(SUM(CASE WHEN status = 'SUCCESS' THEN amount ELSE 0 END), 0) AS "totalCoinsIssued",
+          COUNT(*) AS "totalTransactions",
+          COUNT(*) FILTER (WHERE status = 'SUCCESS') AS "successfulTransactions",
+          COUNT(*) FILTER (WHERE status = 'PENDING') AS "pendingTransactions",
+          COUNT(*) FILTER (WHERE status = 'FAILED') AS "failedTransactions"
+        FROM "Transaction"
+        WHERE type = 'PURCHASE'
+      `,
+      prisma.$queryRaw`
+        SELECT
+          DATE("createdAt") AS date,
+          COALESCE(SUM(amount), 0) AS "coinsPurchased",
+          COALESCE(SUM(NULLIF(regexp_replace("paidPrice", '[^0-9.]', '', 'g'), '')::float), 0) AS "revenueFCFA",
+          COUNT(*) AS "transactionCount"
+        FROM "Transaction"
+        WHERE type = 'PURCHASE' AND status = 'SUCCESS' AND "createdAt" >= ${dailyStart}
+        GROUP BY DATE("createdAt")
+        ORDER BY date ASC
+      `,
+      prisma.$queryRaw`
+        SELECT
+          date_trunc('week', "createdAt")::date AS week,
+          COALESCE(SUM(amount), 0) AS "coinsPurchased",
+          COALESCE(SUM(NULLIF(regexp_replace("paidPrice", '[^0-9.]', '', 'g'), '')::float), 0) AS "revenueFCFA",
+          COUNT(*) AS "transactionCount"
+        FROM "Transaction"
+        WHERE type = 'PURCHASE' AND status = 'SUCCESS' AND "createdAt" >= ${weeklyStart}
+        GROUP BY date_trunc('week', "createdAt")::date
+        ORDER BY week ASC
+      `,
+      prisma.$queryRaw`
+        SELECT
+          date_trunc('month', "createdAt")::date AS month,
+          COALESCE(SUM(amount), 0) AS "coinsPurchased",
+          COALESCE(SUM(NULLIF(regexp_replace("paidPrice", '[^0-9.]', '', 'g'), '')::float), 0) AS "revenueFCFA",
+          COUNT(*) AS "transactionCount"
+        FROM "Transaction"
+        WHERE type = 'PURCHASE' AND status = 'SUCCESS' AND "createdAt" >= ${monthlyStart}
+        GROUP BY date_trunc('month', "createdAt")::date
+        ORDER BY month ASC
+      `,
+      prisma.transaction.findMany({
+        where: { type: 'PURCHASE' },
+        include: { wallet: { include: { user: { select: { fullName: true, phone: true } } } } },
+        orderBy: { createdAt: 'desc' },
+        take: 20
+      })
+    ]);
+
+    const dailyMap = new Map(dailyRows.map((row) => [formatDateKey(new Date(row.date)), row]));
+    const daily = Array.from({ length: 30 }, (_, index) => {
+      const date = new Date(dailyStart);
+      date.setDate(dailyStart.getDate() + index);
+      const key = formatDateKey(date);
+      const row = dailyMap.get(key);
+      return {
+        date: key,
+        coinsPurchased: toNumber(row?.coinsPurchased),
+        revenueFCFA: toNumber(row?.revenueFCFA),
+        transactionCount: toNumber(row?.transactionCount)
+      };
+    });
+
+    const weekly = weeklyRows.map((row) => ({
+      week: `Week of ${new Date(row.week).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
+      coinsPurchased: toNumber(row.coinsPurchased),
+      revenueFCFA: toNumber(row.revenueFCFA),
+      transactionCount: toNumber(row.transactionCount)
+    }));
+
+    const monthly = monthlyRows.map((row) => ({
+      month: new Date(row.month).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+      coinsPurchased: toNumber(row.coinsPurchased),
+      revenueFCFA: toNumber(row.revenueFCFA),
+      transactionCount: toNumber(row.transactionCount)
+    }));
+
+    const overview = overviewRows[0] || {};
+
+    res.status(200).json({
+      success: true,
+      data: {
+        overview: {
+          totalRevenueFCFA: toNumber(overview.totalRevenueFCFA),
+          totalCoinsIssued: toNumber(overview.totalCoinsIssued),
+          totalTransactions: toNumber(overview.totalTransactions),
+          successfulTransactions: toNumber(overview.successfulTransactions),
+          pendingTransactions: toNumber(overview.pendingTransactions),
+          failedTransactions: toNumber(overview.failedTransactions)
+        },
+        daily,
+        weekly,
+        monthly,
+        recentTransactions: recentTransactions.map((transaction) => ({
+          id: transaction.id,
+          userPhone: transaction.wallet?.user?.phone || transaction.payerPhone || '',
+          userName: transaction.wallet?.user?.fullName || transaction.payerName || 'Unknown user',
+          coins: transaction.amount,
+          amountFCFA: transaction.paidPrice || '0',
+          status: transaction.status,
+          createdAt: transaction.createdAt
+        }))
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const getBroadcasts = async (req, res, next) => {
   try {
     const notifications = await prisma.adminMessage.findMany({
@@ -870,7 +1005,7 @@ const wireCoins = async (req, res, next) => {
           amount: Math.abs(Number(amount)),
           type: Number(amount) >= 0 ? 'PURCHASE' : 'DEDUCTION',
           status: 'SUCCESS',
-          description: reason || 'Admin wired coins manually'
+          description: `Admin wired coins manually: ${reason || 'Manual adjustment'}`
         }
       });
       return trans;
@@ -904,7 +1039,7 @@ const getWireHistory = async (req, res, next) => {
       where: { description: { startsWith: 'Admin wired', mode: 'insensitive' } },
       include: { wallet: { include: { user: { select: { id: true, fullName: true, phone: true } } } } },
       orderBy: { createdAt: 'desc' },
-      take: 50
+      take: 20
     });
     res.status(200).json({ success: true, data: history });
   } catch (error) {
@@ -923,6 +1058,7 @@ module.exports = {
   getPendingTransactions,
   getTransactions,
   getFinancialStats,
+  getWalletStats,
   getBroadcasts,
   getReports,
   getSupportConversations,
