@@ -8,6 +8,7 @@ router.use(protect);
 
 router.get('/', notificationController.getNotifications);
 router.put('/:id/read', notificationController.markAsRead);
+router.patch('/:id/read', notificationController.markAsRead);
 router.put('/:id/archive', notificationController.archiveNotification);
 router.delete('/clear', notificationController.clearNotifications);
 router.post('/test-push', protect, adminOnly, notificationController.testPush);

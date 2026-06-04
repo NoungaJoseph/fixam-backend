@@ -1,5 +1,6 @@
 const prisma = require('../config/prisma');
 const { getIO } = require('../services/socket.service');
+const { sendBookingNotification } = require('../services/notification.service');
 
 const emitBooking = (booking) => {
   try {
@@ -19,13 +20,24 @@ const includeBooking = {
 
 const createBooking = async (req, res, next) => {
   try {
+    console.log('[Booking] Request body:', JSON.stringify(req.body));
+    console.log('[Booking] User:', req.user.id);
+
     const { providerId, taskId, bookingDate, bookingTime, budget, location, notes } = req.body;
-    if (!providerId || !bookingDate || !bookingTime || !budget || !location) {
-      return res.status(400).json({ success: false, message: 'Provider, date, time, budget and location are required.' });
+    if (!providerId || !bookingDate || !bookingTime || budget === undefined || budget === null) {
+      return res.status(400).json({ success: false, message: 'Provider, date, time and budget are required.' });
     }
 
-    const provider = await prisma.user.findFirst({ where: { id: providerId, role: 'PROVIDER' } });
+    const provider = await prisma.user.findFirst({
+      where: { id: providerId, role: 'PROVIDER' },
+      include: { providerProfile: true },
+    });
     if (!provider) return res.status(404).json({ success: false, message: 'Provider not found.' });
+
+    const providerProfile = await prisma.providerProfile.findUnique({ where: { userId: providerId } });
+    if (!providerProfile) {
+      return res.status(404).json({ success: false, message: 'Provider profile not found.' });
+    }
 
     if (taskId) {
       const task = await prisma.job.findUnique({ where: { id: taskId } });
@@ -34,18 +46,49 @@ const createBooking = async (req, res, next) => {
       }
     }
 
-    const booking = await prisma.booking.create({
-      data: {
-        clientId: req.user.id,
-        providerId,
-        taskId: taskId || null,
-        bookingDate: new Date(bookingDate),
-        bookingTime,
-        budget: Number(budget),
-        location,
-        notes,
-      },
-      include: includeBooking,
+    const bookingBudget = Number(budget);
+    if (Number.isNaN(bookingBudget)) {
+      return res.status(400).json({ success: false, message: 'Budget must be a valid number.' });
+    }
+
+    const booking = await prisma.$transaction(async (tx) => {
+      const wallet = await tx.wallet.findUnique({ where: { userId: req.user.id } });
+      if (!wallet || wallet.balance < 1) {
+        const error = new Error('Insufficient coins. You need 1 coin to book a provider.');
+        error.statusCode = 400;
+        throw error;
+      }
+
+      const newBooking = await tx.booking.create({
+        data: {
+          clientId: req.user.id,
+          providerId,
+          taskId: taskId || null,
+          bookingDate: new Date(bookingDate),
+          bookingTime,
+          budget: bookingBudget,
+          location: location || '',
+          notes: notes || '',
+        },
+        include: includeBooking,
+      });
+
+      await tx.wallet.update({
+        where: { userId: req.user.id },
+        data: { balance: { decrement: 1 } },
+      });
+
+      await tx.transaction.create({
+        data: {
+          walletId: wallet.id,
+          amount: 1,
+          type: 'DEDUCTION',
+          status: 'SUCCESS',
+          description: `Booking: ${provider.fullName || provider.phone || 'Provider'}`,
+        },
+      });
+
+      return newBooking;
     });
 
     const notification = await prisma.notification.create({
@@ -61,14 +104,22 @@ const createBooking = async (req, res, next) => {
     try { getIO().to(providerId).emit('notification:new', notification); } catch (_) {}
 
     // Send FCM Push Notification
-    if (provider.fcmToken) {
-      const { sendBookingNotification } = require('../services/notification.service');
-      await sendBookingNotification(provider.fcmToken, notification.title, notification.body, booking.id);
+    try {
+      if (provider.fcmToken) {
+        await sendBookingNotification(provider.fcmToken, notification.title, notification.body, booking.id);
+      }
+    } catch (notifError) {
+      console.error('[Booking] Notification failed:', notifError.message);
     }
 
     res.status(201).json({ success: true, data: booking });
   } catch (error) {
-    next(error);
+    console.error('[Booking] Creation error:', error.message);
+    console.error('[Booking] Full error:', error);
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message,
+    });
   }
 };
 
