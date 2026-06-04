@@ -163,10 +163,11 @@ const getConversations = async (req, res, next) => {
             unreadCount: true,
             user: {
               select: { 
-                id: true, 
-                fullName: true, 
-                avatar: true, 
-                isOnline: true, 
+                id: true,
+                fullName: true,
+                phone: true,
+                avatar: true,
+                isOnline: true,
                 role: true,
                 providerProfile: {
                   select: { profileMode: true }
@@ -630,8 +631,74 @@ const checkBooking = async (req, res, next) => {
   }
 };
 
+const getConversationById = async (req, res, next) => {
+  try {
+    const { conversationId } = req.params;
+
+    const conversation = await prisma.conversation.findFirst({
+      where: {
+        id: conversationId,
+        participants: { some: { userId: req.user.id } },
+      },
+      select: {
+        id: true,
+        lastMessageAt: true,
+        createdAt: true,
+        updatedAt: true,
+        support: { select: { id: true } },
+        participants: {
+          select: {
+            userId: true,
+            unreadCount: true,
+            user: {
+              select: {
+                id: true,
+                fullName: true,
+                avatar: true,
+                isOnline: true,
+                role: true,
+                providerProfile: {
+                  select: {
+                    id: true,
+                    rating: true,
+                    skillRank: true,
+                    verification: true,
+                    profileMode: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!conversation) {
+      return res.status(404).json({ success: false, message: 'Conversation not found' });
+    }
+
+    const formatted = {
+      id: conversation.id,
+      lastMessageAt: conversation.lastMessageAt,
+      createdAt: conversation.createdAt,
+      updatedAt: conversation.updatedAt,
+      isSystem: Boolean(conversation.support),
+      participants: conversation.participants.map((p) => ({
+        userId: p.userId,
+        unreadCount: p.unreadCount,
+        user: p.user,
+      })),
+    };
+
+    res.status(200).json({ success: true, data: formatted });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getConversations,
+  getConversationById,
   openSupportConversation,
   createConversation,
   getActiveTaskForChat,
