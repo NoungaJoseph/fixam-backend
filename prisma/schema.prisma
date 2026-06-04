@@ -186,6 +186,10 @@ model Job {
   assignments     JobAssignment[]
   reviews         Review[]
   bookings        Booking[]
+
+  @@index([clientId, status])
+  @@index([status, approvalStatus])
+  @@index([createdAt])
 }
 
 model JobAssignment {
@@ -201,6 +205,8 @@ model JobAssignment {
   provider        ProviderProfile  @relation(fields: [providerId], references: [id])
 
   @@unique([jobId, providerId])
+  @@index([providerId, status])
+  @@index([jobId, status])
 }
 
 model Wallet {
@@ -235,6 +241,9 @@ model Transaction {
   wallet          Wallet            @relation(fields: [walletId], references: [id])
   payment         Payment?
   coinPurchase    CoinPurchase?
+
+  @@index([walletId, status])
+  @@index([walletId, createdAt])
 }
 
 model Payment {
@@ -368,6 +377,8 @@ model Booking {
   @@index([clientId, createdAt])
   @@index([providerId, createdAt])
   @@index([status, bookingDate])
+  @@index([clientId, status])
+  @@index([providerId, status])
 }
 
 model CallSession {
@@ -392,6 +403,9 @@ model Notification {
   createdAt       DateTime @default(now())
 
   user            User     @relation(fields: [userId], references: [id])
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
 }
 
 model Review {
