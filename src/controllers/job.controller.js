@@ -58,20 +58,40 @@ const createJob = async (req, res, next) => {
 
 const getClientJobs = async (req, res, next) => {
   try {
-    const jobs = await prisma.job.findMany({
-      where: { clientId: req.user.id },
-      include: {
-        _count: { select: { assignments: true } },
-        assignments: {
-          include: {
-            provider: { include: { user: true, documents: true } }
-          },
-          orderBy: { assignedAt: 'desc' }
-        }
-      },
-      orderBy: { createdAt: 'desc' }
+    const page = parseInt(req.query.page) || 1;
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    const skip = (page - 1) * limit;
+
+    const [items, total] = await prisma.$transaction([
+      prisma.job.findMany({
+        where: { clientId: req.user.id },
+        include: {
+          _count: { select: { assignments: true } },
+          assignments: {
+            include: {
+              provider: { include: { user: true, documents: true } }
+            },
+            orderBy: { assignedAt: 'desc' }
+          }
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit
+      }),
+      prisma.job.count({ where: { clientId: req.user.id } })
+    ]);
+
+    res.status(200).json({
+      success: true,
+      data: items,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit),
+        hasMore: page * limit < total
+      }
     });
-    res.status(200).json({ success: true, data: jobs });
   } catch (error) {
     next(error);
   }
@@ -537,14 +557,34 @@ const updateJob = async (req, res, next) => {
 
 const getAllJobs = async (req, res, next) => {
   try {
-    const jobs = await prisma.job.findMany({
-      include: { 
-        client: { select: { id: true, fullName: true, email: true, avatar: true } },
-        assignments: { include: { provider: { include: { user: { select: { id: true, fullName: true, avatar: true } } } } } }
-      },
-      orderBy: { createdAt: 'desc' }
+    const page = parseInt(req.query.page) || 1;
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    const skip = (page - 1) * limit;
+
+    const [items, total] = await prisma.$transaction([
+      prisma.job.findMany({
+        include: { 
+          client: { select: { id: true, fullName: true, email: true, avatar: true } },
+          assignments: { include: { provider: { include: { user: { select: { id: true, fullName: true, avatar: true } } } } } }
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit
+      }),
+      prisma.job.count()
+    ]);
+
+    res.status(200).json({
+      success: true,
+      data: items,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit),
+        hasMore: page * limit < total
+      }
     });
-    res.status(200).json({ success: true, data: jobs });
   } catch (error) {
     next(error);
   }
@@ -553,27 +593,46 @@ const getAllJobs = async (req, res, next) => {
 const getProviderJobs = async (req, res, next) => {
   try {
     const providerId = req.user.providerProfile.id;
-    const assignments = await prisma.jobAssignment.findMany({
-      where: { providerId },
-      include: { 
-        job: { 
-          include: { 
-            client: { select: { id: true, fullName: true, avatar: true, phone: true } },
-            assignments: { select: { id: true, providerId: true, status: true } }
-          } 
-        } 
-      },
-      orderBy: { assignedAt: 'desc' }
-    });
+    const page = parseInt(req.query.page) || 1;
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    const skip = (page - 1) * limit;
 
-    const jobs = assignments.map(a => ({
+    const [assignments, total] = await prisma.$transaction([
+      prisma.jobAssignment.findMany({
+        where: { providerId },
+        include: { 
+          job: { 
+            include: { 
+              client: { select: { id: true, fullName: true, avatar: true, phone: true } },
+              assignments: { select: { id: true, providerId: true, status: true } }
+            } 
+          } 
+        },
+        orderBy: { assignedAt: 'desc' },
+        skip,
+        take: limit
+      }),
+      prisma.jobAssignment.count({ where: { providerId } })
+    ]);
+
+    const items = assignments.map(a => ({
       ...a.job,
       clientId: a.job.clientId || a.job.client?.id,
       assignmentId: a.id,
       assignmentStatus: a.status
     }));
 
-    res.status(200).json({ success: true, data: jobs });
+    res.status(200).json({
+      success: true,
+      data: items,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit),
+        hasMore: page * limit < total
+      }
+    });
   } catch (error) {
     next(error);
   }

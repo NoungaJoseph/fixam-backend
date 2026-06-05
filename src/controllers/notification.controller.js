@@ -2,11 +2,33 @@ const prisma = require('../config/prisma');
 
 const getNotifications = async (req, res, next) => {
   try {
-    const notifications = await prisma.notification.findMany({
-      where: { userId: req.user.id, archivedAt: null },
-      orderBy: { createdAt: 'desc' }
+    const page = parseInt(req.query.page) || 1;
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    const skip = (page - 1) * limit;
+
+    const [items, total] = await prisma.$transaction([
+      prisma.notification.findMany({
+        where: { userId: req.user.id, archivedAt: null },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit
+      }),
+      prisma.notification.count({
+        where: { userId: req.user.id, archivedAt: null }
+      })
+    ]);
+
+    res.status(200).json({
+      success: true,
+      data: items,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit),
+        hasMore: page * limit < total
+      }
     });
-    res.status(200).json({ success: true, data: notifications });
   } catch (error) {
     next(error);
   }

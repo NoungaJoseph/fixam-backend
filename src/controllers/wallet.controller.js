@@ -413,15 +413,37 @@ const requestCoinsWithReceipt = async (req, res, next) => {
 
 const getCoinTransactions = async (req, res, next) => {
   try {
-    const transactions = await prisma.transaction.findMany({
-      where: {
-        wallet: { userId: req.user.id }
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 50
-    });
+    const page = parseInt(req.query.page) || 1;
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    const skip = (page - 1) * limit;
 
-    res.status(200).json({ success: true, data: transactions });
+    const [items, total] = await prisma.$transaction([
+      prisma.transaction.findMany({
+        where: {
+          wallet: { userId: req.user.id }
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit
+      }),
+      prisma.transaction.count({
+        where: {
+          wallet: { userId: req.user.id }
+        }
+      })
+    ]);
+
+    res.status(200).json({
+      success: true,
+      data: items,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit),
+        hasMore: page * limit < total
+      }
+    });
   } catch (error) {
     next(error);
   }
