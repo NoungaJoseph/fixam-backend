@@ -110,6 +110,8 @@ model User {
   isBlocked     Boolean   @default(false)
   blockedReason String?
   blockedAt     DateTime?
+  welcomeCoinsGiven Boolean @default(false)
+  verificationCoinsGiven Boolean @default(false)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

@@ -61,6 +61,39 @@ const getSupportConversations = async (req, res, next) => {
 const { getIO } = require('../services/socket.service');
 const { sendEmail } = require('../services/email.service');
 
+const giveWelcomeCoins = async (userId, coins, reason) => {
+  try {
+    let wallet = await prisma.wallet.findUnique({ where: { userId } });
+    if (!wallet) {
+      wallet = await prisma.wallet.create({ data: { userId, balance: 0 } });
+    }
+    await prisma.wallet.update({
+      where: { id: wallet.id },
+      data: { balance: { increment: coins } }
+    });
+    await prisma.transaction.create({
+      data: {
+        walletId: wallet.id,
+        amount: coins,
+        type: 'PURCHASE',
+        status: 'SUCCESS',
+        description: reason,
+        reference: 'WELCOME_' + userId + '_' + Date.now()
+      }
+    });
+    const { sendPushNotification } = require('../services/notification.service');
+    await sendPushNotification(
+      userId,
+      coins === 1 ? '🎉 Welcome to Fixam!' : '🎁 Identity Verified!',
+      coins === 1 ? 'You received 1 free coin for joining Fixam!' : 'You received 2 free coins for verifying your identity!',
+      { type: 'COINS_ADDED', coins: String(coins) }
+    ).catch(() => {});
+    console.log(`[Welcome] ${coins} coin(s) awarded to ${userId}: ${reason}`);
+  } catch (error) {
+    console.error('[Welcome Coins] Error:', error.message);
+  }
+};
+
 const verifyProvider = async (req, res, next) => {
   try {
     const { providerId, status, reason } = req.body; // VERIFIED, REJECTED
@@ -72,6 +105,15 @@ const verifyProvider = async (req, res, next) => {
     });
 
     const isVerified = status === 'VERIFIED';
+    
+    if (isVerified && !profile.user.verificationCoinsGiven) {
+      await giveWelcomeCoins(profile.user.id, 2, 'Identity verification reward — 2 bonus coins');
+      await prisma.user.update({
+        where: { id: profile.user.id },
+        data: { verificationCoinsGiven: true }
+      });
+    }
+
     const title = isVerified ? 'Verification approved' : 'Verification needs attention';
     const body = isVerified
       ? 'Your Fixam professional profile has been verified. You can now receive and accept more jobs.'

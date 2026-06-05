@@ -149,6 +149,48 @@ const register = async (req, res, next) => {
         }
       }
 
+      // --- Welcome coins logic ---
+      const giveWelcomeCoins = async (userId, coins, reason) => {
+        try {
+          let wallet = await tx.wallet.findUnique({ where: { userId } });
+          if (!wallet) {
+            wallet = await tx.wallet.create({ data: { userId, balance: 0 } });
+          }
+          await tx.wallet.update({
+            where: { id: wallet.id },
+            data: { balance: { increment: coins } }
+          });
+          await tx.transaction.create({
+            data: {
+              walletId: wallet.id,
+              amount: coins,
+              type: 'PURCHASE', // Using PURCHASE as per instructions
+              status: 'SUCCESS',
+              description: reason,
+              reference: 'WELCOME_' + userId + '_' + Date.now()
+            }
+          });
+          const { sendPushNotification } = require('../services/notification.service');
+          await sendPushNotification(
+            userId,
+            coins === 1 ? '🎉 Welcome to Fixam!' : '🎁 Identity Verified!',
+            coins === 1 ? 'You received 1 free coin for joining Fixam!' : 'You received 2 free coins for verifying your identity!',
+            { type: 'COINS_ADDED', coins: String(coins) }
+          ).catch(() => {});
+          console.log(`[Welcome] ${coins} coin(s) awarded to ${userId}: ${reason}`);
+        } catch (error) {
+          console.error('[Welcome Coins] Error:', error.message);
+        }
+      };
+
+      if (!newUser.welcomeCoinsGiven) {
+        await giveWelcomeCoins(newUser.id, 1, 'Welcome bonus — thank you for joining Fixam!');
+        await tx.user.update({
+          where: { id: newUser.id },
+          data: { welcomeCoinsGiven: true }
+        });
+      }
+
       return newUser;
     });
 
