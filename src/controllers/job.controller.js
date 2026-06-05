@@ -20,6 +20,43 @@ const normalizeBudgetRange = (data) => {
   };
 };
 
+const parseEstimatedDays = (job) => {
+  const candidates = [job.duration, job.estimatedDuration, job.description, job.title]
+    .filter(Boolean)
+    .map(String)
+    .join(' ');
+  const match = candidates.match(/\b(\d{1,3})\s*(day|days|jour|jours)\b/i);
+  if (!match) return null;
+  const days = Number(match[1]);
+  return Number.isFinite(days) && days > 0 ? days : null;
+};
+
+const addTimingMetadata = (job) => {
+  if (!job) return job;
+  const status = String(job.status || '').toUpperCase();
+  const acceptedAssignment = job.assignments?.find((assignment) => assignment.status === 'ACCEPTED');
+  const estimatedDays = parseEstimatedDays(job);
+  const startDate = acceptedAssignment?.selectedAt || job.updatedAt || job.createdAt;
+  let expectedCompletionAt = null;
+
+  if (status === 'IN_PROGRESS') {
+    if (estimatedDays && startDate) {
+      const due = new Date(startDate);
+      due.setDate(due.getDate() + estimatedDays);
+      expectedCompletionAt = due.toISOString();
+    } else if (job.scheduledTime) {
+      expectedCompletionAt = new Date(job.scheduledTime).toISOString();
+    }
+  }
+
+  return {
+    ...job,
+    estimatedDurationDays: estimatedDays,
+    expectedCompletionAt,
+    isPastExpectedCompletion: Boolean(expectedCompletionAt && new Date(expectedCompletionAt) < new Date() && status === 'IN_PROGRESS'),
+  };
+};
+
 const createJob = async (req, res, next) => {
   try {
     const validatedData = createJobSchema.parse(req.body);
@@ -83,7 +120,7 @@ const getClientJobs = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      data: items,
+      data: items.map(addTimingMetadata),
       pagination: {
         page,
         limit,
@@ -128,7 +165,7 @@ const getJobById = async (req, res, next) => {
     res.status(200).json({
       success: true,
       data: {
-        ...job,
+        ...addTimingMetadata(job),
         client: {
           ...job.client,
           isVerified: job.client?.providerProfile?.verification === 'VERIFIED',
@@ -229,7 +266,7 @@ const getAvailableJobsForProvider = async (req, res, next) => {
       return 'New client';
     };
 
-    const enrichedJobs = jobs.map(job => ({
+    const enrichedJobs = jobs.map(job => addTimingMetadata({
       ...job,
       clientVerified: job.client?.providerProfile?.verification === 'VERIFIED',
       clientSpending: userSpending.get(job.clientId) || 0,
@@ -615,7 +652,7 @@ const getProviderJobs = async (req, res, next) => {
       prisma.jobAssignment.count({ where: { providerId } })
     ]);
 
-    const items = assignments.map(a => ({
+    const items = assignments.map(a => addTimingMetadata({
       ...a.job,
       clientId: a.job.clientId || a.job.client?.id,
       assignmentId: a.id,

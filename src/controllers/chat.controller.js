@@ -14,6 +14,68 @@ const findDirectConversationId = async (userId, participantId) => {
   return existing?.[0]?.id || null;
 };
 
+const ACTIVE_JOB_STATUSES = ['ASSIGNED', 'IN_PROGRESS'];
+const ACTIVE_BOOKING_STATUSES = ['PENDING', 'ACCEPTED'];
+
+const hasActiveWorkBetweenUsers = async (userId, participantId) => {
+  const activeJob = await prisma.job.findFirst({
+    where: {
+      status: { in: ACTIVE_JOB_STATUSES },
+      assignments: { some: { status: 'ACCEPTED' } },
+      OR: [
+        {
+          clientId: userId,
+          assignments: { some: { provider: { userId: participantId }, status: 'ACCEPTED' } },
+        },
+        {
+          clientId: participantId,
+          assignments: { some: { provider: { userId }, status: 'ACCEPTED' } },
+        },
+      ],
+    },
+    select: { id: true },
+  });
+
+  if (activeJob) return true;
+
+  const activeBooking = await prisma.booking.findFirst({
+    where: {
+      status: { in: ACTIVE_BOOKING_STATUSES },
+      OR: [
+        { clientId: userId, providerId: participantId },
+        { clientId: participantId, providerId: userId },
+      ],
+    },
+    select: { id: true },
+  });
+
+  return Boolean(activeBooking);
+};
+
+const assertCanMessageDirectUser = async (requester, participantId) => {
+  if (requester.role === 'ADMIN') return;
+
+  const target = await prisma.user.findUnique({
+    where: { id: participantId },
+    select: { id: true, role: true },
+  });
+
+  if (!target) {
+    const error = new Error('Participant not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (target.role === 'ADMIN') return;
+
+  const canMessage = await hasActiveWorkBetweenUsers(requester.id, participantId);
+  if (!canMessage) {
+    const error = new Error('You can only message after an active booking or selected task. Completed tasks lock chat until you book again.');
+    error.statusCode = 403;
+    throw error;
+  }
+};
+
 const formatConversationForUser = async (conversationId, userId) => {
   const conversation = await prisma.conversation.findUnique({
     where: { id: conversationId },
@@ -64,38 +126,17 @@ const assertCanCreateDirectConversation = async (requester, target) => {
   if (requester.role === 'ADMIN') return;
 
   if (requester.role === 'PROVIDER' && target.role === 'CLIENT') {
-    const providerId = requester.providerProfile?.id;
-    const acceptedAssignment = providerId ? await prisma.jobAssignment.findFirst({
-      where: {
-        providerId,
-        status: 'ACCEPTED',
-        job: {
-          clientId: target.id,
-          selectedAssignmentId: { not: null },
-        },
-      },
-      select: { id: true },
-    }) : null;
-
-    if (!acceptedAssignment) {
-      const error = new Error('You can only message clients who have selected you for a job');
+    const canMessage = await hasActiveWorkBetweenUsers(requester.id, target.id);
+    if (!canMessage) {
+      const error = new Error('You can only message clients after an active booking or selected task');
       error.statusCode = 403;
       throw error;
     }
   }
 
   if (requester.role === 'CLIENT' && target.role === 'PROVIDER') {
-    const targetProviderId = target.providerProfile?.id;
-    const booking = targetProviderId ? await prisma.booking.findFirst({
-      where: {
-        clientId: requester.id,
-        providerId: target.id,
-        status: { not: 'CANCELLED' },
-      },
-      select: { id: true },
-    }) : null;
-
-    if (!booking) {
+    const canMessage = await hasActiveWorkBetweenUsers(requester.id, target.id);
+    if (!canMessage) {
       const error = new Error('Book this provider first to start chatting');
       error.statusCode = 403;
       throw error;
@@ -211,7 +252,7 @@ const getConversations = async (req, res, next) => {
 const findActiveTaskBetweenUsers = async (currentUserId, otherUserId) => {
   return prisma.job.findFirst({
     where: {
-      status: { in: ['ASSIGNED', 'IN_PROGRESS'] },
+      status: { in: ACTIVE_JOB_STATUSES },
       OR: [
         {
           clientId: currentUserId,
@@ -425,25 +466,18 @@ const sendMessage = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Recipient ID or Conversation ID is required' });
     }
 
-    if (req.user.role === 'CLIENT') {
-      const participants = await prisma.conversationParticipant.findMany({
+    const supportConversation = await prisma.supportConversation.findUnique({
+      where: { conversationId: actualConvId },
+      select: { id: true },
+    });
+
+    if (!supportConversation) {
+      const otherParticipant = await prisma.conversationParticipant.findFirst({
         where: { conversationId: actualConvId, userId: { not: req.user.id } },
-        include: { user: { include: { providerProfile: true } } }
+        select: { userId: true },
       });
-      const providerParticipant = participants.find(p => p.user.role === 'PROVIDER');
-      if (providerParticipant && providerParticipant.user.providerProfile) {
-        const targetProviderId = providerParticipant.user.providerProfile.id;
-        const acceptedAssignment = await prisma.jobAssignment.findFirst({
-          where: {
-            providerId: targetProviderId,
-            status: 'ACCEPTED',
-            job: { clientId: req.user.id },
-          },
-          select: { id: true },
-        });
-        if (!acceptedAssignment) {
-          return res.status(403).json({ success: false, message: "You must book this provider before sending a message." });
-        }
+      if (otherParticipant?.userId) {
+        await assertCanMessageDirectUser(req.user, otherParticipant.userId);
       }
     }
 

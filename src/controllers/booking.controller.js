@@ -187,7 +187,7 @@ const checkBooking = async (req, res, next) => {
       where: {
         clientId: req.user.id,
         providerId,
-        status: { not: 'CANCELLED' },
+        status: { in: ['PENDING', 'ACCEPTED'] },
       },
       select: { id: true, status: true },
     });
