@@ -60,6 +60,24 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
+// Slow Request Logging
+app.use((req, res, next) => {
+  const start = Date.now()
+  res.on('finish', () => {
+    const duration = Date.now() - start
+    if (duration > 2000) {
+      console.warn('[SLOW REQUEST]', {
+        method: req.method,
+        path: req.path,
+        duration: duration + 'ms',
+        status: res.statusCode,
+        timestamp: new Date().toISOString()
+      })
+    }
+  })
+  next()
+})
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
