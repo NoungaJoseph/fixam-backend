@@ -5,7 +5,7 @@ const uploadProfileImage = async (req, res, next) => {
     if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
     
     const url = await uploadFile(req.file, 'profile-images', { requireCloud: true });
-    res.status(200).json({ success: true, url });
+    res.status(200).json({ success: true, url, path: req.file.originalname });
   } catch (error) {
     next(error);
   }
