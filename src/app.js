@@ -23,19 +23,19 @@ const Sentry = require('@sentry/node');
 const { nodeProfilingIntegration } = require('@sentry/profiling-node');
 
 Sentry.init({
-  dsn: 'https://abc@o123.ingest.sentry.io/456',
+  dsn: process.env.SENTRY_DSN || '',
   integrations: [
+    Sentry.expressIntegration(),
     nodeProfilingIntegration(),
   ],
-  tracesSampleRate: 1.0,
-  profilesSampleRate: 1.0,
+  tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.2 : 1.0,
+  profilesSampleRate: process.env.NODE_ENV === 'production' ? 0.2 : 1.0,
+  enabled: !!process.env.SENTRY_DSN,
 });
 
 const app = express();
 app.set('trust proxy', 1);
 
-app.use(Sentry.Handlers.requestHandler());
-app.use(Sentry.Handlers.tracingHandler());
 
 // Security Middlewares
 app.use(helmet({
@@ -105,7 +105,8 @@ app.get('/api/health', async (req, res) => {
 app.get('/health', (req, res) => res.redirect('/api/health'));
 
 // Error Handling Middleware
-app.use(Sentry.Handlers.errorHandler());
+// Sentry v8+ error handler must be registered before custom error handler
+Sentry.setupExpressErrorHandler(app);
 app.use(errorHandler);
 
 module.exports = app;
