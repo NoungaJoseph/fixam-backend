@@ -19,9 +19,23 @@ const notificationRoutes = require('./routes/notification.routes');
 const reviewRoutes = require('./routes/review.routes');
 const paymentRoutes = require('./routes/payment.routes');
 const { errorHandler } = require('./middlewares/error.middleware');
+const Sentry = require('@sentry/node');
+const { nodeProfilingIntegration } = require('@sentry/profiling-node');
+
+Sentry.init({
+  dsn: 'https://abc@o123.ingest.sentry.io/456',
+  integrations: [
+    nodeProfilingIntegration(),
+  ],
+  tracesSampleRate: 1.0,
+  profilesSampleRate: 1.0,
+});
 
 const app = express();
 app.set('trust proxy', 1);
+
+app.use(Sentry.Handlers.requestHandler());
+app.use(Sentry.Handlers.tracingHandler());
 
 // Security Middlewares
 app.use(helmet({
@@ -91,6 +105,7 @@ app.get('/api/health', async (req, res) => {
 app.get('/health', (req, res) => res.redirect('/api/health'));
 
 // Error Handling Middleware
+app.use(Sentry.Handlers.errorHandler());
 app.use(errorHandler);
 
 module.exports = app;
