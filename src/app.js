@@ -18,6 +18,7 @@ const adminRoutes = require('./routes/admin.routes');
 const notificationRoutes = require('./routes/notification.routes');
 const reviewRoutes = require('./routes/review.routes');
 const paymentRoutes = require('./routes/payment.routes');
+const systemRoutes = require('./routes/system.routes');
 const { errorHandler } = require('./middlewares/error.middleware');
 const Sentry = require('@sentry/node');
 const { nodeProfilingIntegration } = require('@sentry/profiling-node');
@@ -74,6 +75,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/system', systemRoutes);
 
 
 // Health Check
