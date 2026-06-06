@@ -540,8 +540,6 @@ const getFinancialStats = async (req, res, next) => {
   }
 };
 
-const toNumber = (value) => Number(value || 0);
-
 const formatDateKey = (date) => date.toISOString().slice(0, 10);
 
 const getWalletStats = async (req, res, next) => {
