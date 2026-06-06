@@ -61,6 +61,8 @@ const getSupportConversations = async (req, res, next) => {
 const { getIO } = require('../services/socket.service');
 const { sendEmail } = require('../services/email.service');
 
+const toNumber = (val) => Number(val) || 0;
+
 const giveWelcomeCoins = async (userId, coins, reason) => {
   try {
     let wallet = await prisma.wallet.findUnique({ where: { userId } });
@@ -337,7 +339,9 @@ const getDashboardStats = async (req, res, next) => {
         jobs: totalJobs,
         completed: completedJobs,
         reports: totalReports,
-        revenue
+        revenue,
+        monthlyRevenue: monthlyCoinSales.length > 0 ? toNumber(monthlyCoinSales[monthlyCoinSales.length - 1].revenueFCFA) : 0,
+        monthlyCoins: monthlyCoinSales.length > 0 ? toNumber(monthlyCoinSales[monthlyCoinSales.length - 1].coinsPurchased) : 0
       }
     });
   } catch (error) {
