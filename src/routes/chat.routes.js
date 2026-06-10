@@ -7,7 +7,7 @@ router.use(protect);
 
 router.get('/conversations', chatController.getConversations);
 router.get('/conversations/:conversationId', chatController.getConversationById);
-router.get('/unread-count', authorize('ADMIN'), chatController.getUnreadCount);
+router.get('/unread-count', chatController.getUnreadCount);
 router.post('/conversations', chatController.createConversation);
 router.get('/check-booking/:providerId', chatController.checkBooking);
 router.post('/support', chatController.openSupportConversation);

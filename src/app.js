@@ -3,7 +3,9 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
-const rateLimit = require('express-rate-limit');
+const hpp = require('hpp');
+const { apiLimiter } = require('./middlewares/rateLimit.middleware');
+const sanitizeMiddleware = require('./middlewares/sanitize.middleware');
 
 const authRoutes = require('./routes/auth.routes');
 const userRoutes = require('./routes/user.routes');
@@ -55,11 +57,13 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 // Rate Limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 1000 // limit each IP to 1000 requests per windowMs
-});
-app.use('/api/', limiter);
+app.use('/api/', apiLimiter);
+
+// Input Sanitization
+app.use(sanitizeMiddleware);
+
+// HTTP Parameter Pollution protection
+app.use(hpp());
 
 // Slow Request Logging
 app.use((req, res, next) => {
