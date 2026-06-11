@@ -50,15 +50,14 @@ async function startServer() {
 
 startServer();
 
-setTimeout(async () => {
-  try {
-    const { transporter } = require('./services/email.service');
-    await transporter.verify();
-    console.log('[Email] SMTP connection verified ✅');
-  } catch (error) {
-    console.error('[Email] SMTP connection failed:', error.message);
-    console.error('[Email] Check EMAIL_PASS in Railway');
-  }
+setTimeout(() => {
+  console.log('--- RAILWAY ENV DEBUG ---');
+  console.log('EMAIL_HOST:', process.env.EMAIL_HOST);
+  console.log('EMAIL_PORT:', process.env.EMAIL_PORT);
+  console.log('EMAIL_USER:', process.env.EMAIL_USER);
+  console.log('EMAIL_PASS exists:', !!process.env.EMAIL_PASS);
+  console.log('RESEND_API_KEY exists:', !!process.env.RESEND_API_KEY);
+  console.log('-------------------------');
 }, 3000); // Wait 3 seconds after startup
 
 process.on('unhandledRejection', (err) => {
