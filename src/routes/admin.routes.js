@@ -26,6 +26,8 @@ router.get('/wallet/wire-history', adminController.getWireHistory);
 router.post('/verify-provider', adminController.verifyProvider);
 router.post('/approve-transaction', adminController.approveTransaction);
 router.post('/messages', adminController.sendAdminMessage);
+router.post('/broadcast-email', adminController.sendBroadcastEmail);
+router.post('/security-alert', adminController.sendSecurityAlert);
 router.put('/users/:id/status', adminController.updateUserStatus);
 router.put('/reports/:id/status', adminController.updateReportStatus);
 router.put('/feedback/:id/status', adminController.updateFeedbackStatus);

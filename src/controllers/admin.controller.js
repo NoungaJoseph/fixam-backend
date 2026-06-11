@@ -59,7 +59,7 @@ const getSupportConversations = async (req, res, next) => {
   }
 };
 const { getIO } = require('../services/socket.service');
-const { sendEmail } = require('../services/email.service');
+const { sendEmail, sendMarketingBroadcast, sendSecurityNotice } = require('../services/email.service');
 
 const toNumber = (val) => Number(val) || 0;
 
@@ -1237,6 +1237,68 @@ const getWireHistory = async (req, res, next) => {
   }
 };
 
+const sendBroadcastEmail = async (req, res, next) => {
+  try {
+    const { subject, content, recipientRole } = req.body;
+    if (!subject || !content) {
+      return res.status(400).json({ success: false, message: 'Subject and content are required' });
+    }
+
+    const query = { where: { email: { not: null } }, select: { email: true } };
+    if (recipientRole) {
+      query.where.role = recipientRole;
+    }
+
+    const users = await prisma.user.findMany(query);
+    const emails = users.map(u => u.email).filter(e => e);
+
+    if (emails.length === 0) {
+      return res.status(400).json({ success: false, message: 'No users with emails found' });
+    }
+
+    const batchSize = 50;
+    for (let i = 0; i < emails.length; i += batchSize) {
+      const batch = emails.slice(i, i + batchSize);
+      await sendMarketingBroadcast(batch, subject, content).catch(e => console.error('[BroadcastError]', e.message));
+    }
+
+    res.status(200).json({ success: true, message: `Broadcast sent to ${emails.length} users` });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const sendSecurityAlert = async (req, res, next) => {
+  try {
+    const { issueDetails, recipientRole } = req.body;
+    if (!issueDetails) {
+      return res.status(400).json({ success: false, message: 'Issue details are required' });
+    }
+
+    const query = { where: { email: { not: null } }, select: { email: true } };
+    if (recipientRole) {
+      query.where.role = recipientRole;
+    }
+
+    const users = await prisma.user.findMany(query);
+    const emails = users.map(u => u.email).filter(e => e);
+
+    if (emails.length === 0) {
+      return res.status(400).json({ success: false, message: 'No users with emails found' });
+    }
+
+    const batchSize = 50;
+    for (let i = 0; i < emails.length; i += batchSize) {
+      const batch = emails.slice(i, i + batchSize);
+      await sendSecurityNotice(batch, issueDetails).catch(e => console.error('[SecurityAlertError]', e.message));
+    }
+
+    res.status(200).json({ success: true, message: `Security alert sent to ${emails.length} users` });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   verifyProvider,
   approveTransaction,
@@ -1264,5 +1326,7 @@ module.exports = {
   getSettings,
   updateSettings,
   wireCoins,
-  getWireHistory
+  getWireHistory,
+  sendBroadcastEmail,
+  sendSecurityAlert
 };

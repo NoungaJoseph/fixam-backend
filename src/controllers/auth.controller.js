@@ -1,7 +1,7 @@
 const prisma = require('../config/prisma');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
-const { sendOTP } = require('../services/email.service');
+const { sendOTP, sendWelcomeEmail, sendSuspiciousLoginAlert } = require('../services/email.service');
 const { registerSchema } = require('../validators/auth.validator');
 const twilio = require('twilio');
 const { sendPushNotification } = require('../services/notification.service');
@@ -192,6 +192,11 @@ const register = async (req, res, next) => {
       where: { id: user.id },
       include: { wallet: true, providerProfile: true }
     });
+
+    if (freshUser.email) {
+      sendWelcomeEmail(freshUser.email, freshUser.fullName).catch(e => console.error('[WelcomeEmail] error:', e.message));
+    }
+
     const token = generateToken(freshUser.id, freshUser.role);
     debugLog('User registered successfully:', freshUser.id);
     res.status(201).json({ success: true, token, user: freshUser });
@@ -258,6 +263,23 @@ const login = async (req, res, next) => {
     }
 
     const token = generateToken(user.id, user.role);
+
+    // IP Tracking & Alert Logic
+    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    if (clientIp && user.lastIpAddress && user.lastIpAddress !== clientIp && user.email) {
+      sendSuspiciousLoginAlert(user.email, {
+        ip: clientIp,
+        time: new Date().toLocaleString()
+      }).catch(err => console.error('[LoginAlert] failed:', err.message));
+    }
+
+    if (clientIp && user.lastIpAddress !== clientIp) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { lastIpAddress: clientIp }
+      });
+    }
+
     res.status(200).json({ success: true, token, user });
   } catch (error) {
     console.error('Login error details:', error);
