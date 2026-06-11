@@ -1,26 +1,35 @@
 const nodemailer = require('nodemailer');
 
 const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST,
-  port: parseInt(process.env.EMAIL_PORT, 10),
-  secure: process.env.EMAIL_PORT == '465', // dynamically set secure based on port
-  family: 4, // force IPv4 to fix ENETUNREACH on Railway
+  host: process.env.EMAIL_HOST || 'smtp.resend.com',
+  port: parseInt(process.env.EMAIL_PORT) || 465,
+  secure: true,  // MUST be true for port 465
   auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
+    user: process.env.EMAIL_USER || 'resend',
+    pass: process.env.EMAIL_PASS
   },
+  connectionTimeout: 8000,   // 8 seconds max to connect
+  greetingTimeout: 8000,     // 8 seconds max for greeting
+  socketTimeout: 10000       // 10 seconds max total
 });
 
 const sendEmail = async (options) => {
   const mailOptions = {
-    from: process.env.EMAIL_FROM,
+    from: process.env.EMAIL_FROM || 'Fixam <support@fixam.net>',
     to: options.email,
     subject: options.subject,
     text: options.message,
     html: options.html,
   };
 
-  await transporter.sendMail(mailOptions);
+  return Promise.race([
+    transporter.sendMail(mailOptions),
+    new Promise((_, reject) =>
+      setTimeout(() => 
+        reject(new Error('Email sending timed out')), 
+      12000)  // 12 seconds max — then give up
+    )
+  ]);
 };
 
 const sendOTP = async (email, otp) => {
@@ -46,6 +55,7 @@ const sendOTP = async (email, otp) => {
 };
 
 module.exports = {
+  transporter,
   sendOTP,
   sendEmail
 };

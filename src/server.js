@@ -50,6 +50,17 @@ async function startServer() {
 
 startServer();
 
+setTimeout(async () => {
+  try {
+    const { transporter } = require('./services/email.service');
+    await transporter.verify();
+    console.log('[Email] SMTP connection verified ✅');
+  } catch (error) {
+    console.error('[Email] SMTP connection failed:', error.message);
+    console.error('[Email] Check EMAIL_PASS in Railway');
+  }
+}, 3000); // Wait 3 seconds after startup
+
 process.on('unhandledRejection', (err) => {
   console.error('Unhandled Rejection:', err);
 });

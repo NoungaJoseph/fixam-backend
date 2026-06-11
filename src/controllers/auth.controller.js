@@ -495,7 +495,6 @@ const forgotPassword = async (req, res, next) => {
     
     const user = await prisma.user.findFirst({ where: { email: email.trim().toLowerCase() } });
     if (!user) {
-      // Even if user not found, we return success to prevent email enumeration attacks
       return res.status(200).json({ success: true, message: 'If an account exists, an OTP has been sent to that email' });
     }
 
@@ -504,12 +503,22 @@ const forgotPassword = async (req, res, next) => {
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    otpCache.set(email, { otp, expires: Date.now() + 600000 }); // 10 minutes
+    otpCache.set(email, { otp, expires: Date.now() + 600000 });
 
-    await sendOTP(email, otp);
-    return res.status(200).json({ success: true, message: 'If an account exists, an OTP has been sent to that email' });
+    sendOTP(email, otp).catch(err => {
+      console.error('[ForgotPassword] Email failed:', err.message);
+    });
+
+    return res.json({
+      success: true,
+      message: 'If an account exists with this information, you will receive a reset code shortly.'
+    });
   } catch (error) {
-    next(error);
+    console.error('[ForgotPassword] Error:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Something went wrong. Please try again.'
+    });
   }
 };
 
