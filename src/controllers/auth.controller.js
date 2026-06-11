@@ -24,7 +24,7 @@ const sendSMSOTP = async (phoneNumber, otp) => {
     const formattedPhone = formatPhone(phoneNumber);
     await twilioClient.messages.create({
       body: `Your Fixam verification code is: ${otp}. Valid for 10 minutes. Do not share this code.`,
-      from: process.env.TWILIO_PHONE_NUMBER,
+      from: process.env.TWILIO_PHONE_NUMBER.trim(),
       to: formattedPhone
     });
     console.log(`[SMS] OTP sent to ${formattedPhone}`);

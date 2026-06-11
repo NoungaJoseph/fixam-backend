@@ -2,8 +2,9 @@ const nodemailer = require('nodemailer');
 
 const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
-  port: process.env.EMAIL_PORT,
-  secure: false, // true for 465, false for other ports
+  port: parseInt(process.env.EMAIL_PORT, 10),
+  secure: process.env.EMAIL_PORT == '465', // dynamically set secure based on port
+  family: 4, // force IPv4 to fix ENETUNREACH on Railway
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
