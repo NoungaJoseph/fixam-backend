@@ -45,7 +45,24 @@ app.set('trust proxy', 1);
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' }
 }));
-app.use(cors());
+
+const allowedOrigins = [
+  process.env.DASHBOARD_URL,
+  process.env.WEBSITE_URL,
+  'http://localhost:3000',
+  'http://localhost:5173'
+].filter(Boolean);
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  }
+}));
 
 // Raw body MUST come before express.json() — required for Kora webhook HMAC verification
 app.use('/api/payments/webhook/kora', express.raw({ type: 'application/json' }));

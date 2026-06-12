@@ -206,18 +206,18 @@ const login = async (req, res, next) => {
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
-    if (!user.isEmailVerified && user.email) {
-      const otp = Math.floor(100000 + Math.random() * 900000).toString();
-      otpCache.set(user.email, { otp, expires: Date.now() + 600000, type: 'registration' });
-      await sendOTP(user.email, otp, user.preferredLanguage);
-      return res.status(403).json({ success: false, requiresEmailVerification: true, email: user.email, message: 'Please verify your email to continue.' });
-    }
-
     const isMatch = await bcrypt.compare(password, user.password);
     debugLog('Password match result:', isMatch);
     
     if (!isMatch) {
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    }
+
+    if (!user.isEmailVerified && user.email) {
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      otpCache.set(user.email, { otp, expires: Date.now() + 600000, type: 'registration' });
+      await sendOTP(user.email, otp, user.preferredLanguage);
+      return res.status(403).json({ success: false, requiresEmailVerification: true, email: user.email, message: 'Please verify your email to continue.' });
     }
 
     if (user.twoFactorEnabled) {
