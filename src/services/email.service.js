@@ -83,7 +83,10 @@ const sendSuspiciousLoginAlert = async (email, details, language = 'en') => {
 const sendMarketingBroadcast = async (emails, subject, content) => {
   // emails can be an array of strings
   const html = `
-    <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 10px; max-width: 600px;">
+    <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 10px; max-width: 600px; margin: 0 auto;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <img src="\${process.env.LOGO_URL || 'https://via.placeholder.com/150x50?text=Fixam'}" alt="Fixam Logo" style="max-width: 150px; height: auto;" />
+      </div>
       <h2 style="color: #1E67D1;">Fixam Update</h2>
       <div style="font-size: 16px; line-height: 1.5; color: #333;">
         ${content}

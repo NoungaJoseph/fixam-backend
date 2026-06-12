@@ -68,111 +68,26 @@ const register = async (req, res, next) => {
     const generatedReferralCode = `FIXAM-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Prepare Date of Birth
     let dob = null;
     if (providerProfile?.birthDay && providerProfile?.birthMonth && providerProfile?.birthYear) {
       const months = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
       dob = new Date(parseInt(providerProfile.birthYear), months[providerProfile.birthMonth] || 0, parseInt(providerProfile.birthDay));
     }
 
-    const user = await prisma.$transaction(async (tx) => {
-      const newUser = await tx.user.create({
-        data: {
-          fullName,
-          email,
-          phone,
-          password: hashedPassword,
-          dob,
-          role: role || 'CLIENT',
-          referralCode: generatedReferralCode,
-          preferredLanguage: language || 'en',
-          wallet: { create: { balance: 0 } },
-          ...(role === 'PROVIDER' ? { 
-            providerProfile: { 
-              create: {
-                skills: providerProfile?.skills || [],
-                bio: providerProfile?.bio || '',
-                rate: parseFloat(providerProfile?.rate) || 0,
-                serviceArea: providerProfile?.serviceArea || '',
-                experienceLevel: providerProfile?.experienceLevel || '',
-                availability: providerProfile?.availability || {},
-                birthDay: String(providerProfile?.birthDay || ''),
-                birthMonth: String(providerProfile?.birthMonth || ''),
-                birthYear: String(providerProfile?.birthYear || ''),
-                age: String(providerProfile?.age || '')
-              } 
-            } 
-          } : {})
-        },
-        include: { wallet: true, providerProfile: true }
-      });
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    
+    // Cache the entire registration payload
+    const payload = {
+      fullName, email, phone, password: hashedPassword, dob, role: role || 'CLIENT', 
+      referralCode: generatedReferralCode, language: language || 'en', providerProfile,
+      originalReferral: referralCode
+    };
 
-      if (referralCode) {
-        const referrer = await tx.user.findFirst({
-           where: { referralCode: referralCode.trim().toUpperCase() },
-           include: { wallet: true }
-        });
+    otpCache.set(email, { otp, expires: Date.now() + 600000, type: 'registration', payload });
+    await sendOTP(email, otp, language || 'en');
 
-        if (referrer && referrer.id !== newUser.id) {
-          await tx.wallet.update({
-            where: { userId: referrer.id },
-            data: { balance: { increment: 1 } }
-          });
-          await tx.wallet.update({
-            where: { userId: newUser.id },
-            data: { balance: { increment: 3 } }
-          });
-          await tx.transaction.createMany({
-            data: [
-              {
-                walletId: referrer.wallet.id,
-                amount: 1,
-                type: 'REFUND',
-                status: 'SUCCESS',
-                description: `Referral bonus for inviting ${fullName || phone}`
-              },
-              {
-                walletId: newUser.wallet.id,
-                amount: 3,
-                type: 'REFUND',
-                status: 'SUCCESS',
-                description: 'Welcome referral bonus'
-              }
-            ]
-          });
-          await tx.notification.create({
-            data: {
-              userId: referrer.id,
-              title: 'Referral bonus earned',
-              body: 'You earned 1 coin because someone joined with your referral code.',
-              data: { type: 'TRANSACTION', status: 'SUCCESS' }
-            }
-          });
-        }
-      }
-
-      // --- Welcome coins logic will run after transaction ---
-
-      return newUser;
-    });
-
-    // Welcome coins logic removed from here, moved to verifyEmailOTP
-
-    const freshUser = await prisma.user.findUnique({
-      where: { id: user.id },
-      include: { wallet: true, providerProfile: true }
-    });
-
-    if (freshUser.email) {
-      sendWelcomeEmail(freshUser.email, freshUser.fullName, freshUser.preferredLanguage).catch(e => console.error('[WelcomeEmail] error:', e.message));
-      
-      const otp = Math.floor(100000 + Math.random() * 900000).toString();
-      otpCache.set(freshUser.email, { otp, expires: Date.now() + 600000, type: 'registration' });
-      await sendOTP(freshUser.email, otp, freshUser.preferredLanguage);
-    }
-
-    debugLog('User registered successfully, pending email verification:', freshUser.id);
-    res.status(201).json({ success: true, requiresEmailVerification: true, email: freshUser.email, user: freshUser });
+    debugLog('User registration payload cached, pending email verification for:', email);
+    res.status(201).json({ success: true, requiresEmailVerification: true, email });
   } catch (error) {
     console.error('Registration error details:', error);
     next(error);
@@ -597,15 +512,102 @@ const verifyEmailOTP = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Email and OTP are required' });
     }
 
-    const cached = otpCache.get(email);
-    if (!cached || cached.otp !== otp || Date.now() > cached.expires) {
+    const cached = otpCache.get(email.trim().toLowerCase());
+    if (!cached || cached.otp !== otp.trim() || Date.now() > cached.expires) {
       return res.status(401).json({ success: false, message: 'Invalid or expired OTP' });
     }
 
-    otpCache.delete(email);
+    if (cached.type === 'registration' && cached.payload) {
+      // Execute the database creation since OTP is valid
+      const { fullName, email: plEmail, phone, password, dob, role, referralCode, language, providerProfile, originalReferral } = cached.payload;
 
+      const newUser = await prisma.$transaction(async (tx) => {
+        const user = await tx.user.create({
+          data: {
+            fullName, email: plEmail, phone, password, dob, role, referralCode,
+            preferredLanguage: language, isEmailVerified: true, welcomeCoinsGiven: true,
+            wallet: { create: { balance: 1 } },
+            ...(role === 'PROVIDER' ? {
+              providerProfile: {
+                create: {
+                  skills: providerProfile?.skills || [],
+                  bio: providerProfile?.bio || '',
+                  rate: parseFloat(providerProfile?.rate) || 0,
+                  serviceArea: providerProfile?.serviceArea || '',
+                  experienceLevel: providerProfile?.experienceLevel || '',
+                  availability: providerProfile?.availability || {},
+                  birthDay: String(providerProfile?.birthDay || ''),
+                  birthMonth: String(providerProfile?.birthMonth || ''),
+                  birthYear: String(providerProfile?.birthYear || ''),
+                  age: String(providerProfile?.age || '')
+                }
+              }
+            } : {})
+          },
+          include: { wallet: true, providerProfile: true }
+        });
+
+        await tx.transaction.create({
+          data: {
+            walletId: user.wallet.id, amount: 1, type: 'PURCHASE', status: 'SUCCESS',
+            description: 'Welcome bonus — thank you for joining Fixam!',
+            reference: 'WELCOME_' + user.id + '_' + Date.now()
+          }
+        });
+
+        if (originalReferral) {
+          const referrer = await tx.user.findFirst({
+            where: { referralCode: originalReferral.trim().toUpperCase() },
+            include: { wallet: true }
+          });
+
+          if (referrer && referrer.id !== user.id) {
+            await tx.wallet.update({
+              where: { userId: referrer.id },
+              data: { balance: { increment: 1 } }
+            });
+            await tx.wallet.update({
+              where: { userId: user.id },
+              data: { balance: { increment: 3 } }
+            });
+            await tx.transaction.createMany({
+              data: [
+                {
+                  walletId: referrer.wallet.id, amount: 1, type: 'REFUND', status: 'SUCCESS',
+                  description: `Referral bonus for inviting ${fullName || phone}`
+                },
+                {
+                  walletId: user.wallet.id, amount: 3, type: 'REFUND', status: 'SUCCESS',
+                  description: 'Welcome referral bonus'
+                }
+              ]
+            });
+            await tx.notification.create({
+              data: {
+                userId: referrer.id, title: 'Referral bonus earned',
+                body: 'You earned 1 coin because someone joined with your referral code.',
+                data: { type: 'TRANSACTION', status: 'SUCCESS' }
+              }
+            });
+          }
+        }
+        return user;
+      });
+
+      otpCache.delete(email.trim().toLowerCase());
+      
+      sendWelcomeEmail(newUser.email, newUser.fullName, newUser.preferredLanguage).catch(e => console.error('[WelcomeEmail] error:', e.message));
+
+      sendPushNotification(newUser.id, '🎉 Welcome to Fixam!', 'You received 1 free coin for joining Fixam!', { type: 'COINS_ADDED', coins: '1' }).catch(() => {});
+
+      const token = generateToken(newUser.id, newUser.role);
+      return res.status(200).json({ success: true, message: 'Email verified and account created successfully', user: newUser, token });
+    }
+
+    // Handle standard verification
+    otpCache.delete(email.trim().toLowerCase());
     const user = await prisma.user.findUnique({
-      where: { email },
+      where: { email: email.trim().toLowerCase() },
       include: { wallet: true, providerProfile: true }
     });
 
@@ -618,46 +620,8 @@ const verifyEmailOTP = async (req, res, next) => {
       data: { isEmailVerified: true }
     });
 
-    // Give welcome coins upon successful email verification
-    try {
-      const freshWallet = await prisma.wallet.findUnique({ where: { userId: user.id } });
-      if (freshWallet && !user.welcomeCoinsGiven) {
-        await prisma.wallet.update({
-          where: { id: freshWallet.id },
-          data: { balance: { increment: 1 } }
-        });
-        await prisma.transaction.create({
-          data: {
-            walletId: freshWallet.id,
-            amount: 1,
-            type: 'PURCHASE',
-            status: 'SUCCESS',
-            description: 'Welcome bonus — thank you for joining Fixam!',
-            reference: 'WELCOME_' + user.id + '_' + Date.now()
-          }
-        });
-        await prisma.user.update({
-          where: { id: user.id },
-          data: { welcomeCoinsGiven: true }
-        });
-        sendPushNotification(
-          user.id,
-          '🎉 Welcome to Fixam!',
-          'You received 1 free coin for joining Fixam!',
-          { type: 'COINS_ADDED', coins: '1' }
-        ).catch(() => {});
-      }
-    } catch (welcomeErr) {
-      console.error('[Welcome Coins] Error (non-fatal):', welcomeErr.message);
-    }
-
-    const updatedUser = await prisma.user.findUnique({
-      where: { email },
-      include: { wallet: true, providerProfile: true }
-    });
-
-    const token = generateToken(updatedUser.id, updatedUser.role);
-    res.status(200).json({ success: true, token, user: updatedUser });
+    const token = generateToken(user.id, user.role);
+    res.status(200).json({ success: true, token, user });
   } catch (error) {
     next(error);
   }
