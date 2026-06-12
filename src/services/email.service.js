@@ -18,57 +18,66 @@ const sendEmail = async (options) => {
   return data;
 };
 
-const sendOTP = async (email, otp) => {
-  const message = `Your Fixam verification code is: ${otp}. Valid for 10 minutes.`;
+const sendOTP = async (email, otp, language = 'en') => {
+  const isFr = language === 'fr';
+  const subject = isFr ? 'Fixam - Votre code de vérification' : 'Fixam - Your OTP Verification Code';
+  const message = isFr 
+    ? `Votre code de vérification Fixam est : ${otp}. Valide pour 10 minutes.` 
+    : `Your Fixam verification code is: ${otp}. Valid for 10 minutes.`;
+
   const html = `
     <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 10px; max-width: 500px;">
-      <h2 style="color: #1E67D1;">Fixam Verification Code</h2>
-      <p>Hello,</p>
-      <p>Use the code below to verify your account on Fixam marketplace.</p>
+      <h2 style="color: #1E67D1;">${isFr ? 'Code de vérification Fixam' : 'Fixam Verification Code'}</h2>
+      <p>${isFr ? 'Bonjour,' : 'Hello,'}</p>
+      <p>${isFr ? 'Utilisez le code ci-dessous pour vérifier votre compte sur le marché Fixam.' : 'Use the code below to verify your account on Fixam marketplace.'}</p>
       <div style="background: #F5F5F5; padding: 15px; border-radius: 8px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #333;">
         ${otp}
       </div>
-      <p style="font-size: 12px; color: #777; margin-top: 20px;">This code expires in 10 minutes. If you did not request this, please ignore this email.</p>
+      <p style="font-size: 12px; color: #777; margin-top: 20px;">${isFr ? 'Ce code expire dans 10 minutes. Si vous ne l\'avez pas demandé, veuillez ignorer cet e-mail.' : 'This code expires in 10 minutes. If you did not request this, please ignore this email.'}</p>
     </div>
   `;
 
   await sendEmail({
     email,
-    subject: 'Fixam - Your OTP Verification Code',
+    subject,
     message,
     html
   });
 };
 
-const sendWelcomeEmail = async (email, fullName) => {
+const sendWelcomeEmail = async (email, fullName, language = 'en') => {
+  const isFr = language === 'fr';
+  const subject = isFr ? 'Bienvenue sur Fixam ! 🎉' : 'Welcome to Fixam! 🎉';
   const html = `
     <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 10px; max-width: 500px;">
-      <h2 style="color: #1E67D1;">Welcome to Fixam! 🎉</h2>
-      <p>Hello ${fullName || 'there'},</p>
-      <p>We are thrilled to have you join Fixam, the best marketplace for services. We have credited your wallet with 1 welcome coin to get you started!</p>
-      <p>If you have any questions, feel free to reach out to our support team.</p>
-      <p>Best regards,<br>The Fixam Team</p>
+      <h2 style="color: #1E67D1;">${subject}</h2>
+      <p>${isFr ? 'Bonjour' : 'Hello'} ${fullName || (isFr ? 'là' : 'there')},</p>
+      <p>${isFr ? 'Nous sommes ravis de vous compter parmi nous sur Fixam, le meilleur marché pour les services. Nous avons crédité votre portefeuille de 1 pièce de bienvenue pour bien commencer !' : 'We are thrilled to have you join Fixam, the best marketplace for services. We have credited your wallet with 1 welcome coin to get you started!'}</p>
+      <p>${isFr ? 'Si vous avez des questions, n\'hésitez pas à contacter notre équipe de support.' : 'If you have any questions, feel free to reach out to our support team.'}</p>
+      <p>${isFr ? 'Cordialement,' : 'Best regards,'}<br>${isFr ? 'L\'équipe Fixam' : 'The Fixam Team'}</p>
     </div>
   `;
-  await sendEmail({ email, subject: 'Welcome to Fixam! 🎉', html });
+  await sendEmail({ email, subject, html });
 };
 
-const sendSuspiciousLoginAlert = async (email, details) => {
+const sendSuspiciousLoginAlert = async (email, details, language = 'en') => {
+  const isFr = language === 'fr';
+  const subject = isFr ? 'Alerte de sécurité : Nouvelle connexion détectée' : 'Security Alert: New Login Detected';
   const html = `
     <div style="font-family: Arial, sans-serif; padding: 20px; border: 2px solid #ff4d4f; border-radius: 10px; max-width: 500px;">
-      <h2 style="color: #ff4d4f;">Security Alert: New Login Detected</h2>
-      <p>Hello,</p>
-      <p>We noticed a new login to your Fixam account from an unrecognized IP address or device.</p>
+      <h2 style="color: #ff4d4f;">${subject}</h2>
+      <p>${isFr ? 'Bonjour,' : 'Hello,'}</p>
+      <p>${isFr ? 'Nous avons remarqué une nouvelle connexion à votre compte Fixam depuis une adresse IP ou un appareil non reconnu.' : 'We noticed a new login to your Fixam account from an unrecognized IP address or device.'}</p>
       <div style="background: #fff1f0; padding: 15px; border-radius: 8px; color: #cf1322;">
-        <strong>Details:</strong><br/>
-        IP Address: ${details.ip}<br/>
-        Time: ${details.time}
+        <strong>${isFr ? 'Détails:' : 'Details:'}</strong><br/>
+        ${isFr ? 'Adresse IP' : 'IP Address'}: ${details.ip}<br/>
+        ${isFr ? 'Heure' : 'Time'}: ${details.time}
       </div>
-      <p>If this was you, you can safely ignore this email.</p>
-      <p><strong>If you did NOT log in, please reset your password immediately.</strong></p>
+      <p>${isFr ? 'Si c\'était vous, vous pouvez ignorer cet e-mail en toute sécurité.' : 'If this was you, you can safely ignore this email.'}</p>
+      <p><strong>${isFr ? 'Si vous ne vous êtes PAS connecté, veuillez réinitialiser votre mot de passe immédiatement.' : 'If you did NOT log in, please reset your password immediately.'}</strong></p>
     </div>
   `;
-  await sendEmail({ email, subject: 'Security Alert: New Login Detected', html });
+  await sendEmail({ email, subject, html });
 };
 
 const sendMarketingBroadcast = async (emails, subject, content) => {

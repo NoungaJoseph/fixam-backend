@@ -1239,30 +1239,43 @@ const getWireHistory = async (req, res, next) => {
 
 const sendBroadcastEmail = async (req, res, next) => {
   try {
-    const { subject, content, recipientRole } = req.body;
-    if (!subject || !content) {
+    const { subjectEn, contentEn, subjectFr, contentFr, subject, content, recipientRole } = req.body;
+    
+    const finalSubjectEn = subjectEn || subject;
+    const finalContentEn = contentEn || content;
+    const finalSubjectFr = subjectFr || subject;
+    const finalContentFr = contentFr || content;
+
+    if (!finalSubjectEn || !finalContentEn) {
       return res.status(400).json({ success: false, message: 'Subject and content are required' });
     }
 
-    const query = { where: { email: { not: null } }, select: { email: true } };
+    const query = { where: { email: { not: null } }, select: { email: true, preferredLanguage: true } };
     if (recipientRole) {
       query.where.role = recipientRole;
     }
 
     const users = await prisma.user.findMany(query);
-    const emails = users.map(u => u.email).filter(e => e);
+    const emailsEn = users.filter(u => u.preferredLanguage !== 'fr' && u.email).map(u => u.email);
+    const emailsFr = users.filter(u => u.preferredLanguage === 'fr' && u.email).map(u => u.email);
 
-    if (emails.length === 0) {
+    if (emailsEn.length === 0 && emailsFr.length === 0) {
       return res.status(400).json({ success: false, message: 'No users with emails found' });
     }
 
     const batchSize = 50;
-    for (let i = 0; i < emails.length; i += batchSize) {
-      const batch = emails.slice(i, i + batchSize);
-      await sendMarketingBroadcast(batch, subject, content).catch(e => console.error('[BroadcastError]', e.message));
+    
+    for (let i = 0; i < emailsEn.length; i += batchSize) {
+      const batch = emailsEn.slice(i, i + batchSize);
+      await sendMarketingBroadcast(batch, finalSubjectEn, finalContentEn).catch(e => console.error('[BroadcastError EN]', e.message));
     }
 
-    res.status(200).json({ success: true, message: `Broadcast sent to ${emails.length} users` });
+    for (let i = 0; i < emailsFr.length; i += batchSize) {
+      const batch = emailsFr.slice(i, i + batchSize);
+      await sendMarketingBroadcast(batch, finalSubjectFr, finalContentFr).catch(e => console.error('[BroadcastError FR]', e.message));
+    }
+
+    res.status(200).json({ success: true, message: `Broadcast sent to ${emailsEn.length + emailsFr.length} users` });
   } catch (error) {
     next(error);
   }
@@ -1270,30 +1283,40 @@ const sendBroadcastEmail = async (req, res, next) => {
 
 const sendSecurityAlert = async (req, res, next) => {
   try {
-    const { issueDetails, recipientRole } = req.body;
-    if (!issueDetails) {
+    const { issueDetailsEn, issueDetailsFr, issueDetails, recipientRole } = req.body;
+    
+    const finalDetailsEn = issueDetailsEn || issueDetails;
+    const finalDetailsFr = issueDetailsFr || issueDetails;
+
+    if (!finalDetailsEn) {
       return res.status(400).json({ success: false, message: 'Issue details are required' });
     }
 
-    const query = { where: { email: { not: null } }, select: { email: true } };
+    const query = { where: { email: { not: null } }, select: { email: true, preferredLanguage: true } };
     if (recipientRole) {
       query.where.role = recipientRole;
     }
 
     const users = await prisma.user.findMany(query);
-    const emails = users.map(u => u.email).filter(e => e);
+    const emailsEn = users.filter(u => u.preferredLanguage !== 'fr' && u.email).map(u => u.email);
+    const emailsFr = users.filter(u => u.preferredLanguage === 'fr' && u.email).map(u => u.email);
 
-    if (emails.length === 0) {
+    if (emailsEn.length === 0 && emailsFr.length === 0) {
       return res.status(400).json({ success: false, message: 'No users with emails found' });
     }
 
     const batchSize = 50;
-    for (let i = 0; i < emails.length; i += batchSize) {
-      const batch = emails.slice(i, i + batchSize);
-      await sendSecurityNotice(batch, issueDetails).catch(e => console.error('[SecurityAlertError]', e.message));
+    for (let i = 0; i < emailsEn.length; i += batchSize) {
+      const batch = emailsEn.slice(i, i + batchSize);
+      await sendSecurityNotice(batch, finalDetailsEn).catch(e => console.error('[SecurityAlertError EN]', e.message));
+    }
+    
+    for (let i = 0; i < emailsFr.length; i += batchSize) {
+      const batch = emailsFr.slice(i, i + batchSize);
+      await sendSecurityNotice(batch, finalDetailsFr).catch(e => console.error('[SecurityAlertError FR]', e.message));
     }
 
-    res.status(200).json({ success: true, message: `Security alert sent to ${emails.length} users` });
+    res.status(200).json({ success: true, message: `Security alert sent to ${emailsEn.length + emailsFr.length} users` });
   } catch (error) {
     next(error);
   }

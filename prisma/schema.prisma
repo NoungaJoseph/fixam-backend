@@ -114,6 +114,7 @@ model User {
   isEmailVerified Boolean @default(false)
   welcomeCoinsGiven Boolean @default(false)
   verificationCoinsGiven Boolean @default(false)
+  preferredLanguage String @default("en")
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

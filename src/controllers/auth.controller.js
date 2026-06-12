@@ -46,7 +46,7 @@ const generateToken = (id, role) => {
 const register = async (req, res, next) => {
   try {
     debugLog('Registering user:', { email: req.body.email, phone: req.body.phone, role: req.body.role });
-    let { fullName, email, phone, password, role, referralCode, referral, providerProfile } = req.body;
+    let { fullName, email, phone, password, role, referralCode, referral, providerProfile, language } = req.body;
     referralCode = referralCode || referral;
     
     if (email) email = email.trim().toLowerCase();
@@ -85,6 +85,7 @@ const register = async (req, res, next) => {
           dob,
           role: role || 'CLIENT',
           referralCode: generatedReferralCode,
+          preferredLanguage: language || 'en',
           wallet: { create: { balance: 0 } },
           ...(role === 'PROVIDER' ? { 
             providerProfile: { 
@@ -163,11 +164,11 @@ const register = async (req, res, next) => {
     });
 
     if (freshUser.email) {
-      sendWelcomeEmail(freshUser.email, freshUser.fullName).catch(e => console.error('[WelcomeEmail] error:', e.message));
+      sendWelcomeEmail(freshUser.email, freshUser.fullName, freshUser.preferredLanguage).catch(e => console.error('[WelcomeEmail] error:', e.message));
       
       const otp = Math.floor(100000 + Math.random() * 900000).toString();
       otpCache.set(freshUser.email, { otp, expires: Date.now() + 600000, type: 'registration' });
-      await sendOTP(freshUser.email, otp);
+      await sendOTP(freshUser.email, otp, freshUser.preferredLanguage);
     }
 
     debugLog('User registered successfully, pending email verification:', freshUser.id);
@@ -208,7 +209,7 @@ const login = async (req, res, next) => {
     if (!user.isEmailVerified && user.email) {
       const otp = Math.floor(100000 + Math.random() * 900000).toString();
       otpCache.set(user.email, { otp, expires: Date.now() + 600000, type: 'registration' });
-      await sendOTP(user.email, otp);
+      await sendOTP(user.email, otp, user.preferredLanguage);
       return res.status(403).json({ success: false, requiresEmailVerification: true, email: user.email, message: 'Please verify your email to continue.' });
     }
 
@@ -232,7 +233,7 @@ const login = async (req, res, next) => {
       });
 
       if (user.email) {
-        await sendOTP(user.email, otp);
+        await sendOTP(user.email, otp, user.preferredLanguage);
       } else {
         // SMS disabled: await sendSMSOTP(user.phone, otp);
       }
@@ -249,7 +250,7 @@ const login = async (req, res, next) => {
       sendSuspiciousLoginAlert(user.email, {
         ip: clientIp,
         time: new Date().toLocaleString()
-      }).catch(err => console.error('[LoginAlert] failed:', err.message));
+      }, user.preferredLanguage).catch(err => console.error('[LoginAlert] failed:', err.message));
     }
 
     if (clientIp && user.lastIpAddress !== clientIp) {
@@ -268,7 +269,7 @@ const login = async (req, res, next) => {
 
 const requestOTP = async (req, res, next) => {
   try {
-    const { email, phone } = req.body;
+    const { email, phone, language } = req.body;
     const identifier = email || phone;
     
     if (!identifier) {
@@ -276,10 +277,10 @@ const requestOTP = async (req, res, next) => {
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    otpCache.set(identifier, { otp, expires: Date.now() + 600000 });
+    otpCache.set(identifier, { otp, expires: Date.now() + 600000, language: language || 'en' });
 
     if (email) {
-      await sendOTP(email, otp);
+      await sendOTP(email, otp, language || 'en');
       return res.status(200).json({ success: true, message: 'OTP sent to email' });
     } else {
       await sendSMSOTP(phone, otp);
@@ -343,7 +344,7 @@ const enableTwoFactorOTP = async (req, res, next) => {
     });
 
     if (user.email) {
-      await sendOTP(user.email, otp);
+      await sendOTP(user.email, otp, user.preferredLanguage);
       return res.status(200).json({ success: true, message: 'OTP sent to your email' });
     } else {
       // SMS disabled
@@ -476,7 +477,7 @@ const resendLoginOTP = async (req, res, next) => {
     });
 
     if (user.email) {
-      await sendOTP(user.email, otp);
+      await sendOTP(user.email, otp, user.preferredLanguage);
       return res.status(200).json({ success: true, message: 'OTP sent to your email' });
     } else {
       await sendSMSOTP(user.phone, otp);
@@ -489,7 +490,7 @@ const resendLoginOTP = async (req, res, next) => {
 
 const forgotPassword = async (req, res, next) => {
   try {
-    const { email } = req.body;
+    const { email, language } = req.body;
     if (!email) {
       return res.status(400).json({ success: false, message: 'Email is required' });
     }
@@ -506,7 +507,7 @@ const forgotPassword = async (req, res, next) => {
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     otpCache.set(email, { otp, expires: Date.now() + 600000 });
 
-    sendOTP(email, otp).catch(err => {
+    sendOTP(email, otp, language || user.preferredLanguage || 'en').catch(err => {
       console.error('[ForgotPassword] Email failed:', err.message);
     });
 
