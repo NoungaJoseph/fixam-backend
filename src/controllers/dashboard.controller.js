@@ -12,7 +12,8 @@ const getDashboardData = async (req, res, next) => {
       include: {
         user: { select: { id: true, fullName: true, avatar: true, isOnline: true, phone: true } }
       },
-      orderBy: { rating: 'desc' }
+      orderBy: { rating: 'desc' },
+      take: 20
     });
 
     // 2. Jobs Query

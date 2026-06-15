@@ -1,4 +1,18 @@
 require('dotenv').config();
+const Sentry = require('@sentry/node');
+const { nodeProfilingIntegration } = require('@sentry/profiling-node');
+
+Sentry.init({
+  dsn: process.env.SENTRY_DSN || '',
+  integrations: [
+    Sentry.expressIntegration(),
+    nodeProfilingIntegration(),
+  ],
+  tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.2 : 1.0,
+  profilesSampleRate: process.env.NODE_ENV === 'production' ? 0.2 : 1.0,
+  enabled: !!process.env.SENTRY_DSN,
+});
+
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -23,19 +37,7 @@ const paymentRoutes = require('./routes/payment.routes');
 const systemRoutes = require('./routes/system.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
 const { errorHandler } = require('./middlewares/error.middleware');
-const Sentry = require('@sentry/node');
-const { nodeProfilingIntegration } = require('@sentry/profiling-node');
 
-Sentry.init({
-  dsn: process.env.SENTRY_DSN || '',
-  integrations: [
-    Sentry.expressIntegration(),
-    nodeProfilingIntegration(),
-  ],
-  tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.2 : 1.0,
-  profilesSampleRate: process.env.NODE_ENV === 'production' ? 0.2 : 1.0,
-  enabled: !!process.env.SENTRY_DSN,
-});
 
 const app = express();
 app.set('trust proxy', 1);

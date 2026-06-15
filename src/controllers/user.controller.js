@@ -6,17 +6,22 @@ const { calculateProviderStats } = require('../utils/providerStats');
 const getMe = async (req, res, next) => {
   try {
     if (req.user.providerProfile?.id) {
-      const stats = await calculateProviderStats(req.user.providerProfile.id).catch(() => null);
-      if (stats) {
-        req.user.providerProfile = {
-          ...req.user.providerProfile,
-          rating: stats.trustScore,
-          skillRank: stats.skillRank,
-          jobsCompleted: stats.completedJobs,
-          completionRate: stats.completionRate,
-          profileCompleteness: stats.profileCompleteness,
-        };
-      }
+      const providerId = req.user.providerProfile.id;
+      
+      // Run heavy background recalculation asynchronously
+      calculateProviderStats(providerId).catch(err => console.error('Stats calc error:', err));
+      
+      // Do a fast, parallel count for the UI requirements
+      const [accepted, completed] = await Promise.all([
+        prisma.jobAssignment.count({ where: { providerId, status: 'ACCEPTED' } }),
+        prisma.jobAssignment.count({ where: { providerId, job: { status: 'COMPLETED' } } })
+      ]);
+      
+      req.user.providerProfile = {
+        ...req.user.providerProfile,
+        jobsCompleted: completed,
+        completionRate: accepted > 0 ? completed / accepted : 0,
+      };
     }
     res.status(200).json({ success: true, data: req.user });
   } catch (error) {
