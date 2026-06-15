@@ -369,6 +369,9 @@ model Booking {
   taskId          String?
   bookingDate     DateTime
   bookingTime     String
+  bookingDuration String        @default("DAY")
+  urgencyLevel    String        @default("NORMAL")
+  coinCost        Int           @default(1)
   status          BookingStatus @default(PENDING)
   budget          Float
   location        String

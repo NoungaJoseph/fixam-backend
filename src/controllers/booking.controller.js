@@ -23,7 +23,7 @@ const createBooking = async (req, res, next) => {
     console.log('[Booking] Request body:', JSON.stringify(req.body));
     console.log('[Booking] User:', req.user.id);
 
-    const { providerId, taskId, bookingDate, bookingTime, budget, location, notes } = req.body;
+    const { providerId, taskId, bookingDate, bookingTime, budget, location, notes, bookingDuration, urgencyLevel } = req.body;
     if (!providerId || !bookingDate || !bookingTime || budget === undefined || budget === null) {
       return res.status(400).json({ success: false, message: 'Provider, date, time and budget are required.' });
     }
@@ -51,10 +51,18 @@ const createBooking = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Budget must be a valid number.' });
     }
 
+    const COIN_COSTS = {
+      NORMAL: 1,
+      URGENT: 2,
+      EMERGENCY: 3
+    };
+    const resolvedUrgency = urgencyLevel || 'NORMAL';
+    const coinCost = COIN_COSTS[resolvedUrgency] || 1;
+
     const booking = await prisma.$transaction(async (tx) => {
       const wallet = await tx.wallet.findUnique({ where: { userId: req.user.id } });
-      if (!wallet || wallet.balance < 1) {
-        const error = new Error('Insufficient coins. You need 1 coin to book a provider.');
+      if (!wallet || wallet.balance < coinCost) {
+        const error = new Error(`Insufficient coins. You need ${coinCost} coins for this booking.`);
         error.statusCode = 400;
         throw error;
       }
@@ -66,6 +74,9 @@ const createBooking = async (req, res, next) => {
           taskId: taskId || null,
           bookingDate: new Date(bookingDate),
           bookingTime,
+          bookingDuration: bookingDuration || 'DAY',
+          urgencyLevel: resolvedUrgency,
+          coinCost: coinCost,
           budget: bookingBudget,
           location: location || '',
           notes: notes || '',
@@ -75,16 +86,17 @@ const createBooking = async (req, res, next) => {
 
       await tx.wallet.update({
         where: { userId: req.user.id },
-        data: { balance: { decrement: 1 } },
+        data: { balance: { decrement: coinCost } },
       });
 
       await tx.transaction.create({
         data: {
           walletId: wallet.id,
-          amount: 1,
+          amount: coinCost,
           type: 'DEDUCTION',
           status: 'SUCCESS',
-          description: `Booking: ${provider.fullName || provider.phone || 'Provider'}`,
+          description: `Booking: ${resolvedUrgency} - ${provider.fullName || provider.phone || 'Provider'}`,
+          isSystemTransaction: false
         },
       });
 
@@ -215,7 +227,7 @@ const checkBooking = async (req, res, next) => {
         providerId,
         status: { in: ['PENDING', 'ACCEPTED'] },
       },
-      select: { id: true, status: true },
+      select: { id: true, status: true, bookingDuration: true, urgencyLevel: true, bookingDate: true },
     });
 
     res.status(200).json({
@@ -224,6 +236,7 @@ const checkBooking = async (req, res, next) => {
         hasBooking: !!booking,
         bookingId: booking?.id || null,
         status: booking?.status || null,
+        booking: booking || null,
       },
     });
   } catch (error) {
