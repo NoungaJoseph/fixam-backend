@@ -1,6 +1,6 @@
 const prisma = require('../config/prisma');
 const { getIO } = require('../services/socket.service');
-const { sendBookingNotification } = require('../services/notification.service');
+const { sendPushNotification } = require('../services/notification.service');
 
 const emitBooking = (booking) => {
   try {
@@ -105,9 +105,17 @@ const createBooking = async (req, res, next) => {
 
     // Send FCM Push Notification
     try {
-      if (provider.fcmToken) {
-        await sendBookingNotification(provider.fcmToken, notification.title, notification.body, booking.id);
-      }
+      await sendPushNotification(
+        providerId,
+        'New Booking Request 📅',
+        `${req.user.fullName || 'A client'} wants to book your service`,
+        {
+          type: 'NEW_BOOKING',
+          bookingId: booking.id,
+          clientId: req.user.id,
+          screen: 'BookingDetails'
+        }
+      );
     } catch (notifError) {
       console.error('[Booking] Notification failed:', notifError.message);
     }
@@ -168,6 +176,24 @@ const updateBookingStatus = async (req, res, next) => {
       },
       include: includeBooking,
     });
+
+    if (status === 'ACCEPTED') {
+      try {
+        await sendPushNotification(
+          booking.clientId,
+          'Booking Confirmed ✅',
+          `Your booking with ${booking.provider?.fullName || 'the provider'} is confirmed`,
+          {
+            type: 'BOOKING_CONFIRMED',
+            bookingId: booking.id,
+            providerId: booking.providerId,
+            screen: 'BookingDetails'
+          }
+        );
+      } catch (notifError) {
+        console.error('[Booking] Confirmed Notification failed:', notifError.message);
+      }
+    }
 
     emitBooking(booking);
     res.status(200).json({ success: true, data: booking });
