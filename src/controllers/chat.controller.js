@@ -18,24 +18,32 @@ const findDirectConversationId = async (userId, participantId) => {
 };
 
 const hasActiveWorkBetweenUsers = async (userId, participantId) => {
-  const activeJob = await prisma.job.findFirst({
-    where: {
-      status: { notIn: ['CANCELLED'] },
-      OR: [
-        {
-          clientId: userId,
-          assignments: { some: { provider: { userId: participantId }, status: 'ACCEPTED' } },
-        },
-        {
-          clientId: participantId,
-          assignments: { some: { provider: { userId }, status: 'ACCEPTED' } },
-        },
-      ],
-    },
-    select: { id: true },
+  const profiles = await prisma.providerProfile.findMany({
+    where: { userId: { in: [userId, participantId] } },
+    select: { id: true, userId: true }
   });
+  
+  const user1ProviderId = profiles.find(p => p.userId === userId)?.id;
+  const user2ProviderId = profiles.find(p => p.userId === participantId)?.id;
 
-  if (activeJob) return true;
+  const orConditions = [];
+  if (user2ProviderId) {
+    orConditions.push({ clientId: userId, assignments: { some: { providerId: user2ProviderId, status: 'ACCEPTED' } } });
+  }
+  if (user1ProviderId) {
+    orConditions.push({ clientId: participantId, assignments: { some: { providerId: user1ProviderId, status: 'ACCEPTED' } } });
+  }
+
+  if (orConditions.length > 0) {
+    const activeJob = await prisma.job.findFirst({
+      where: {
+        status: { notIn: ['CANCELLED'] },
+        OR: orConditions,
+      },
+      select: { id: true },
+    });
+    if (activeJob) return true;
+  }
 
   const anyBooking = await prisma.booking.findFirst({
     where: {
@@ -188,10 +196,11 @@ const createOrGetConversation = async (requester, participantId) => {
 const getConversations = async (req, res, next) => {
   try {
     // Optimized query: Get conversations with minimal nested queries
-    const conversations = await prisma.conversation.findMany({
-      where: {
-        participants: { some: { userId: req.user.id } }
-      },
+      const conversations = await prisma.conversation.findMany({
+        where: {
+          participants: { some: { userId: req.user.id } }
+        },
+        take: 20,
       select: {
         id: true,
         lastMessageAt: true,
@@ -249,44 +258,44 @@ const getConversations = async (req, res, next) => {
 };
 
 const findActiveTaskBetweenUsers = async (currentUserId, otherUserId) => {
-  const job = await prisma.job.findFirst({
-    where: {
-      status: { in: ACTIVE_JOB_STATUSES },
-      OR: [
-        {
-          clientId: currentUserId,
-          assignments: {
-            some: {
-              status: 'ACCEPTED',
-              provider: { userId: otherUserId }
-            }
-          }
-        },
-        {
-          clientId: otherUserId,
-          assignments: {
-            some: {
-              status: 'ACCEPTED',
-              provider: { userId: currentUserId }
-            }
-          }
-        }
-      ]
-    },
-    include: {
-      client: { select: { id: true, fullName: true, avatar: true } },
-      assignments: {
-        include: {
-          provider: {
-            include: {
-              user: { select: { id: true, fullName: true, avatar: true } }
-            }
-          }
-        }
-      }
-    },
-    orderBy: { updatedAt: 'desc' }
+  const profiles = await prisma.providerProfile.findMany({
+    where: { userId: { in: [currentUserId, otherUserId] } },
+    select: { id: true, userId: true }
   });
+  
+  const user1ProviderId = profiles.find(p => p.userId === currentUserId)?.id;
+  const user2ProviderId = profiles.find(p => p.userId === otherUserId)?.id;
+
+  const orConditions = [];
+  if (user2ProviderId) {
+    orConditions.push({ clientId: currentUserId, assignments: { some: { providerId: user2ProviderId, status: 'ACCEPTED' } } });
+  }
+  if (user1ProviderId) {
+    orConditions.push({ clientId: otherUserId, assignments: { some: { providerId: user1ProviderId, status: 'ACCEPTED' } } });
+  }
+
+  let job = null;
+  if (orConditions.length > 0) {
+    job = await prisma.job.findFirst({
+      where: {
+        status: { in: ACTIVE_JOB_STATUSES },
+        OR: orConditions
+      },
+      include: {
+        client: { select: { id: true, fullName: true, avatar: true } },
+        assignments: {
+          include: {
+            provider: {
+              include: {
+                user: { select: { id: true, fullName: true, avatar: true } }
+              }
+            }
+          }
+        }
+      },
+      orderBy: { updatedAt: 'desc' }
+    });
+  }
 
   if (job) return job;
 
@@ -588,7 +597,7 @@ const sendMessage = async (req, res, next) => {
         const senderName = req.user.fullName || req.user.phone || 'Someone';
         const safeContent = content ? (content.length > 100 ? content.substring(0, 97) + '...' : content) : 'Sent an attachment';
         
-        await sendPushNotification(
+        sendPushNotification(
           participant.userId,
           senderName,
           safeContent,
@@ -598,7 +607,7 @@ const sendMessage = async (req, res, next) => {
             messageId: message.id,
             senderId: req.user.id
           }
-        );
+        ).catch(err => console.error('[Push Error] Failed to send message push:', err.message));
         
         await prisma.notification.create({
           data: {
@@ -767,3 +776,4 @@ module.exports = {
   getUnreadCount,
   checkBooking
 };
+

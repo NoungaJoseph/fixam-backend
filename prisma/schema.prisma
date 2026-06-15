@@ -7,7 +7,8 @@ datasource db {
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
-enum Role { 
+
+enum Role {
   CLIENT
   PROVIDER
   ADMIN
@@ -89,109 +90,109 @@ enum MessageType {
 }
 
 model User {
-  id            String    @id @default(uuid())
-  phone         String    @unique
-  fullName      String?
-  email         String?   @unique
-  password      String?
-  role          Role      @default(CLIENT)
-  avatar        String?
-  fcmToken      String?
-  lastSeen      DateTime  @default(now())
-  isOnline      Boolean   @default(false)
-  referralCode  String?   @unique
-  referredBy    String?
-  dob           DateTime?
-  lastNameChange DateTime?
-  lastPasswordChange DateTime?
-  twoFactorEnabled Boolean   @default(false)
-  twoFactorCode    String?
-  twoFactorExpiry  DateTime?
-  pendingName   String?
-  isBlocked     Boolean   @default(false)
-  blockedReason String?
-  blockedAt     DateTime?
-  lastIpAddress String?
-  isEmailVerified Boolean @default(false)
-  welcomeCoinsGiven Boolean @default(false)
-  verificationCoinsGiven Boolean @default(false)
-  preferredLanguage String @default("en")
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id                     String    @id @default(uuid())
+  phone                  String    @unique
+  fullName               String?
+  email                  String?   @unique
+  password               String?
+  role                   Role      @default(CLIENT)
+  avatar                 String?
+  fcmToken               String?
+  lastSeen               DateTime  @default(now())
+  isOnline               Boolean   @default(false)
+  referralCode           String?   @unique
+  referredBy             String?
+  dob                    DateTime?
+  lastNameChange         DateTime?
+  lastPasswordChange     DateTime?
+  twoFactorEnabled       Boolean   @default(false)
+  twoFactorCode          String?
+  twoFactorExpiry        DateTime?
+  pendingName            String?
+  isBlocked              Boolean   @default(false)
+  blockedReason          String?
+  blockedAt              DateTime?
+  lastIpAddress          String?
+  isEmailVerified        Boolean   @default(false)
+  welcomeCoinsGiven      Boolean   @default(false)
+  verificationCoinsGiven Boolean   @default(false)
+  preferredLanguage      String    @default("en")
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
-  providerProfile ProviderProfile?
-  wallet          Wallet?
-  jobsAsClient    Job[]             @relation("ClientJobs")
-  receivedReviews Review[]          @relation("TargetReviews")
-  sentReviews     Review[]          @relation("SentReviews")
-  sentMessages    Message[]         @relation("SentMessages")
-  notifications   Notification[]
-  conversations   ConversationParticipant[]
-  payments        Payment[]
-  coinPurchases   CoinPurchase[]
-  bookingsAsClient Booking[]       @relation("ClientBookings")
-  bookingsAsProvider Booking[]     @relation("ProviderBookings")
+  providerProfile      ProviderProfile?
+  wallet               Wallet?
+  jobsAsClient         Job[]                     @relation("ClientJobs")
+  receivedReviews      Review[]                  @relation("TargetReviews")
+  sentReviews          Review[]                  @relation("SentReviews")
+  sentMessages         Message[]                 @relation("SentMessages")
+  notifications        Notification[]
+  conversations        ConversationParticipant[]
+  payments             Payment[]
+  coinPurchases        CoinPurchase[]
+  bookingsAsClient     Booking[]                 @relation("ClientBookings")
+  bookingsAsProvider   Booking[]                 @relation("ProviderBookings")
   supportConversations SupportConversation[]
-  usersBlocked    User[]            @relation("BlockedUsers")
-  blockedBy       User[]            @relation("BlockedUsers")
-  favoriteProviders ClientFavoriteProvider[] @relation("ClientFavoriteProviders")
+  usersBlocked         User[]                    @relation("BlockedUsers")
+  blockedBy            User[]                    @relation("BlockedUsers")
+  favoriteProviders    ClientFavoriteProvider[]  @relation("ClientFavoriteProviders")
 }
 
 model ProviderProfile {
-  id              String             @id @default(uuid())
-  userId          String             @unique
-  skills          String[]
-  bio             String?
-  rate            Float?
-  rating          Float              @default(0.0)
-  reviewCount     Int                @default(0)
-  availability    Json?
-  serviceArea     String?
-  experienceLevel String?
-  birthDay        String?
-  birthMonth      String?
-  birthYear       String?
-  age             String?
-  verification    VerificationStatus @default(UNVERIFIED)
-  portfolio       Json?
-  certificates    Json?
+  id                String             @id @default(uuid())
+  userId            String             @unique
+  skills            String[]
+  bio               String?
+  rate              Float?
+  rating            Float              @default(0.0)
+  reviewCount       Int                @default(0)
+  availability      Json?
+  serviceArea       String?
+  experienceLevel   String?
+  birthDay          String?
+  birthMonth        String?
+  birthYear         String?
+  age               String?
+  verification      VerificationStatus @default(UNVERIFIED)
+  portfolio         Json?
+  certificates      Json?
   employmentHistory Json?
-  socialLinks     Json?
-  profileMode     String             @default("WORK")
-  profileScore    Int                @default(0)
-  skillRank       String             @default("Newcomer")
-  
-  user            User               @relation(fields: [userId], references: [id])
-  assignments     JobAssignment[]
-  documents       VerificationDocument[]
-  favoritedBy      ClientFavoriteProvider[]
+  socialLinks       Json?
+  profileMode       String             @default("WORK")
+  profileScore      Int                @default(0)
+  skillRank         String             @default("Newcomer")
+
+  user        User                     @relation(fields: [userId], references: [id])
+  assignments JobAssignment[]
+  documents   VerificationDocument[]
+  favoritedBy ClientFavoriteProvider[]
 }
 
 model Job {
-  id              String        @id @default(uuid())
-  clientId        String
-  category        String
-  title           String
-  description     String
-  location        String
-  latitude        Float?
-  longitude       Float?
-  budget          Float
-  budgetMin       Float?
-  budgetMax       Float?
-  status          JobStatus     @default(PENDING)
-  approvalStatus  JobApprovalStatus @default(PENDING_APPROVAL)
-  rejectionReason String?
-  scheduledTime   DateTime?
-  coinCost        Int           @default(1)
+  id                   String            @id @default(uuid())
+  clientId             String
+  category             String
+  title                String
+  description          String
+  location             String
+  latitude             Float?
+  longitude            Float?
+  budget               Float
+  budgetMin            Float?
+  budgetMax            Float?
+  status               JobStatus         @default(PENDING)
+  approvalStatus       JobApprovalStatus @default(PENDING_APPROVAL)
+  rejectionReason      String?
+  scheduledTime        DateTime?
+  coinCost             Int               @default(1)
   selectedAssignmentId String?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
 
-  client          User          @relation("ClientJobs", fields: [clientId], references: [id])
-  assignments     JobAssignment[]
-  reviews         Review[]
-  bookings        Booking[]
+  client      User            @relation("ClientJobs", fields: [clientId], references: [id])
+  assignments JobAssignment[]
+  reviews     Review[]
+  bookings    Booking[]
 
   @@index([clientId, status])
   @@index([status, approvalStatus])
@@ -199,16 +200,16 @@ model Job {
 }
 
 model JobAssignment {
-  id              String           @id @default(uuid())
-  jobId           String
-  providerId      String
-  status          AssignmentStatus @default(PENDING)
-  assignedAt      DateTime         @default(now())
-  selectedAt      DateTime?
-  refundedAt      DateTime?
+  id         String           @id @default(uuid())
+  jobId      String
+  providerId String
+  status     AssignmentStatus @default(PENDING)
+  assignedAt DateTime         @default(now())
+  selectedAt DateTime?
+  refundedAt DateTime?
 
-  job             Job              @relation(fields: [jobId], references: [id])
-  provider        ProviderProfile  @relation(fields: [providerId], references: [id])
+  job      Job             @relation(fields: [jobId], references: [id])
+  provider ProviderProfile @relation(fields: [providerId], references: [id])
 
   @@unique([jobId, providerId])
   @@index([providerId, status])
@@ -216,38 +217,38 @@ model JobAssignment {
 }
 
 model Wallet {
-  id              String        @id @default(uuid())
-  userId          String        @unique
-  balance         Int           @default(0)
-  updatedAt       DateTime      @updatedAt
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  balance   Int      @default(0)
+  updatedAt DateTime @updatedAt
 
-  user            User          @relation(fields: [userId], references: [id])
-  transactions    Transaction[]
+  user         User          @relation(fields: [userId], references: [id])
+  transactions Transaction[]
 }
 
 model Transaction {
-  id              String            @id @default(uuid())
-  walletId        String
-  amount          Int
-  type            TransactionType
-  status          TransactionStatus @default(PENDING)
-  reference       String?           @unique
-  description     String?
-  paidPrice       String?
-  receiptUrl      String?
-  payerName       String?
-  payerPhone      String?
-  payerEmail      String?
-  jobId           String?
-  paymentMethod   PaymentMethod?
-  providerReference String?
-  phoneNumber     String?
-  isSystemTransaction Boolean @default(false)
-  createdAt       DateTime          @default(now())
+  id                  String            @id @default(uuid())
+  walletId            String
+  amount              Int
+  type                TransactionType
+  status              TransactionStatus @default(PENDING)
+  reference           String?           @unique
+  description         String?
+  paidPrice           String?
+  receiptUrl          String?
+  payerName           String?
+  payerPhone          String?
+  payerEmail          String?
+  jobId               String?
+  paymentMethod       PaymentMethod?
+  providerReference   String?
+  phoneNumber         String?
+  isSystemTransaction Boolean           @default(false)
+  createdAt           DateTime          @default(now())
 
-  wallet          Wallet            @relation(fields: [walletId], references: [id])
-  payment         Payment?
-  coinPurchase    CoinPurchase?
+  wallet       Wallet        @relation(fields: [walletId], references: [id])
+  payment      Payment?
+  coinPurchase CoinPurchase?
 
   @@index([walletId, status])
   @@index([walletId, createdAt])
@@ -268,9 +269,9 @@ model Payment {
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
-  user              User          @relation(fields: [userId], references: [id])
-  transaction       Transaction?  @relation(fields: [transactionId], references: [id])
-  coinPurchase      CoinPurchase?
+  user         User          @relation(fields: [userId], references: [id])
+  transaction  Transaction?  @relation(fields: [transactionId], references: [id])
+  coinPurchase CoinPurchase?
 
   @@index([userId, createdAt])
   @@index([status, createdAt])
@@ -290,36 +291,36 @@ model CoinPurchase {
   phoneNumber       String
   createdAt         DateTime      @default(now())
 
-  user              User          @relation(fields: [userId], references: [id])
-  payment           Payment       @relation(fields: [paymentId], references: [id])
-  transaction       Transaction?  @relation(fields: [transactionId], references: [id])
+  user        User         @relation(fields: [userId], references: [id])
+  payment     Payment      @relation(fields: [paymentId], references: [id])
+  transaction Transaction? @relation(fields: [transactionId], references: [id])
 
   @@index([userId, createdAt])
   @@index([status, createdAt])
 }
 
 model Conversation {
-  id              String    @id @default(uuid())
-  lastMessageAt   DateTime  @default(now()) @db.Timestamp(3)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id            String   @id @default(uuid())
+  lastMessageAt DateTime @default(now()) @db.Timestamp(3)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  participants    ConversationParticipant[]
-  messages        Message[]
-  support         SupportConversation?
+  participants ConversationParticipant[]
+  messages     Message[]
+  support      SupportConversation?
 
   @@index([lastMessageAt]) // For ordering by latest message
 }
 
 model ConversationParticipant {
-  id              String    @id @default(uuid())
-  conversationId  String
-  userId          String
-  unreadCount     Int       @default(0)
-  joinedAt        DateTime  @default(now())
+  id             String   @id @default(uuid())
+  conversationId String
+  userId         String
+  unreadCount    Int      @default(0)
+  joinedAt       DateTime @default(now())
 
-  conversation    Conversation @relation(fields: [conversationId], references: [id])
-  user            User         @relation(fields: [userId], references: [id])
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+  user         User         @relation(fields: [userId], references: [id])
 
   @@unique([conversationId, userId])
   @@index([userId, conversationId]) // For finding conversations by user
@@ -327,19 +328,19 @@ model ConversationParticipant {
 }
 
 model Message {
-  id              String      @id @default(uuid())
-  conversationId  String
-  senderId        String
-  type            MessageType @default(TEXT)
-  content         String
-  mediaUrl        String?
-  isRead          Boolean     @default(false)
-  deliveredAt     DateTime?
-  readAt          DateTime?
-  createdAt       DateTime    @default(now())
+  id             String      @id @default(uuid())
+  conversationId String
+  senderId       String
+  type           MessageType @default(TEXT)
+  content        String
+  mediaUrl       String?
+  isRead         Boolean     @default(false)
+  deliveredAt    DateTime?
+  readAt         DateTime?
+  createdAt      DateTime    @default(now())
 
-  conversation    Conversation @relation(fields: [conversationId], references: [id])
-  sender          User         @relation("SentMessages", fields: [senderId], references: [id])
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+  sender       User         @relation("SentMessages", fields: [senderId], references: [id])
 
   @@index([conversationId, createdAt]) // For fetching messages in a conversation
   @@index([senderId]) // For finding messages by sender
@@ -355,8 +356,8 @@ model SupportConversation {
   createdAt       DateTime                  @default(now())
   updatedAt       DateTime                  @updatedAt
 
-  conversation    Conversation              @relation(fields: [conversationId], references: [id])
-  user            User                      @relation(fields: [userId], references: [id])
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+  user         User         @relation(fields: [userId], references: [id])
 
   @@index([userId, status])
   @@index([status, updatedAt])
@@ -380,9 +381,9 @@ model Booking {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  client          User          @relation("ClientBookings", fields: [clientId], references: [id])
-  provider        User          @relation("ProviderBookings", fields: [providerId], references: [id])
-  task            Job?          @relation(fields: [taskId], references: [id])
+  client   User @relation("ClientBookings", fields: [clientId], references: [id])
+  provider User @relation("ProviderBookings", fields: [providerId], references: [id])
+  task     Job? @relation(fields: [taskId], references: [id])
 
   @@index([clientId, createdAt])
   @@index([providerId, createdAt])
@@ -392,65 +393,68 @@ model Booking {
 }
 
 model CallSession {
-  id              String    @id @default(uuid())
-  callerId        String
-  receiverId      String
-  type            String    @default("AUDIO") // AUDIO or VIDEO
-  status          String    @default("PENDING") // PENDING, ONGOING, ENDED, MISSED
-  startTime       DateTime?
-  endTime         DateTime?
-  createdAt       DateTime  @default(now())
+  id         String    @id @default(uuid())
+  callerId   String
+  receiverId String
+  type       String    @default("AUDIO") // AUDIO or VIDEO
+  status     String    @default("PENDING") // PENDING, ONGOING, ENDED, MISSED
+  startTime  DateTime?
+  endTime    DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([callerId, createdAt])
+  @@index([receiverId, createdAt])
 }
 
 model Notification {
-  id              String   @id @default(uuid())
-  userId          String
-  title           String
-  body            String
-  data            Json?
-  isRead          Boolean  @default(false)
-  archivedAt      DateTime?
-  createdAt       DateTime @default(now())
+  id         String    @id @default(uuid())
+  userId     String
+  title      String
+  body       String
+  data       Json?
+  isRead     Boolean   @default(false)
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
 
-  user            User     @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id])
 
   @@index([userId, isRead])
   @@index([userId, createdAt])
 }
 
 model Review {
-  id              String   @id @default(uuid())
-  jobId           String
-  reviewerId      String
-  targetUserId    String
-  rating          Int
-  comment         String?
-  createdAt       DateTime @default(now())
+  id           String   @id @default(uuid())
+  jobId        String
+  reviewerId   String
+  targetUserId String
+  rating       Int
+  comment      String?
+  createdAt    DateTime @default(now())
 
-  job             Job      @relation(fields: [jobId], references: [id])
-  reviewer        User     @relation("SentReviews", fields: [reviewerId], references: [id])
-  targetUser      User     @relation("TargetReviews", fields: [targetUserId], references: [id])
+  job        Job  @relation(fields: [jobId], references: [id])
+  reviewer   User @relation("SentReviews", fields: [reviewerId], references: [id])
+  targetUser User @relation("TargetReviews", fields: [targetUserId], references: [id])
 }
 
 model VerificationDocument {
-  id              String   @id @default(uuid())
-  providerId      String
-  type            String
-  url             String
-  status          VerificationStatus @default(PENDING)
-  createdAt       DateTime @default(now())
+  id         String             @id @default(uuid())
+  providerId String
+  type       String
+  url        String
+  status     VerificationStatus @default(PENDING)
+  createdAt  DateTime           @default(now())
 
-  provider        ProviderProfile @relation(fields: [providerId], references: [id])
+  provider ProviderProfile @relation(fields: [providerId], references: [id])
 }
 
 model ClientFavoriteProvider {
-  id         String          @id @default(uuid())
+  id         String   @id @default(uuid())
   clientId   String
   providerId String
-  createdAt  DateTime        @default(now())
+  createdAt  DateTime @default(now())
 
-  client     User            @relation("ClientFavoriteProviders", fields: [clientId], references: [id])
-  provider   ProviderProfile @relation(fields: [providerId], references: [id])
+  client   User            @relation("ClientFavoriteProviders", fields: [clientId], references: [id])
+  provider ProviderProfile @relation(fields: [providerId], references: [id])
 
   @@unique([clientId, providerId])
   @@index([clientId])
@@ -458,50 +462,50 @@ model ClientFavoriteProvider {
 }
 
 model Feedback {
-  id              String   @id @default(uuid())
-  userId          String
-  title           String
-  message         String
-  type            String   @default("GENERAL") // GENERAL, BUG, FEATURE_REQUEST, COMPLAINT
-  status          String   @default("NEW") // NEW, READ, RESOLVED
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id        String   @id @default(uuid())
+  userId    String
+  title     String
+  message   String
+  type      String   @default("GENERAL") // GENERAL, BUG, FEATURE_REQUEST, COMPLAINT
+  status    String   @default("NEW") // NEW, READ, RESOLVED
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model AdminMessage {
-  id              String   @id @default(uuid())
-  recipientId     String?  // NULL means broadcast to all
-  recipientRole   String?  // NULL means all, or "CLIENT", "PROVIDER", "BOTH"
-  subject         String
-  content         String
-  isRead          Boolean  @default(false)
-  readAt          DateTime?
-  sentCount       Int      @default(0)
-  status          String   @default("SENT")
-  createdAt       DateTime @default(now())
+  id            String    @id @default(uuid())
+  recipientId   String? // NULL means broadcast to all
+  recipientRole String? // NULL means all, or "CLIENT", "PROVIDER", "BOTH"
+  subject       String
+  content       String
+  isRead        Boolean   @default(false)
+  readAt        DateTime?
+  sentCount     Int       @default(0)
+  status        String    @default("SENT")
+  createdAt     DateTime  @default(now())
 }
 
 model Settings {
-  id                  String   @id @default("global")
-  platformName        String   @default("Fixam")
-  supportEmail        String   @default("support@fixam.cm")
-  serviceFee          Float    @default(10.0)
-  defaultLanguage     String   @default("English")
-  baseCurrency        String   @default("XAF")
-  apiEndpoint         String   @default("https://api.fixam.cm/v1")
-  adminSecret         String   @default("secret")
-  maintenanceEnabled  Boolean  @default(false)
-  maintenanceMessage  String   @default("We are improving Fixam for you. Back soon!")
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  id                 String   @id @default("global")
+  platformName       String   @default("Fixam")
+  supportEmail       String   @default("support@fixam.cm")
+  serviceFee         Float    @default(10.0)
+  defaultLanguage    String   @default("English")
+  baseCurrency       String   @default("XAF")
+  apiEndpoint        String   @default("https://api.fixam.cm/v1")
+  adminSecret        String   @default("secret")
+  maintenanceEnabled Boolean  @default(false)
+  maintenanceMessage String   @default("We are improving Fixam for you. Back soon!")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 }
 
 model Report {
-  id              String   @id @default(uuid())
-  reporterId      String
-  targetUserId    String
-  reason          String
-  description     String?
-  status          String   @default("PENDING") // PENDING, RESOLVED, DISMISSED
-  createdAt       DateTime @default(now())
+  id           String   @id @default(uuid())
+  reporterId   String
+  targetUserId String
+  reason       String
+  description  String?
+  status       String   @default("PENDING") // PENDING, RESOLVED, DISMISSED
+  createdAt    DateTime @default(now())
 }

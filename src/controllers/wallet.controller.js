@@ -110,6 +110,17 @@ const getBalance = async (req, res, next) => {
       }
     });
 
+    const completedTasksCount = await prisma.job.count({
+      where: {
+        status: 'COMPLETED',
+        updatedAt: { gte: firstDayOfMonth },
+        OR: [
+          { clientId: req.user.id },
+          { assignments: { some: { provider: { userId: req.user.id } } } }
+        ]
+      }
+    });
+
     const completedTasks = await prisma.job.count({
       where: { clientId: req.user.id, status: 'COMPLETED' }
     });
@@ -124,7 +135,7 @@ const getBalance = async (req, res, next) => {
 
     const enrichedWallet = {
       ...wallet,
-      thisMonthTransactions: thisMonthTxStats._count.id || 0,
+      thisMonthTransactions: completedTasksCount,
       thisMonthSpent: Math.abs(thisMonthTxStats._sum.amount || 0),
       completedTasks,
       nextLevelTasks,

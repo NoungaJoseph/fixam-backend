@@ -353,7 +353,8 @@ const getUsers = async (req, res, next) => {
   try {
     const users = await prisma.user.findMany({
       include: { wallet: true, providerProfile: true },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
+      take: 50
     });
     res.status(200).json({ success: true, data: users });
   } catch (error) {
@@ -427,7 +428,8 @@ const getProviders = async (req, res, next) => {
         user: true, 
         documents: true 
       },
-      orderBy: { user: { createdAt: 'desc' } }
+      orderBy: { user: { createdAt: 'desc' } },
+      take: 50
     });
     res.status(200).json({ success: true, data: providers });
   } catch (error) {
@@ -453,7 +455,7 @@ const getTransactions = async (req, res, next) => {
     const transactions = await prisma.transaction.findMany({
       include: { wallet: { include: { user: true } } },
       orderBy: { createdAt: 'desc' },
-      take: 1000
+      take: 50
     });
     res.status(200).json({ success: true, data: transactions });
   } catch (error) {

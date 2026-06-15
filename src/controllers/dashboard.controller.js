@@ -116,6 +116,18 @@ const getDashboardData = async (req, res, next) => {
         _sum: { amount: true },
         where: { walletId: wallet.id, status: 'SUCCESS', createdAt: { gte: firstDayOfMonth } }
       });
+
+      const completedTasksCount = await prisma.job.count({
+        where: {
+          status: 'COMPLETED',
+          updatedAt: { gte: firstDayOfMonth },
+          OR: [
+            { clientId: userId },
+            { assignments: { some: { provider: { userId } } } }
+          ]
+        }
+      });
+
       const completedTasks = await prisma.job.count({ where: { clientId: userId, status: 'COMPLETED' } });
       
       let nextLevelTasks = 5;
@@ -127,7 +139,7 @@ const getDashboardData = async (req, res, next) => {
       const progressPercent = Math.min(100, Math.round((completedTasks / nextLevelTasks) * 100));
       enrichedWallet = {
         ...wallet,
-        thisMonthTransactions: thisMonthTxStats._count.id || 0,
+        thisMonthTransactions: completedTasksCount,
         thisMonthSpent: Math.abs(thisMonthTxStats._sum.amount || 0),
         completedTasks,
         nextLevelTasks,

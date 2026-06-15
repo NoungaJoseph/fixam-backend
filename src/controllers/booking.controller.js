@@ -216,6 +216,26 @@ const updateBookingStatus = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Invalid booking status.' });
     }
 
+    if (status === 'CANCELLED' && existing.status === 'PENDING') {
+      const wallet = await prisma.wallet.findUnique({ where: { userId: existing.clientId } });
+      if (wallet) {
+        await prisma.wallet.update({
+          where: { userId: existing.clientId },
+          data: { balance: { increment: existing.coinCost || 1 } }
+        });
+        await prisma.transaction.create({
+          data: {
+            walletId: wallet.id,
+            amount: existing.coinCost || 1,
+            type: 'REFUND',
+            status: 'SUCCESS',
+            reference: `REF-${existing.id.substring(0, 8)}`,
+            description: 'Refund for cancelled booking'
+          }
+        });
+      }
+    }
+
     const booking = await prisma.booking.update({
       where: { id: bookingId },
       data: {
