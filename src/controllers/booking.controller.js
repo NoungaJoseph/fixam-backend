@@ -39,6 +39,23 @@ const createBooking = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Provider profile not found.' });
     }
 
+    // CHECK CLIENT VERIFICATION HERE
+    const clientUser = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      include: { providerProfile: true }
+    });
+    
+    const isVerified = clientUser.fullName && !clientUser.isBlocked;
+    
+    if (!isVerified) {
+      return res.status(403).json({
+        success: false,
+        message: 'Please verify your identity before booking',
+        requiresVerification: true,
+        code: 'VERIFICATION_REQUIRED'
+      });
+    }
+
     if (taskId) {
       const task = await prisma.job.findUnique({ where: { id: taskId } });
       if (!task || task.clientId !== req.user.id) {

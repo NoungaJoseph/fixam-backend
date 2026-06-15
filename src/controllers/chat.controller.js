@@ -14,22 +14,18 @@ const findDirectConversationId = async (userId, participantId) => {
   return existing?.[0]?.id || null;
 };
 
-const ACTIVE_JOB_STATUSES = ['ASSIGNED', 'IN_PROGRESS'];
-const ACTIVE_BOOKING_STATUSES = ['PENDING', 'ACCEPTED'];
-
 const hasActiveWorkBetweenUsers = async (userId, participantId) => {
   const activeJob = await prisma.job.findFirst({
     where: {
-      status: { in: ACTIVE_JOB_STATUSES },
-      assignments: { some: { status: 'ACCEPTED' } },
+      status: { notIn: ['CANCELLED'] },
       OR: [
         {
           clientId: userId,
-          assignments: { some: { provider: { userId: participantId }, status: 'ACCEPTED' } },
+          assignments: { some: { provider: { userId: participantId }, status: { notIn: ['REJECTED', 'CANCELLED'] } } },
         },
         {
           clientId: participantId,
-          assignments: { some: { provider: { userId }, status: 'ACCEPTED' } },
+          assignments: { some: { provider: { userId }, status: { notIn: ['REJECTED', 'CANCELLED'] } } },
         },
       ],
     },
@@ -38,18 +34,18 @@ const hasActiveWorkBetweenUsers = async (userId, participantId) => {
 
   if (activeJob) return true;
 
-  const activeBooking = await prisma.booking.findFirst({
+  const anyBooking = await prisma.booking.findFirst({
     where: {
-      status: { in: ACTIVE_BOOKING_STATUSES },
+      status: { notIn: ['CANCELLED', 'REJECTED'] },
       OR: [
-        { clientId: userId, providerId: participantId },
-        { clientId: participantId, providerId: userId },
+        { clientId: userId, provider: { userId: participantId } },
+        { clientId: participantId, provider: { userId: userId } },
       ],
     },
     select: { id: true },
   });
 
-  return Boolean(activeBooking);
+  return Boolean(anyBooking);
 };
 
 const assertCanMessageDirectUser = async (requester, participantId) => {
@@ -70,7 +66,7 @@ const assertCanMessageDirectUser = async (requester, participantId) => {
 
   const canMessage = await hasActiveWorkBetweenUsers(requester.id, participantId);
   if (!canMessage) {
-    const error = new Error('You can only message after an active booking or selected task. Completed tasks lock chat until you book again.');
+    const error = new Error('requiresBooking');
     error.statusCode = 403;
     throw error;
   }
@@ -128,7 +124,7 @@ const assertCanCreateDirectConversation = async (requester, target) => {
   if (requester.role === 'PROVIDER' && target.role === 'CLIENT') {
     const canMessage = await hasActiveWorkBetweenUsers(requester.id, target.id);
     if (!canMessage) {
-      const error = new Error('You can only message clients after an active booking or selected task');
+      const error = new Error('requiresBooking');
       error.statusCode = 403;
       throw error;
     }
@@ -137,7 +133,7 @@ const assertCanCreateDirectConversation = async (requester, target) => {
   if (requester.role === 'CLIENT' && target.role === 'PROVIDER') {
     const canMessage = await hasActiveWorkBetweenUsers(requester.id, target.id);
     if (!canMessage) {
-      const error = new Error('Book this provider first to start chatting');
+      const error = new Error('requiresBooking');
       error.statusCode = 403;
       throw error;
     }
