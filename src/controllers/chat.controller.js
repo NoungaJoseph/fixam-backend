@@ -4,7 +4,7 @@ const debugLog = (...args) => {
   if (process.env.NODE_ENV !== 'production') console.log(...args);
 };
 
-const ACTIVE_JOB_STATUSES = ['ACCEPTED', 'ASSIGNED', 'IN_PROGRESS', 'ONGOING'];
+const ACTIVE_JOB_STATUSES = ['PENDING', 'ASSIGNED', 'IN_PROGRESS'];
 const ACTIVE_BOOKING_STATUSES = ['PENDING', 'ACCEPTED'];
 
 const findDirectConversationId = async (userId, participantId) => {
