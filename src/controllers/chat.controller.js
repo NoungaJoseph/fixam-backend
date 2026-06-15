@@ -4,6 +4,9 @@ const debugLog = (...args) => {
   if (process.env.NODE_ENV !== 'production') console.log(...args);
 };
 
+const ACTIVE_JOB_STATUSES = ['ACCEPTED', 'ASSIGNED', 'IN_PROGRESS', 'ONGOING'];
+const ACTIVE_BOOKING_STATUSES = ['PENDING', 'ACCEPTED'];
+
 const findDirectConversationId = async (userId, participantId) => {
   const existing = await prisma.$queryRaw`
     SELECT c.id FROM "Conversation" c
@@ -38,8 +41,8 @@ const hasActiveWorkBetweenUsers = async (userId, participantId) => {
     where: {
       status: { notIn: ['CANCELLED', 'REJECTED'] },
       OR: [
-        { clientId: userId, provider: { userId: participantId } },
-        { clientId: participantId, provider: { userId: userId } },
+        { clientId: userId, providerId: participantId },
+        { clientId: participantId, providerId: userId },
       ],
     },
     select: { id: true },

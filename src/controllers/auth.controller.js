@@ -65,6 +65,15 @@ const register = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'User with this email or phone already exists' });
     }
 
+    if (referralCode && referralCode.trim() !== '') {
+      const validReferrer = await prisma.user.findFirst({
+        where: { referralCode: referralCode.trim().toUpperCase() }
+      });
+      if (!validReferrer) {
+        return res.status(400).json({ success: false, message: 'Invalid referral code provided.' });
+      }
+    }
+
     const generatedReferralCode = `FIXAM-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
     const hashedPassword = await bcrypt.hash(password, 10);
 
