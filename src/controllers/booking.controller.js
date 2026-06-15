@@ -167,13 +167,32 @@ const getMyBookings = async (req, res, next) => {
       ? { providerId: req.user.id }
       : { clientId: req.user.id };
 
-    const bookings = await prisma.booking.findMany({
-      where,
-      include: includeBooking,
-      orderBy: [{ bookingDate: 'asc' }, { createdAt: 'desc' }],
-    });
+    const page = parseInt(req.query.page) || 1;
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    const skip = (page - 1) * limit;
 
-    res.status(200).json({ success: true, data: bookings });
+    const [bookings, total] = await prisma.$transaction([
+      prisma.booking.findMany({
+        where,
+        include: includeBooking,
+        orderBy: [{ bookingDate: 'asc' }, { createdAt: 'desc' }],
+        skip,
+        take: limit,
+      }),
+      prisma.booking.count({ where })
+    ]);
+
+    res.status(200).json({
+      success: true,
+      data: bookings,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit),
+        hasMore: page * limit < total
+      }
+    });
   } catch (error) {
     next(error);
   }

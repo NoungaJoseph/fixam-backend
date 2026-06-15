@@ -641,7 +641,10 @@ const getProviderJobs = async (req, res, next) => {
           job: { 
             include: { 
               client: { select: { id: true, fullName: true, avatar: true, phone: true } },
-              assignments: { select: { id: true, providerId: true, status: true } }
+              assignments: { 
+                where: { status: 'ACCEPTED' },
+                select: { id: true, providerId: true, status: true, selectedAt: true }
+              }
             } 
           } 
         },
