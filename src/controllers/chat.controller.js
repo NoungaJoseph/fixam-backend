@@ -250,7 +250,7 @@ const getConversations = async (req, res, next) => {
 };
 
 const findActiveTaskBetweenUsers = async (currentUserId, otherUserId) => {
-  return prisma.job.findFirst({
+  const job = await prisma.job.findFirst({
     where: {
       status: { in: ACTIVE_JOB_STATUSES },
       OR: [
@@ -288,6 +288,32 @@ const findActiveTaskBetweenUsers = async (currentUserId, otherUserId) => {
     },
     orderBy: { updatedAt: 'desc' }
   });
+
+  if (job) return job;
+
+  const booking = await prisma.booking.findFirst({
+    where: {
+      status: { in: ACTIVE_BOOKING_STATUSES },
+      OR: [
+        { clientId: currentUserId, providerId: otherUserId },
+        { clientId: otherUserId, providerId: currentUserId },
+      ]
+    },
+    include: {
+      client: { select: { id: true, fullName: true, avatar: true } },
+      provider: {
+        include: {
+          user: { select: { id: true, fullName: true, avatar: true } }
+        }
+      }
+    },
+    orderBy: { updatedAt: 'desc' }
+  });
+
+  if (booking) {
+    return { ...booking, isBooking: true };
+  }
+  return null;
 };
 
 const openSupportConversation = async (req, res, next) => {

@@ -71,41 +71,129 @@ const initSocket = (server) => {
     });
 
     // --- WEBRTC SIGNALING (CALLING) ---
-    socket.on('call:initiate', ({ receiverId, type }) => {
-      const receiverSocketId = users.get(receiverId);
-      if (receiverSocketId) {
-        io.to(receiverSocketId).emit('call:incoming', { 
-          callerId: socket.userId, 
-          type // AUDIO or VIDEO
+    socket.on('call:initiate', async (data) => {
+      const { receiverId, callType, conversationId } = data;
+      
+      try {
+        // Create call session in DB
+        const callSession = await prisma.callSession.create({
+          data: {
+            callerId: socket.userId,
+            receiverId,
+            type: callType || 'AUDIO',
+            status: 'PENDING'
+          }
         });
+        
+        // Notify receiver
+        const receiverSocketId = users.get(receiverId);
+        if (receiverSocketId) {
+          const user = await prisma.user.findUnique({
+            where: { id: socket.userId },
+            select: { fullName: true, avatar: true }
+          });
+          
+          io.to(receiverSocketId).emit('call:incoming', {
+            callId: callSession.id,
+            callerId: socket.userId,
+            callerName: user?.fullName,
+            callerAvatar: user?.avatar,
+            callType: callType || 'AUDIO',
+            conversationId
+          });
+        }
+        
+        socket.emit('call:initiated', { 
+          callId: callSession.id,
+          status: 'RINGING'
+        });
+      } catch (err) {
+        console.error('Error initiating call:', err.message);
       }
     });
 
-    socket.on('call:offer', ({ receiverId, offer }) => {
-      const receiverSocketId = users.get(receiverId);
-      if (receiverSocketId) {
-        io.to(receiverSocketId).emit('call:offer', { callerId: socket.userId, offer });
+    socket.on('call:accept', async (data) => {
+      const { callId } = data;
+      try {
+        await prisma.callSession.update({
+          where: { id: callId },
+          data: { 
+            status: 'ONGOING',
+            startTime: new Date()
+          }
+        });
+        
+        const call = await prisma.callSession.findUnique({
+          where: { id: callId }
+        });
+        
+        const callerSocketId = users.get(call.callerId);
+        if (callerSocketId) {
+          io.to(callerSocketId).emit('call:accepted', { 
+            callId 
+          });
+        }
+      } catch (err) {
+        console.error('Error accepting call:', err.message);
       }
     });
 
-    socket.on('call:answer', ({ callerId, answer }) => {
-      const callerSocketId = users.get(callerId);
-      if (callerSocketId) {
-        io.to(callerSocketId).emit('call:answer', { receiverId: socket.userId, answer });
+    socket.on('call:reject', async (data) => {
+      const { callId } = data;
+      try {
+        await prisma.callSession.update({
+          where: { id: callId },
+          data: { status: 'MISSED', endTime: new Date() }
+        });
+        
+        const call = await prisma.callSession.findUnique({
+          where: { id: callId }
+        });
+        
+        const callerSocketId = users.get(call.callerId);
+        if (callerSocketId) {
+          io.to(callerSocketId).emit('call:rejected', { 
+            callId 
+          });
+        }
+      } catch (err) {
+        console.error('Error rejecting call:', err.message);
       }
     });
 
-    socket.on('ice-candidate', ({ targetId, candidate }) => {
-      const targetSocketId = users.get(targetId);
+    socket.on('call:end', async (data) => {
+      const { callId } = data;
+      try {
+        await prisma.callSession.update({
+          where: { id: callId },
+          data: { status: 'ENDED', endTime: new Date() }
+        });
+        
+        const call = await prisma.callSession.findUnique({
+          where: { id: callId }
+        });
+        
+        // Notify both parties
+        const otherUserId = call.callerId === socket.userId 
+          ? call.receiverId : call.callerId;
+        const otherSocketId = users.get(otherUserId);
+        if (otherSocketId) {
+          io.to(otherSocketId).emit('call:ended', { callId });
+        }
+      } catch (err) {
+        console.error('Error ending call:', err.message);
+      }
+    });
+
+    socket.on('call:signal', (data) => {
+      const { callId, signal, targetUserId } = data;
+      const targetSocketId = users.get(targetUserId);
       if (targetSocketId) {
-        io.to(targetSocketId).emit('ice-candidate', { fromId: socket.userId, candidate });
-      }
-    });
-
-    socket.on('call:end', ({ targetId }) => {
-      const targetSocketId = users.get(targetId);
-      if (targetSocketId) {
-        io.to(targetSocketId).emit('call:ended');
+        io.to(targetSocketId).emit('call:signal', {
+          callId,
+          signal,
+          fromUserId: socket.userId
+        });
       }
     });
 
