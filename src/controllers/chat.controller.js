@@ -24,11 +24,11 @@ const hasActiveWorkBetweenUsers = async (userId, participantId) => {
       OR: [
         {
           clientId: userId,
-          assignments: { some: { provider: { userId: participantId }, status: { notIn: ['REJECTED', 'CANCELLED'] } } },
+          assignments: { some: { provider: { userId: participantId }, status: 'ACCEPTED' } },
         },
         {
           clientId: participantId,
-          assignments: { some: { provider: { userId }, status: { notIn: ['REJECTED', 'CANCELLED'] } } },
+          assignments: { some: { provider: { userId }, status: 'ACCEPTED' } },
         },
       ],
     },
@@ -39,7 +39,7 @@ const hasActiveWorkBetweenUsers = async (userId, participantId) => {
 
   const anyBooking = await prisma.booking.findFirst({
     where: {
-      status: { notIn: ['CANCELLED', 'REJECTED'] },
+      status: { in: ['ACCEPTED', 'COMPLETED'] },
       OR: [
         { clientId: userId, providerId: participantId },
         { clientId: participantId, providerId: userId },
