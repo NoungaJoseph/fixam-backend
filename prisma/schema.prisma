@@ -100,6 +100,7 @@ model User {
   lastSeen      DateTime  @default(now())
   isOnline      Boolean   @default(false)
   referralCode  String?   @unique
+  referredBy    String?
   dob           DateTime?
   lastNameChange DateTime?
   lastPasswordChange DateTime?
@@ -241,6 +242,7 @@ model Transaction {
   paymentMethod   PaymentMethod?
   providerReference String?
   phoneNumber     String?
+  isSystemTransaction Boolean @default(false)
   createdAt       DateTime          @default(now())
 
   wallet          Wallet            @relation(fields: [walletId], references: [id])

@@ -10,5 +10,6 @@ router.post('/feedback', protect, userController.submitFeedback);
 router.post('/reports', protect, userController.reportUser);
 router.put('/fcm-token', protect, userController.updateFcmToken);
 router.delete('/me', protect, userController.deleteAccount);
+router.get('/referral-stats', protect, userController.getReferralStats);
 
 module.exports = router;

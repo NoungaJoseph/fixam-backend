@@ -522,9 +522,18 @@ const verifyEmailOTP = async (req, res, next) => {
       const { fullName, email: plEmail, phone, password, dob, role, referralCode, language, providerProfile, originalReferral } = cached.payload;
 
       const newUser = await prisma.$transaction(async (tx) => {
+        let referrerId = null;
+        if (originalReferral) {
+          const referrer = await tx.user.findFirst({
+            where: { referralCode: originalReferral.trim().toUpperCase() }
+          });
+          if (referrer) referrerId = referrer.id;
+        }
+
         const user = await tx.user.create({
           data: {
             fullName, email: plEmail, phone, password, dob, role, referralCode,
+            referredBy: referrerId,
             preferredLanguage: language, isEmailVerified: true, welcomeCoinsGiven: true,
             wallet: { create: { balance: 1 } },
             ...(role === 'PROVIDER' ? {
@@ -551,40 +560,33 @@ const verifyEmailOTP = async (req, res, next) => {
           data: {
             walletId: user.wallet.id, amount: 1, type: 'PURCHASE', status: 'SUCCESS',
             description: 'Welcome bonus — thank you for joining Fixam!',
-            reference: 'WELCOME_' + user.id + '_' + Date.now()
+            reference: 'WELCOME_' + user.id + '_' + Date.now(),
+            isSystemTransaction: true
           }
         });
 
-        if (originalReferral) {
-          const referrer = await tx.user.findFirst({
-            where: { referralCode: originalReferral.trim().toUpperCase() },
-            include: { wallet: true }
+        if (referrerId) {
+          const referrerWallet = await tx.wallet.findUnique({
+            where: { userId: referrerId }
           });
 
-          if (referrer && referrer.id !== user.id) {
+          if (referrerWallet) {
             await tx.wallet.update({
-              where: { userId: referrer.id },
+              where: { id: referrerWallet.id },
               data: { balance: { increment: 1 } }
             });
-            await tx.wallet.update({
-              where: { userId: user.id },
-              data: { balance: { increment: 3 } }
+            
+            await tx.transaction.create({
+              data: {
+                walletId: referrerWallet.id, amount: 1, type: 'PURCHASE', status: 'SUCCESS',
+                description: `Referral bonus for inviting ${fullName || phone}`,
+                isSystemTransaction: true
+              }
             });
-            await tx.transaction.createMany({
-              data: [
-                {
-                  walletId: referrer.wallet.id, amount: 1, type: 'REFUND', status: 'SUCCESS',
-                  description: `Referral bonus for inviting ${fullName || phone}`
-                },
-                {
-                  walletId: user.wallet.id, amount: 3, type: 'REFUND', status: 'SUCCESS',
-                  description: 'Welcome referral bonus'
-                }
-              ]
-            });
+            
             await tx.notification.create({
               data: {
-                userId: referrer.id, title: 'Referral bonus earned',
+                userId: referrerId, title: 'Referral bonus earned',
                 body: 'You earned 1 coin because someone joined with your referral code.',
                 data: { type: 'TRANSACTION', status: 'SUCCESS' }
               }

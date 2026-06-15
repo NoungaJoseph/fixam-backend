@@ -257,6 +257,44 @@ const deleteAccount = async (req, res, next) => {
   }
 };
 
+const getReferralStats = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { referralCode: true }
+    });
+    
+    const referredUsers = await prisma.user.findMany({
+      where: { referredBy: userId },
+      select: {
+        id: true,
+        fullName: true,
+        avatar: true,
+        createdAt: true
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    
+    const coinsEarned = referredUsers.length * 1;
+    
+    return res.status(200).json({
+      success: true,
+      referralCode: user?.referralCode,
+      friendsInvited: referredUsers.length,
+      coinsEarned,
+      referredUsers: referredUsers.map(u => ({
+        id: u.id,
+        name: u.fullName || 'Fixam User',
+        avatar: u.avatar,
+        joinedAt: u.createdAt
+      }))
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getMe,
   updateProfile,
@@ -265,4 +303,5 @@ module.exports = {
   changePassword,
   updateFcmToken,
   deleteAccount,
+  getReferralStats,
 };

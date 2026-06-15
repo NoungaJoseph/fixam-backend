@@ -420,7 +420,8 @@ const getCoinTransactions = async (req, res, next) => {
     const [items, total] = await prisma.$transaction([
       prisma.transaction.findMany({
         where: {
-          wallet: { userId: req.user.id }
+          wallet: { userId: req.user.id },
+          isSystemTransaction: false
         },
         orderBy: { createdAt: 'desc' },
         skip,
@@ -428,7 +429,8 @@ const getCoinTransactions = async (req, res, next) => {
       }),
       prisma.transaction.count({
         where: {
-          wallet: { userId: req.user.id }
+          wallet: { userId: req.user.id },
+          isSystemTransaction: false
         }
       })
     ]);
