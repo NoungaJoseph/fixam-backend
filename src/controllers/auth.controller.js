@@ -171,10 +171,26 @@ const login = async (req, res, next) => {
     // IP Tracking & Alert Logic
     const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
     if (clientIp && user.lastIpAddress && user.lastIpAddress !== clientIp && user.email) {
-      sendSuspiciousLoginAlert(user.email, {
-        ip: clientIp,
-        time: new Date().toLocaleString()
-      }, user.preferredLanguage).catch(err => console.error('[LoginAlert] failed:', err.message));
+      (async () => {
+        try {
+          const axios = require('axios');
+          const ipToCheck = clientIp.split(',')[0].trim();
+          // We can fetch IP location if valid. Avoid local IPs or IPv6 if the free API doesn't support them well.
+          const geoRes = await axios.get(`http://ip-api.com/json/${ipToCheck}?fields=city,country,status`);
+          const location = geoRes.data.status === 'success' ? `${geoRes.data.city}, ${geoRes.data.country}` : clientIp;
+          
+          await sendSuspiciousLoginAlert(user.email, {
+            location,
+            time: new Date().toLocaleString()
+          }, user.preferredLanguage);
+        } catch (err) {
+          console.error('[LoginAlert] API/Geo failed:', err.message);
+          sendSuspiciousLoginAlert(user.email, {
+            location: clientIp,
+            time: new Date().toLocaleString()
+          }, user.preferredLanguage).catch(e => console.error('[LoginAlert] fallback failed:', e.message));
+        }
+      })();
     }
 
     if (clientIp && user.lastIpAddress !== clientIp) {
