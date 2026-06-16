@@ -71,15 +71,14 @@ const sendSuspiciousLoginAlert = async (email, details, language = 'en') => {
       <div style="background: #fff1f0; padding: 15px; border-radius: 8px; color: #cf1322;">
         <strong>${isFr ? 'Détails:' : 'Details:'}</strong><br/>
         ${isFr ? 'Lieu' : 'Location'}: ${details.location}<br/>
+        ${isFr ? 'Appareil' : 'Device'}: ${details.device}<br/>
         ${isFr ? 'Heure' : 'Time'}: ${details.time}
       </div>
-      <p>${isFr ? 'Si c\'était vous, vous pouvez ignorer cet e-mail en toute sécurité.' : 'If this was you, you can safely ignore this email.'}</p>
-      <p><strong>${isFr ? 'Si vous ne vous êtes PAS connecté, veuillez réinitialiser votre mot de passe immédiatement.' : 'If you did NOT log in, please reset your password immediately.'}</strong></p>
+      <p>${isFr ? 'Si ce n\'était pas vous, veuillez changer votre mot de passe immédiatement.' : 'If this wasn\'t you, please change your password immediately.'}</p>
     </div>
   `;
   await sendEmail({ email, subject, html });
 };
-
 const sendMarketingBroadcast = async (emails, subject, content) => {
   // emails can be an array of strings
   const html = `
