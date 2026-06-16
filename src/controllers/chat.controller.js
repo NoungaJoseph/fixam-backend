@@ -45,18 +45,15 @@ const hasActiveWorkBetweenUsers = async (userId, participantId) => {
     if (activeJob) return true;
   }
 
-  const bookingOrConditions = [];
-  if (user2ProviderId) {
-    bookingOrConditions.push({ clientId: userId, providerId: user2ProviderId });
-  }
-  if (user1ProviderId) {
-    bookingOrConditions.push({ clientId: participantId, providerId: user1ProviderId });
-  }
+  const bookingOrConditions = [
+    { clientId: userId, providerId: participantId },
+    { clientId: participantId, providerId: userId }
+  ];
 
   if (bookingOrConditions.length > 0) {
     const anyBooking = await prisma.booking.findFirst({
       where: {
-        status: { in: ['ACCEPTED', 'COMPLETED'] },
+        status: { in: ['ACCEPTED', 'COMPLETED', 'IN_PROGRESS'] },
         OR: bookingOrConditions,
       },
       select: { id: true },
@@ -307,28 +304,21 @@ const findActiveTaskBetweenUsers = async (currentUserId, otherUserId) => {
 
   if (job) return job;
 
-  const bookingOrConditions = [];
-  if (user2ProviderId) {
-    bookingOrConditions.push({ clientId: currentUserId, providerId: user2ProviderId });
-  }
-  if (user1ProviderId) {
-    bookingOrConditions.push({ clientId: otherUserId, providerId: user1ProviderId });
-  }
+  const bookingOrConditions = [
+    { clientId: currentUserId, providerId: otherUserId },
+    { clientId: otherUserId, providerId: currentUserId }
+  ];
 
   let booking = null;
   if (bookingOrConditions.length > 0) {
     booking = await prisma.booking.findFirst({
       where: {
-        status: { in: ACTIVE_BOOKING_STATUSES },
+        status: { in: ['PENDING', 'ACCEPTED', 'ASSIGNED', 'IN_PROGRESS'] },
         OR: bookingOrConditions
       },
       include: {
         client: { select: { id: true, fullName: true, avatar: true } },
-        provider: {
-          include: {
-            user: { select: { id: true, fullName: true, avatar: true } }
-          }
-        }
+        provider: { select: { id: true, fullName: true, avatar: true } }
       },
       orderBy: { updatedAt: 'desc' }
     });

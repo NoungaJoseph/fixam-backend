@@ -202,7 +202,7 @@ const updateBookingStatus = async (req, res, next) => {
   try {
     const { bookingId } = req.params;
     const { status, paymentStatus } = req.body;
-    const allowed = ['PENDING', 'ACCEPTED', 'REJECTED', 'CANCELLED', 'COMPLETED'];
+    const allowed = ['PENDING', 'ACCEPTED', 'IN_PROGRESS', 'REJECTED', 'CANCELLED', 'COMPLETED'];
     const existing = await prisma.booking.findUnique({ where: { id: bookingId } });
     if (!existing) return res.status(404).json({ success: false, message: 'Booking not found.' });
 
