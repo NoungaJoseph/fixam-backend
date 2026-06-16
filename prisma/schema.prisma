@@ -137,6 +137,8 @@ model User {
   usersBlocked         User[]                    @relation("BlockedUsers")
   blockedBy            User[]                    @relation("BlockedUsers")
   favoriteProviders    ClientFavoriteProvider[]  @relation("ClientFavoriteProviders")
+
+  @@index([role])
 }
 
 model ProviderProfile {
@@ -167,6 +169,9 @@ model ProviderProfile {
   assignments JobAssignment[]
   documents   VerificationDocument[]
   favoritedBy ClientFavoriteProvider[]
+
+  @@index([verification])
+  @@index([rating])
 }
 
 model Job {
@@ -198,6 +203,8 @@ model Job {
   @@index([clientId, status])
   @@index([status, approvalStatus])
   @@index([createdAt])
+  @@index([category])
+  @@index([location])
 }
 
 model JobAssignment {

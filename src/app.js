@@ -18,6 +18,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const hpp = require('hpp');
+const compression = require('compression');
 const { apiLimiter } = require('./middlewares/rateLimit.middleware');
 const sanitizeMiddleware = require('./middlewares/sanitize.middleware');
 
@@ -42,6 +43,8 @@ const { errorHandler } = require('./middlewares/error.middleware');
 const app = express();
 app.set('trust proxy', 1);
 
+// Enable HTTP Compression
+app.use(compression());
 
 // Security Middlewares
 app.use(helmet({
