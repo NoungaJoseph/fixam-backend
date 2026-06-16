@@ -216,6 +216,10 @@ const updateBookingStatus = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Invalid booking status.' });
     }
 
+    if (status === 'ACCEPTED' && isProvider && !req.user.isOnline) {
+      return res.status(403).json({ success: false, message: 'You must be available for work to accept a booking.' });
+    }
+
     if (status === 'CANCELLED' && existing.status === 'PENDING') {
       const wallet = await prisma.wallet.findUnique({ where: { userId: existing.clientId } });
       if (wallet) {

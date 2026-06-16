@@ -305,6 +305,10 @@ const applyForJob = async (req, res, next) => {
       return res.status(409).json({ success: false, data: existing, message: 'You have already applied for this task.' });
     }
 
+    if (!req.user.isOnline) {
+      return res.status(403).json({ success: false, message: 'You must be available for work to apply for tasks.' });
+    }
+
     // Providers can apply for free, but must have enough coins for the task before applying.
     // The coins are deducted only if the client selects this provider.
     const wallet = await prisma.wallet.findUnique({ where: { userId: req.user.id } });

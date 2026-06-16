@@ -32,7 +32,8 @@ const getProviders = async (req, res, next) => {
   try {
     const providers = await prisma.providerProfile.findMany({
       where: { 
-        profileMode: 'WORK'
+        profileMode: 'WORK',
+        user: { isOnline: true }
       },
       include: { 
         user: { 
@@ -65,7 +66,8 @@ const getProvidersOfTheMonth = async (req, res, next) => {
   try {
     const providers = await prisma.providerProfile.findMany({
       where: { 
-        profileMode: 'WORK'
+        profileMode: 'WORK',
+        user: { isOnline: true }
       },
       include: { 
         user: { 
@@ -101,6 +103,7 @@ const getNearbyProviders = async (req, res, next) => {
       where: {
         profileMode: 'WORK',
         skills: category ? { has: category } : undefined,
+        user: { isOnline: true }
       },
       include: { 
         user: { 
