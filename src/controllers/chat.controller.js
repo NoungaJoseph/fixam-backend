@@ -4,8 +4,8 @@ const debugLog = (...args) => {
   if (process.env.NODE_ENV !== 'production') console.log(...args);
 };
 
-const ACTIVE_JOB_STATUSES = ['PENDING', 'ASSIGNED', 'IN_PROGRESS'];
-const ACTIVE_BOOKING_STATUSES = ['PENDING', 'ACCEPTED'];
+const ACTIVE_JOB_STATUSES = ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'ACCEPTED'];
+const ACTIVE_BOOKING_STATUSES = ['PENDING', 'ACCEPTED', 'ASSIGNED'];
 
 const findDirectConversationId = async (userId, participantId) => {
   const existing = await prisma.$queryRaw`
@@ -45,18 +45,26 @@ const hasActiveWorkBetweenUsers = async (userId, participantId) => {
     if (activeJob) return true;
   }
 
-  const anyBooking = await prisma.booking.findFirst({
-    where: {
-      status: { in: ['ACCEPTED', 'COMPLETED'] },
-      OR: [
-        { clientId: userId, providerId: participantId },
-        { clientId: participantId, providerId: userId },
-      ],
-    },
-    select: { id: true },
-  });
+  const bookingOrConditions = [];
+  if (user2ProviderId) {
+    bookingOrConditions.push({ clientId: userId, providerId: user2ProviderId });
+  }
+  if (user1ProviderId) {
+    bookingOrConditions.push({ clientId: participantId, providerId: user1ProviderId });
+  }
 
-  return Boolean(anyBooking);
+  if (bookingOrConditions.length > 0) {
+    const anyBooking = await prisma.booking.findFirst({
+      where: {
+        status: { in: ['ACCEPTED', 'COMPLETED'] },
+        OR: bookingOrConditions,
+      },
+      select: { id: true },
+    });
+    return Boolean(anyBooking);
+  }
+
+  return false;
 };
 
 const assertCanMessageDirectUser = async (requester, participantId) => {
@@ -299,24 +307,32 @@ const findActiveTaskBetweenUsers = async (currentUserId, otherUserId) => {
 
   if (job) return job;
 
-  const booking = await prisma.booking.findFirst({
-    where: {
-      status: { in: ACTIVE_BOOKING_STATUSES },
-      OR: [
-        { clientId: currentUserId, providerId: otherUserId },
-        { clientId: otherUserId, providerId: currentUserId },
-      ]
-    },
-    include: {
-      client: { select: { id: true, fullName: true, avatar: true } },
-      provider: {
-        include: {
-          user: { select: { id: true, fullName: true, avatar: true } }
+  const bookingOrConditions = [];
+  if (user2ProviderId) {
+    bookingOrConditions.push({ clientId: currentUserId, providerId: user2ProviderId });
+  }
+  if (user1ProviderId) {
+    bookingOrConditions.push({ clientId: otherUserId, providerId: user1ProviderId });
+  }
+
+  let booking = null;
+  if (bookingOrConditions.length > 0) {
+    booking = await prisma.booking.findFirst({
+      where: {
+        status: { in: ACTIVE_BOOKING_STATUSES },
+        OR: bookingOrConditions
+      },
+      include: {
+        client: { select: { id: true, fullName: true, avatar: true } },
+        provider: {
+          include: {
+            user: { select: { id: true, fullName: true, avatar: true } }
+          }
         }
-      }
-    },
-    orderBy: { updatedAt: 'desc' }
-  });
+      },
+      orderBy: { updatedAt: 'desc' }
+    });
+  }
 
   if (booking) {
     return { ...booking, isBooking: true };

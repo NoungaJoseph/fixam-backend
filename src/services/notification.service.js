@@ -201,9 +201,70 @@ async function sendBookingNotification(fcmToken, title, body, bookingId) {
   }
 }
 
+async function sendCallNotification(fcmToken, callerName, callType, callId) {
+  try {
+    if (!fcmToken) {
+      console.log(`[Push Call] No FCM token provided for call ${callId}`)
+      return { success: false, reason: 'no_fcm_token' }
+    }
+
+    const message = {
+      token: fcmToken,
+      notification: { 
+        title: 'Incoming Call', 
+        body: `${callerName} is calling you...` 
+      },
+      data: {
+        type: 'CALL',
+        callType: String(callType || 'AUDIO'),
+        callId: String(callId || ''),
+        callerName: String(callerName || 'Someone'),
+        // notifee fields for Android to wake the screen
+        channelId: 'calls',
+      },
+      android: {
+        priority: 'high',
+        notification: {
+          sound: 'ringtone',
+          channelId: 'calls',
+          priority: 'high',
+          visibility: 'public'
+        }
+      },
+      apns: {
+        payload: {
+          aps: {
+            sound: 'ringtone.wav',
+            badge: 1,
+            'content-available': 1
+          }
+        }
+      }
+    }
+
+    const response = await admin.messaging().send(message)
+    console.log(`[Push Call] Sent for call ${callId}: ${response}`)
+    return { success: true, messageId: response }
+  } catch (error) {
+    if (
+      error.code === 'messaging/invalid-registration-token' ||
+      error.code === 'messaging/registration-token-not-registered'
+    ) {
+      console.log(`[Push Call] Invalid token, clearing from database`)
+      await prisma.user.updateMany({
+        where: { fcmToken },
+        data: { fcmToken: null }
+      }).catch(() => {})
+    }
+    console.error(`[Push Call] Failed for call ${callId}:`, error.message)
+    return { success: false, reason: error.message }
+  }
+}
+
 module.exports = { 
   sendPushNotification, 
   sendPushToMultiple,
   sendMulticastNotification,
-  sendBookingNotification
+  sendBookingNotification,
+  sendCallNotification
 }
