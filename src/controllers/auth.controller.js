@@ -194,20 +194,31 @@ const login = async (req, res, next) => {
 const requestOTP = async (req, res, next) => {
   try {
     const { email, phone, language } = req.body;
-    const identifier = email || phone;
+    
+    let identifier;
+    let formattedEmail = email ? email.trim().toLowerCase() : null;
+    let formattedPhone = phone ? phone.replace(/\D/g, '') : null;
+    identifier = formattedEmail || formattedPhone;
     
     if (!identifier) {
       return res.status(400).json({ success: false, message: 'Email or phone is required' });
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    otpCache.set(identifier, { otp, expires: Date.now() + 600000, language: language || 'en' });
+    const existingCache = otpCache.get(identifier);
+    
+    let cachePayload = { otp, expires: Date.now() + 600000, language: language || 'en' };
+    if (existingCache && existingCache.type === 'registration') {
+      cachePayload = { ...existingCache, otp, expires: Date.now() + 600000 };
+    }
 
-    if (email) {
-      await sendOTP(email, otp, language || 'en');
+    otpCache.set(identifier, cachePayload);
+
+    if (formattedEmail) {
+      await sendOTP(formattedEmail, otp, language || 'en');
       return res.status(200).json({ success: true, message: 'OTP sent to email' });
     } else {
-      await sendSMSOTP(phone, otp);
+      await sendSMSOTP(formattedPhone, otp);
       return res.status(200).json({ success: true, message: 'OTP sent via SMS' });
     }
   } catch (error) {
