@@ -8,6 +8,7 @@ const updateProfileSchema = z.object({
   avatar: z.string().url().optional(),
   fcmToken: z.string().optional(),
   dob: z.string().optional(),
+  location: z.string().optional(),
   bio: z.string().optional(),
   skills: z.array(z.string()).optional(),
   rate: z.number().optional(),

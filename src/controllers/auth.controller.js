@@ -46,7 +46,7 @@ const generateToken = (id, role) => {
 const register = async (req, res, next) => {
   try {
     debugLog('Registering user:', { email: req.body.email, phone: req.body.phone, role: req.body.role });
-    let { fullName, email, phone, password, role, referralCode, referral, providerProfile, language } = req.body;
+    let { fullName, email, phone, password, role, referralCode, referral, providerProfile, language, location } = req.body;
     referralCode = referralCode || referral;
     
     if (email) email = email.trim().toLowerCase();
@@ -87,7 +87,7 @@ const register = async (req, res, next) => {
     
     // Cache the entire registration payload
     const payload = {
-      fullName, email, phone, password: hashedPassword, dob, role: role || 'CLIENT', 
+      fullName, email, phone, password: hashedPassword, dob, role: role || 'CLIENT', location: location || '',
       referralCode: generatedReferralCode, language: language || 'en', providerProfile,
       originalReferral: referralCode
     };
@@ -421,7 +421,7 @@ const forgotPassword = async (req, res, next) => {
     
     const user = await prisma.user.findFirst({ where: { email: email.trim().toLowerCase() } });
     if (!user) {
-      return res.status(200).json({ success: true, message: 'If an account exists, an OTP has been sent to that email' });
+      return res.status(404).json({ success: false, message: 'User not found' });
     }
 
     if (user.isBlocked) {
@@ -528,7 +528,7 @@ const verifyEmailOTP = async (req, res, next) => {
 
     if (cached.type === 'registration' && cached.payload) {
       // Execute the database creation since OTP is valid
-      const { fullName, email: plEmail, phone, password, dob, role, referralCode, language, providerProfile, originalReferral } = cached.payload;
+      const { fullName, email: plEmail, phone, password, dob, role, referralCode, language, providerProfile, originalReferral, location } = cached.payload;
 
       const newUser = await prisma.$transaction(async (tx) => {
         let referrerId = null;
@@ -541,7 +541,7 @@ const verifyEmailOTP = async (req, res, next) => {
 
         const user = await tx.user.create({
           data: {
-            fullName, email: plEmail, phone, password, dob, role, referralCode,
+            fullName, email: plEmail, phone, password, dob, role, referralCode, location,
             referredBy: referrerId,
             preferredLanguage: language, isEmailVerified: true, welcomeCoinsGiven: true,
             wallet: { create: { balance: 1 } },
