@@ -11,7 +11,7 @@ const createReview = async (req, res, next) => {
     }
 
     // Verify the reviewer is connected to this job (as client or assigned provider)
-    const job = await prisma.job.findFirst({
+    let job = await prisma.job.findFirst({
       where: {
         id: jobId,
         OR: [
@@ -22,7 +22,23 @@ const createReview = async (req, res, next) => {
       include: { assignments: { include: { provider: true } } }
     });
 
+    let booking = null;
     if (!job) {
+      console.log('[ReviewController] Job not found, looking for booking with ID:', jobId, 'User:', req.user.id);
+      booking = await prisma.booking.findFirst({
+        where: {
+          id: jobId,
+          OR: [
+            { clientId: req.user.id },
+            { providerId: req.user.id }
+          ]
+        }
+      });
+      console.log('[ReviewController] Booking found:', booking ? 'Yes' : 'No');
+    }
+
+    if (!job && !booking) {
+      console.log('[ReviewController] Neither job nor booking found. JobId:', jobId, 'User:', req.user.id);
       return res.status(404).json({ success: false, message: 'Job not found or you are not authorized to review it' });
     }
 
@@ -33,7 +49,11 @@ const createReview = async (req, res, next) => {
 
     // Prevent duplicate reviews for the same job by the same reviewer
     const existing = await prisma.review.findFirst({
-      where: { jobId, reviewerId: req.user.id, targetUserId }
+      where: { 
+        OR: [{ jobId }, { bookingId: jobId }], 
+        reviewerId: req.user.id, 
+        targetUserId 
+      }
     });
     if (existing) {
       return res.status(409).json({ success: false, message: 'You have already reviewed this person for this job' });
@@ -43,7 +63,8 @@ const createReview = async (req, res, next) => {
     const review = await prisma.$transaction(async (tx) => {
       const created = await tx.review.create({
         data: {
-          jobId,
+          jobId: job ? jobId : null,
+          bookingId: booking ? jobId : null,
           targetUserId,
           reviewerId: req.user.id,
           rating: parsedRating,
