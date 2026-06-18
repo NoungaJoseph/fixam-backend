@@ -65,27 +65,7 @@ const hasActiveWorkBetweenUsers = async (userId, participantId) => {
 };
 
 const assertCanMessageDirectUser = async (requester, participantId) => {
-  if (requester.role === 'ADMIN') return;
-
-  const target = await prisma.user.findUnique({
-    where: { id: participantId },
-    select: { id: true, role: true },
-  });
-
-  if (!target) {
-    const error = new Error('Participant not found');
-    error.statusCode = 404;
-    throw error;
-  }
-
-  if (target.role === 'ADMIN') return;
-
-  const canMessage = await hasActiveWorkBetweenUsers(requester.id, participantId);
-  if (!canMessage) {
-    const error = new Error('requiresBooking');
-    error.statusCode = 403;
-    throw error;
-  }
+  // No restrictions anymore
 };
 
 const formatConversationForUser = async (conversationId, userId) => {
@@ -135,25 +115,7 @@ const formatConversationForUser = async (conversationId, userId) => {
 };
 
 const assertCanCreateDirectConversation = async (requester, target) => {
-  if (requester.role === 'ADMIN') return;
-
-  if (requester.role === 'PROVIDER' && target.role === 'CLIENT') {
-    const canMessage = await hasActiveWorkBetweenUsers(requester.id, target.id);
-    if (!canMessage) {
-      const error = new Error('requiresBooking');
-      error.statusCode = 403;
-      throw error;
-    }
-  }
-
-  if (requester.role === 'CLIENT' && target.role === 'PROVIDER') {
-    const canMessage = await hasActiveWorkBetweenUsers(requester.id, target.id);
-    if (!canMessage) {
-      const error = new Error('requiresBooking');
-      error.statusCode = 403;
-      throw error;
-    }
-  }
+  // No restrictions anymore
 };
 
 const createOrGetConversation = async (requester, participantId) => {
