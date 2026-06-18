@@ -266,6 +266,17 @@ const updateBookingStatus = async (req, res, next) => {
         console.error('[Booking] Confirmed Notification failed:', notifError.message);
       }
     }
+    if (status === 'COMPLETED' || status === 'ACCEPTED') {
+      try {
+        const { calculateProviderStats } = require('../utils/providerStats');
+        const providerProfile = await prisma.providerProfile.findUnique({ where: { userId: booking.providerId } });
+        if (providerProfile) {
+          await calculateProviderStats(providerProfile.id).catch(() => null);
+        }
+      } catch (statsErr) {
+        console.error('[Booking] Stats update failed:', statsErr.message);
+      }
+    }
 
     emitBooking(booking);
     res.status(200).json({ success: true, data: booking });

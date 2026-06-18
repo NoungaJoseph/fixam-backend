@@ -23,7 +23,7 @@ const calculateProviderStats = async (providerId, tx = prisma) => {
   });
   if (!provider) return null;
 
-  const [reviews, acceptedAssignments, completedJobs] = await Promise.all([
+  const [reviews, acceptedAssignmentsCount, completedJobsCount, acceptedBookings, completedBookings] = await Promise.all([
     tx.review.aggregate({
       where: { targetUserId: provider.userId },
       _avg: { rating: true },
@@ -31,7 +31,12 @@ const calculateProviderStats = async (providerId, tx = prisma) => {
     }),
     tx.jobAssignment.count({ where: { providerId, status: 'ACCEPTED' } }),
     tx.jobAssignment.count({ where: { providerId, job: { status: 'COMPLETED' } } }),
+    tx.booking.count({ where: { providerId: provider.userId, status: { in: ['ACCEPTED', 'IN_PROGRESS', 'COMPLETED'] } } }),
+    tx.booking.count({ where: { providerId: provider.userId, status: 'COMPLETED' } }),
   ]);
+
+  const acceptedAssignments = acceptedAssignmentsCount + acceptedBookings;
+  const completedJobs = completedJobsCount + completedBookings;
 
   const averageRating = reviews._avg.rating || 0;
   const completionRate = acceptedAssignments > 0 ? completedJobs / acceptedAssignments : 0;
@@ -87,7 +92,7 @@ const enrichProvidersWithStats = async (providers) => {
   const providerIds = providers.map(p => p.id);
   const userIds = providers.map(p => p.userId).filter(Boolean);
 
-  const [reviewsRaw, acceptedAssignmentsRaw, completedJobsRaw] = await Promise.all([
+  const [reviewsRaw, acceptedAssignmentsRaw, completedJobsRaw, acceptedBookingsRaw, completedBookingsRaw] = await Promise.all([
     prisma.review.groupBy({
       by: ['targetUserId'],
       where: { targetUserId: { in: userIds } },
@@ -103,17 +108,29 @@ const enrichProvidersWithStats = async (providers) => {
       by: ['providerId'],
       where: { providerId: { in: providerIds }, job: { status: 'COMPLETED' } },
       _count: { _all: true },
+    }),
+    prisma.booking.groupBy({
+      by: ['providerId'],
+      where: { providerId: { in: userIds }, status: { in: ['ACCEPTED', 'IN_PROGRESS', 'COMPLETED'] } },
+      _count: { _all: true },
+    }),
+    prisma.booking.groupBy({
+      by: ['providerId'],
+      where: { providerId: { in: userIds }, status: 'COMPLETED' },
+      _count: { _all: true },
     })
   ]);
 
   const reviewsMap = new Map(reviewsRaw.map(r => [r.targetUserId, r]));
   const acceptedMap = new Map(acceptedAssignmentsRaw.map(a => [a.providerId, a._count._all]));
   const completedMap = new Map(completedJobsRaw.map(c => [c.providerId, c._count._all]));
+  const acceptedBookingsMap = new Map(acceptedBookingsRaw.map(a => [a.providerId, a._count._all]));
+  const completedBookingsMap = new Map(completedBookingsRaw.map(c => [c.providerId, c._count._all]));
 
   return providers.map(provider => {
     const userReviews = reviewsMap.get(provider.userId) || { _avg: { rating: 0 }, _count: { rating: 0 } };
-    const acceptedAssignments = acceptedMap.get(provider.id) || 0;
-    const completedJobs = completedMap.get(provider.id) || 0;
+    const acceptedAssignments = (acceptedMap.get(provider.id) || 0) + (acceptedBookingsMap.get(provider.userId) || 0);
+    const completedJobs = (completedMap.get(provider.id) || 0) + (completedBookingsMap.get(provider.userId) || 0);
 
     const averageRating = userReviews._avg.rating || 0;
     const completionRate = acceptedAssignments > 0 ? completedJobs / acceptedAssignments : 0;

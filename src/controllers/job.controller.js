@@ -542,6 +542,18 @@ const updateJobStatus = async (req, res, next) => {
         console.error('[Push Error] Job complete push failed:', pushErr.message);
       }
     }
+      try {
+        const { getIO } = require('../services/socket.service');
+        const io = getIO();
+        io.to(existing.clientId).emit('job:updated', job);
+        
+        const providerId = existing.assignments.find(a => a.status === 'ACCEPTED')?.provider?.userId;
+        if (providerId) {
+          io.to(providerId).emit('job:updated', job);
+        }
+      } catch (socketErr) {
+        console.error('[Socket Error] Job status update failed:', socketErr.message);
+      }
 
     res.status(200).json({ success: true, data: job });
   } catch (error) {
