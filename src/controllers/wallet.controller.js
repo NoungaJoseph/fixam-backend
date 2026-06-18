@@ -110,7 +110,7 @@ const getBalance = async (req, res, next) => {
       }
     });
 
-    const completedTasksCount = await prisma.job.count({
+    const completedJobsCount = await prisma.job.count({
       where: {
         status: 'COMPLETED',
         updatedAt: { gte: firstDayOfMonth },
@@ -121,9 +121,28 @@ const getBalance = async (req, res, next) => {
       }
     });
 
-    const completedTasks = await prisma.job.count({
+    const completedBookingsCount = await prisma.booking.count({
+      where: {
+        status: 'COMPLETED',
+        updatedAt: { gte: firstDayOfMonth },
+        OR: [
+          { clientId: req.user.id },
+          { providerId: req.user.id }
+        ]
+      }
+    });
+
+    const completedTasksCount = completedJobsCount + completedBookingsCount;
+
+    const completedJobs = await prisma.job.count({
       where: { clientId: req.user.id, status: 'COMPLETED' }
     });
+
+    const completedBookings = await prisma.booking.count({
+      where: { clientId: req.user.id, status: 'COMPLETED' }
+    });
+
+    const completedTasks = completedJobs + completedBookings;
 
     let nextLevelTasks = 5;
     if (completedTasks >= 5) nextLevelTasks = 10;
