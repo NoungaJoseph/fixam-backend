@@ -171,16 +171,31 @@ const getMyBookings = async (req, res, next) => {
     const limit = Math.min(parseInt(req.query.limit) || 20, 100);
     const skip = (page - 1) * limit;
 
-    const [bookings, total] = await prisma.$transaction([
-      prisma.booking.findMany({
+    // Fast ETag check
+    const [latestBooking, total] = await Promise.all([
+      prisma.booking.findFirst({
         where,
-        include: includeBooking,
-        orderBy: [{ bookingDate: 'asc' }, { createdAt: 'desc' }],
-        skip,
-        take: limit,
+        orderBy: { updatedAt: 'desc' },
+        select: { updatedAt: true }
       }),
       prisma.booking.count({ where })
     ]);
+
+    const lastUpdated = latestBooking ? latestBooking.updatedAt.getTime() : 0;
+    const etag = `W/"${lastUpdated}-${total}-${page}-${limit}"`;
+
+    if (req.headers['if-none-match'] === etag) {
+      return res.status(304).end();
+    }
+    res.setHeader('ETag', etag);
+
+    const bookings = await prisma.booking.findMany({
+      where,
+      include: includeBooking,
+      orderBy: [{ bookingDate: 'asc' }, { createdAt: 'desc' }],
+      skip,
+      take: limit,
+    });
 
     res.status(200).json({
       success: true,

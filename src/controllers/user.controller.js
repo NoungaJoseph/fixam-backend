@@ -259,6 +259,24 @@ const getReferralStats = async (req, res, next) => {
       select: { referralCode: true }
     });
     
+    // Fast ETag Check
+    const [latestReferredUser, totalReferred] = await Promise.all([
+      prisma.user.findFirst({
+        where: { referredBy: userId },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true }
+      }),
+      prisma.user.count({ where: { referredBy: userId } })
+    ]);
+
+    const lastUpdated = latestReferredUser ? latestReferredUser.createdAt.getTime() : 0;
+    const etag = `W/"${lastUpdated}-${totalReferred}"`;
+
+    if (req.headers['if-none-match'] === etag) {
+      return res.status(304).end();
+    }
+    res.setHeader('ETag', etag);
+
     const referredUsers = await prisma.user.findMany({
       where: { referredBy: userId },
       select: {
@@ -270,7 +288,7 @@ const getReferralStats = async (req, res, next) => {
       orderBy: { createdAt: 'desc' }
     });
     
-    const coinsEarned = referredUsers.length * 1;
+    const coinsEarned = totalReferred * 1;
     
     return res.status(200).json({
       success: true,

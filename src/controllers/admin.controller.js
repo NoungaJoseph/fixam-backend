@@ -1210,7 +1210,7 @@ const wireCoins = async (req, res, next) => {
     } catch(err) {}
     
     // Notification
-    await prisma.notification.create({
+    const notification = await prisma.notification.create({
       data: {
         userId,
         title: Number(amount) >= 0 ? 'Coins Added' : 'Coins Deducted',
@@ -1218,6 +1218,14 @@ const wireCoins = async (req, res, next) => {
         data: { type: 'WALLET' }
       }
     });
+
+    try {
+      getIO().to(userId).emit('notification:new', notification);
+      const { sendPushNotification } = require('../services/notification.service');
+      await sendPushNotification(userId, notification.title, notification.body, notification.data);
+    } catch(err) {
+      console.error('[Socket/Push Error] Wallet adjustment notification failed:', err.message);
+    }
 
     res.status(200).json({ success: true, data: transaction });
   } catch (error) {

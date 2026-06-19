@@ -12,7 +12,10 @@ const sendEmail = async (options) => {
   });
 
   if (error) {
-    throw new Error(error.message);
+    console.error('[EmailService] Resend API Error:', error.message);
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(error.message);
+    }
   }
   
   return data;

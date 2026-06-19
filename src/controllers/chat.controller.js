@@ -531,20 +531,17 @@ const sendMessage = async (req, res, next) => {
     try {
       const io = getIO();
       
-      // Emit to conversation room (for users already in the room)
-      io.to(actualConvId).emit('message:new', outgoingMessage);
-      
-      // Also emit directly to receiver by userId (in case they're not in room)
       if (receiverId) {
-        io.to(receiverId).emit('message:new', outgoingMessage);
+        io.to(actualConvId).to(receiverId).emit('message:new', outgoingMessage);
         io.to(receiverId).emit('notification:chat', { 
           title: 'New Message', 
           body: content, 
           conversationId: actualConvId,
           senderId: req.user.id
         });
+      } else {
+        io.to(actualConvId).emit('message:new', outgoingMessage);
       }
-      
       debugLog('[Chat] Socket events emitted - ConvId room:', actualConvId, '| Receiver:', receiverId);
     } catch (socketErr) {
       console.error('[Socket Error] Failed to emit message:', socketErr.message);

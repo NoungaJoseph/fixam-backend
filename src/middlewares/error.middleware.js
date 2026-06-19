@@ -57,6 +57,15 @@ const errorHandler = (err, req, res, next) => {
       message: err.message
     })
   }
+
+  // Zod Validation errors
+  if (err.name === 'ZodError') {
+    return res.status(400).json({
+      success: false,
+      message: err.errors[0]?.message || 'Validation failed',
+      errors: err.errors
+    })
+  }
   
   // Default error response
   const statusCode = err.statusCode || err.status || 500

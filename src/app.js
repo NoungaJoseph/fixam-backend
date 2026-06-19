@@ -55,13 +55,14 @@ const allowedOrigins = [
   process.env.DASHBOARD_URL,
   process.env.WEBSITE_URL,
   'http://localhost:3000',
+  'http://localhost:4000',
   'http://localhost:5173'
 ].filter(Boolean);
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin || allowedOrigins.includes(origin)) {
+    // Allow requests with no origin, or any origin from localhost / local network
+    if (!origin || allowedOrigins.includes(origin) || origin.startsWith('http://192.168.') || origin.startsWith('http://localhost') || origin.startsWith('http://10.')) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));

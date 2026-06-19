@@ -647,6 +647,24 @@ const getProviderJobs = async (req, res, next) => {
     const limit = Math.min(parseInt(req.query.limit) || 20, 100);
     const skip = (page - 1) * limit;
 
+    // Fast ETag check
+    const [latestAssignment, total] = await Promise.all([
+      prisma.jobAssignment.findFirst({
+        where: { providerId },
+        orderBy: { updatedAt: 'desc' },
+        select: { updatedAt: true }
+      }),
+      prisma.jobAssignment.count({ where: { providerId } })
+    ]);
+
+    const lastUpdated = latestAssignment ? latestAssignment.updatedAt.getTime() : 0;
+    const etag = `W/"${lastUpdated}-${total}-${page}-${limit}"`;
+
+    if (req.headers['if-none-match'] === etag) {
+      return res.status(304).end();
+    }
+    res.setHeader('ETag', etag);
+
     const assignments = await prisma.jobAssignment.findMany({
       where: { providerId },
       include: { 
@@ -678,9 +696,9 @@ const getProviderJobs = async (req, res, next) => {
       pagination: {
         page,
         limit,
-        total: items.length,
-        pages: 1,
-        hasMore: items.length === limit
+        total,
+        pages: Math.ceil(total / limit),
+        hasMore: page * limit < total
       }
     });
   } catch (error) {
