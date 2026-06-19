@@ -223,9 +223,19 @@ const uploadVerificationDocs = async (req, res, next) => {
   try {
     const { type, url } = req.body;
 
+    let profile = req.user.providerProfile;
+    if (!profile) {
+      profile = await prisma.providerProfile.create({
+        data: {
+          userId: req.user.id,
+          profileMode: req.user.role === 'CLIENT' ? 'CLIENT' : 'WORK'
+        }
+      });
+    }
+
     const doc = await prisma.verificationDocument.create({
       data: {
-        providerId: req.user.providerProfile.id,
+        providerId: profile.id,
         type,
         url,
         status: 'PENDING'
@@ -234,7 +244,7 @@ const uploadVerificationDocs = async (req, res, next) => {
 
     // Update profile status to PENDING
     await prisma.providerProfile.update({
-      where: { id: req.user.providerProfile.id },
+      where: { id: profile.id },
       data: { verification: 'PENDING' }
     });
 

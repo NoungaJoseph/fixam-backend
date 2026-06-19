@@ -13,6 +13,6 @@ router.delete('/:providerId/favorite', protect, providerController.removeFavorit
 router.put('/status', protect, authorize('PROVIDER'), providerController.updateProviderStatus);
 router.post('/status', protect, authorize('PROVIDER'), providerController.updateProviderStatus);
 router.put('/profile', protect, authorize('PROVIDER'), providerController.updateProviderProfile);
-router.post('/verify', protect, authorize('PROVIDER'), providerController.uploadVerificationDocs);
+router.post('/verify', protect, authorize('PROVIDER', 'CLIENT'), providerController.uploadVerificationDocs);
 
 module.exports = router;
