@@ -158,6 +158,24 @@ const getProviderById = async (req, res, next) => {
 
 const getFavoriteProviders = async (req, res, next) => {
   try {
+    // Fast ETag check
+    const [latestFavorite, total] = await Promise.all([
+      prisma.clientFavoriteProvider.findFirst({
+        where: { clientId: req.user.id },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true }
+      }),
+      prisma.clientFavoriteProvider.count({ where: { clientId: req.user.id } })
+    ]);
+
+    const lastUpdated = latestFavorite ? latestFavorite.createdAt.getTime() : 0;
+    const etag = `W/"${lastUpdated}-${total}"`;
+
+    if (req.headers['if-none-match'] === etag) {
+      return res.status(304).end();
+    }
+    res.setHeader('ETag', etag);
+
     const favorites = await prisma.clientFavoriteProvider.findMany({
       where: { clientId: req.user.id },
       include: {

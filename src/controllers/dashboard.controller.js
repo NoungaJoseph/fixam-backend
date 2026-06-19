@@ -6,6 +6,43 @@ const getDashboardData = async (req, res, next) => {
     const userId = req.user.id;
     const role = req.user.role?.toUpperCase(); // 'CLIENT' or 'PROVIDER' or 'ADMIN'
 
+    // Fast ETag check
+    const [latestJob, latestBooking, latestTx, latestConv] = await Promise.all([
+      prisma.job.findFirst({
+        where: role === 'PROVIDER' ? { status: 'PENDING', approvalStatus: 'APPROVED', assignments: { none: { provider: { userId } } } } : { clientId: userId },
+        orderBy: { updatedAt: 'desc' },
+        select: { updatedAt: true }
+      }),
+      role === 'CLIENT' ? prisma.booking.findFirst({
+        where: { clientId: userId },
+        orderBy: { updatedAt: 'desc' },
+        select: { updatedAt: true }
+      }) : Promise.resolve(null),
+      prisma.transaction.findFirst({
+        where: { wallet: { userId } },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true }
+      }),
+      prisma.conversation.findFirst({
+        where: { participants: { some: { userId } } },
+        orderBy: { updatedAt: 'desc' },
+        select: { updatedAt: true }
+      })
+    ]);
+
+    const lastUpdated = Math.max(
+      latestJob?.updatedAt?.getTime() || 0,
+      latestBooking?.updatedAt?.getTime() || 0,
+      latestTx?.createdAt?.getTime() || 0,
+      latestConv?.updatedAt?.getTime() || 0
+    );
+
+    const etag = `W/"${lastUpdated}-${role}"`;
+    if (req.headers['if-none-match'] === etag) {
+      return res.status(304).end();
+    }
+    res.setHeader('ETag', etag);
+
     // 1. Providers Query
     const providersQuery = prisma.providerProfile.findMany({
       where: { profileMode: 'WORK' },

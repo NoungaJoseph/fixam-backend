@@ -4,6 +4,10 @@ const debugLog = (...args) => {
   if (process.env.NODE_ENV !== 'production') console.log(...args);
 };
 
+// Simple in-memory cache for user sessions
+const userCache = new Map();
+const CACHE_TTL_MS = 30 * 1000; // 30 seconds
+
 const protect = async (req, res, next) => {
   let token;
 
@@ -14,17 +18,30 @@ const protect = async (req, res, next) => {
       debugLog('Token decoded:', decoded.id, decoded.role);
 
       try {
-        req.user = await prisma.user.findUnique({
-          where: { id: decoded.id },
-          include: { wallet: true, providerProfile: true }
-        });
+        const now = Date.now();
+        const cached = userCache.get(decoded.id);
+
+        if (cached && (now - cached.timestamp < CACHE_TTL_MS)) {
+          req.user = cached.user;
+        } else {
+          req.user = await prisma.user.findUnique({
+            where: { id: decoded.id },
+            include: { wallet: true, providerProfile: true }
+          });
+
+          if (req.user) {
+            userCache.set(decoded.id, { user: req.user, timestamp: now });
+          }
+        }
 
         if (!req.user) {
           debugLog('User from token not found in DB:', decoded.id);
+          userCache.delete(decoded.id);
           return res.status(401).json({ success: false, message: 'User not found' });
         }
 
         if (req.user.isBlocked) {
+          userCache.delete(decoded.id);
           return res.status(403).json({
             success: false,
             message: req.user.blockedReason || 'This account has been blocked. Please contact Fixam support.'
