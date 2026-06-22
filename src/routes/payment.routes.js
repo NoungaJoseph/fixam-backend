@@ -4,11 +4,13 @@ const { protect } = require('../middlewares/auth.middleware')
 const {
   topup,
   checkPaymentStatus,
-  handleRedirect
+  handleRedirect,
+  koraWebhook
 } = require('../controllers/payment.controller')
 
 router.post('/topup', protect, topup)
 router.get('/status/:reference', protect, checkPaymentStatus)
 router.get('/redirect', handleRedirect)
+router.post('/webhook/kora', koraWebhook)
 
 module.exports = router

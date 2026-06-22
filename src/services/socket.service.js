@@ -118,6 +118,11 @@ const initSocket = (server) => {
             status: 'PENDING'
           }
         });
+        // Notify caller that call was created successfully
+        socket.emit('call:initiated', {
+          callId: callSession.id,
+          status: 'RINGING'
+        });
         
         // Notify receiver
         const receiverSocketId = users.get(receiverId);

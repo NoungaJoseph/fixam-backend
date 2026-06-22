@@ -225,4 +225,76 @@ const handleRedirect = async (req, res) => {
   res.send('Payment processed. Please return to the Fixam app.')
 }
 
-module.exports = { topup, checkPaymentStatus, handleRedirect }
+const koraWebhook = async (req, res) => {
+  try {
+    console.log('[Kora Webhook] Received payload:', JSON.stringify(req.body));
+    
+    // Kora webhook payload typically contains the reference in data.reference
+    const reference = req.body?.data?.reference || req.body?.reference;
+    
+    if (!reference) {
+      return res.status(400).json({ success: false, message: 'Missing reference' });
+    }
+
+    // Always verify with Kora directly to prevent spoofing
+    const statusResult = await getPaymentStatusFromKora(reference);
+    const koraStatus = String(statusResult.data.status || '').toLowerCase();
+
+    console.log('[Kora Webhook] Verified status for', reference, ':', koraStatus);
+
+    const transaction = await prisma.transaction.findUnique({
+      where: { reference },
+      include: { wallet: true }
+    });
+
+    if (!transaction) {
+      return res.status(404).json({ success: false, message: 'Transaction not found' });
+    }
+
+    if (transaction.status === 'SUCCESS' || transaction.status === 'FAILED') {
+      return res.status(200).json({ success: true, message: 'Already processed' });
+    }
+
+    if (koraStatus === 'success') {
+      await prisma.$transaction(async (tx) => {
+        await tx.wallet.update({
+          where: { id: transaction.walletId },
+          data: { balance: { increment: transaction.amount } }
+        });
+
+        await tx.transaction.update({
+          where: { reference },
+          data: { status: 'SUCCESS' }
+        });
+      });
+
+      await sendPushNotification(
+        transaction.wallet.userId,
+        'Coins Added! 🎉',
+        `${transaction.amount} coins have been added to your wallet`,
+        { type: 'COINS_ADDED' }
+      ).catch(() => {});
+      
+      try {
+        const { getIO } = require('../services/socket.service');
+        const io = getIO();
+        const updatedWallet = await prisma.wallet.findUnique({ where: { id: transaction.walletId } });
+        io.to(transaction.wallet.userId).emit('wallet:update', { balance: updatedWallet.balance });
+      } catch (e) {
+        console.error('[Socket Error] Could not emit wallet update:', e.message);
+      }
+    } else if (koraStatus === 'failed') {
+      await prisma.transaction.update({
+        where: { reference },
+        data: { status: 'FAILED' }
+      });
+    }
+
+    return res.status(200).json({ success: true });
+  } catch (error) {
+    console.error('[Kora Webhook] Error:', error);
+    return res.status(500).json({ success: false });
+  }
+};
+
+module.exports = { topup, checkPaymentStatus, handleRedirect, koraWebhook };

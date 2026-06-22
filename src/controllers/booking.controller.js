@@ -236,6 +236,16 @@ const updateBookingStatus = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'You must be available for work to accept a booking.' });
     }
 
+    // Mark any related notifications for this user as read
+    await prisma.notification.updateMany({
+      where: {
+        userId: req.user.id,
+        data: { path: ['bookingId'], equals: bookingId },
+        isRead: false
+      },
+      data: { isRead: true }
+    }).catch(() => {});
+
     if (status === 'CANCELLED' && existing.status === 'PENDING') {
       const wallet = await prisma.wallet.findUnique({ where: { userId: existing.clientId } });
       if (wallet) {
