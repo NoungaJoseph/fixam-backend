@@ -15,16 +15,25 @@ const fetchSportsData = async (lang) => {
     try {
       const headers = { 'X-Auth-Token': apiKey };
       
-      // Fetch today's matches for all competitions (or just WC if preferred, but we use matches endpoint)
-      // The free tier /matches fetches today's matches across available competitions
-      const matchesRes = await axios.get('https://api.football-data.org/v4/matches', { headers });
+      // Calculate dates for yesterday and tomorrow to get a wider range of matches
+      const today = new Date();
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      const dateFrom = yesterday.toISOString().split('T')[0];
+      const dateTo = tomorrow.toISOString().split('T')[0];
+
+      // Fetch matches from yesterday to tomorrow
+      const matchesRes = await axios.get(`https://api.football-data.org/v4/matches?dateFrom=${dateFrom}&dateTo=${dateTo}`, { headers });
       const matches = matchesRes.data.matches || [];
 
-      // Process Recent / Live Matches (Last 5 finished or in-play)
+      // Process Recent / Live Matches (Finished or in-play)
       const recentMatches = matches
         .filter(m => m.status === 'FINISHED' || m.status === 'IN_PLAY' || m.status === 'PAUSED')
         .sort((a, b) => new Date(b.utcDate) - new Date(a.utcDate))
-        .slice(0, 5);
+        .slice(0, 8); // Show up to 8 recent/live matches
 
       recentMatches.forEach(m => {
         items.push({
@@ -37,18 +46,18 @@ const fetchSportsData = async (lang) => {
         });
       });
 
-      // Process Upcoming Matches (Next 3 scheduled)
+      // Process Upcoming Matches
       const upcomingMatches = matches
         .filter(m => m.status === 'TIMED' || m.status === 'SCHEDULED')
         .sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate))
-        .slice(0, 3);
+        .slice(0, 5); // Show up to 5 upcoming matches
 
       upcomingMatches.forEach(m => {
         items.push({
           type: 'UPCOMING',
           home: m.homeTeam?.tla || m.homeTeam?.name || 'TBD',
           away: m.awayTeam?.tla || m.awayTeam?.name || 'TBD',
-          time: m.utcDate // Frontend will format this
+          time: m.utcDate
         });
       });
     } catch (error) {
@@ -56,20 +65,43 @@ const fetchSportsData = async (lang) => {
     }
   }
 
-  // 2. Fetch Live Football News via RSS
+  // 2. Fetch Live Football News via RSS (International + Cameroon)
   try {
-    const rssUrl = lang === 'fr' 
-      ? 'https://www.lequipe.fr/rss/actu_rss_Football.xml' // French News
-      : 'http://feeds.bbci.co.uk/sport/football/rss.xml';   // English News
+    const internationalRssUrl = lang === 'fr' 
+      ? 'https://www.lequipe.fr/rss/actu_rss_Football.xml' 
+      : 'http://feeds.bbci.co.uk/sport/football/rss.xml';
 
-    const feed = await parser.parseURL(rssUrl);
+    // Google News RSS for Cameroon Football
+    const cameroonRssUrl = lang === 'fr'
+      ? 'https://news.google.com/rss/search?q=Cameroun+Football&hl=fr&gl=FR&ceid=FR:fr'
+      : 'https://news.google.com/rss/search?q=Cameroon+Football&hl=en-US&gl=US&ceid=US:en';
+
+    const [intFeed, camFeed] = await Promise.all([
+      parser.parseURL(internationalRssUrl).catch(() => ({ items: [] })),
+      parser.parseURL(cameroonRssUrl).catch(() => ({ items: [] }))
+    ]);
     
-    // Take the top 5 news headlines
-    const newsItems = feed.items.slice(0, 5);
-    newsItems.forEach(item => {
+    // Take 4 international news items and 4 Cameroon news items
+    const newsItems = [
+      ...intFeed.items.slice(0, 4).map(i => ({ ...i, source: 'Int' })),
+      ...camFeed.items.slice(0, 4).map(i => ({ ...i, source: 'CMR' }))
+    ];
+
+    // Shuffle them so they mix nicely
+    const shuffledNews = newsItems.sort(() => 0.5 - Math.random());
+
+    shuffledNews.forEach(item => {
+      // Clean up Google News title (usually "Article Title - Source Name")
+      let title = item.title;
+      if (item.source === 'CMR' && title.lastIndexOf(' - ') !== -1) {
+        title = title.substring(0, title.lastIndexOf(' - '));
+      }
+      
+      const prefix = item.source === 'CMR' ? '🇨🇲' : '📰';
       items.push({
         type: 'NEWS',
-        title: item.title
+        title: title,
+        prefix: prefix
       });
     });
 
