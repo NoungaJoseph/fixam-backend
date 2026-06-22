@@ -303,14 +303,17 @@ const openSupportConversation = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Support is not available yet.' });
     }
 
-    const existing = await prisma.$queryRaw`
-      SELECT c.id FROM "Conversation" c
-      INNER JOIN "ConversationParticipant" cp1 ON c.id = cp1."conversationId" AND cp1."userId" = ${req.user.id}
-      INNER JOIN "ConversationParticipant" cp2 ON c.id = cp2."conversationId" AND cp2."userId" = ${admin.id}
-      LIMIT 1
-    `;
+    const existing = await prisma.conversation.findFirst({
+      where: {
+        AND: [
+          { participants: { some: { userId: req.user.id } } },
+          { participants: { some: { userId: admin.id } } }
+        ]
+      },
+      select: { id: true }
+    });
 
-    const conversationId = existing?.[0]?.id || (await prisma.conversation.create({
+    const conversationId = existing?.id || (await prisma.conversation.create({
       data: {
         participants: {
           create: [
