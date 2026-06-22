@@ -204,8 +204,11 @@ model Job {
   @@index([clientId, status])
   @@index([status, approvalStatus])
   @@index([createdAt])
+  @@index([updatedAt])
   @@index([category])
   @@index([location])
+  @@index([clientId, updatedAt])
+  @@index([status, approvalStatus, updatedAt])
 }
 
 model JobAssignment {
@@ -318,7 +321,9 @@ model Conversation {
   messages     Message[]
   support      SupportConversation?
 
-  @@index([lastMessageAt]) // For ordering by latest message
+  @@index([lastMessageAt])
+  @@index([updatedAt])
+  @@index([createdAt])
 }
 
 model ConversationParticipant {
@@ -400,6 +405,7 @@ model Booking {
   @@index([status, bookingDate])
   @@index([clientId, status])
   @@index([providerId, status])
+  @@index([clientId, updatedAt])
 }
 
 model CallSession {

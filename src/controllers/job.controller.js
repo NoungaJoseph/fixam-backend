@@ -67,7 +67,7 @@ const createJob = async (req, res, next) => {
         ...validatedData,
         ...budgetRange,
         clientId: req.user.id,
-        status: 'OPEN',
+        status: 'PENDING',
         coinCost: calculateJobCoinCost(budgetRange.budgetMax),
         approvalStatus: 'PENDING_APPROVAL',  // New jobs require admin approval
         scheduledTime: validatedData.scheduledTime ? new Date(validatedData.scheduledTime) : null
@@ -126,6 +126,10 @@ const getClientJobs = async (req, res, next) => {
             provider: { include: { user: true, documents: true } }
           },
           orderBy: { assignedAt: 'desc' }
+        },
+        reviews: {
+          where: { reviewerId: req.user.id },
+          select: { id: true, reviewerId: true, targetUserId: true, rating: true, createdAt: true }
         }
       },
       orderBy: { createdAt: 'desc' },
@@ -200,7 +204,7 @@ const getAvailableJobsForProvider = async (req, res, next) => {
 
     // Build where clause for filtering
     const whereClause = {
-      status: 'OPEN',
+      status: 'PENDING',
       approvalStatus: 'APPROVED'  // Only show approved jobs
     };
 
@@ -309,7 +313,7 @@ const applyForJob = async (req, res, next) => {
     const providerId = req.user.providerProfile.id;
 
     const job = await prisma.job.findUnique({ where: { id: jobId }, include: { client: true } });
-    if (!job || job.status !== 'OPEN' || job.approvalStatus !== 'APPROVED') {
+    if (!job || job.status !== 'PENDING' || job.approvalStatus !== 'APPROVED') {
       return res.status(400).json({ success: false, message: 'Job not available' });
     }
 
@@ -394,7 +398,7 @@ const selectProviderForJob = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Only the client can choose a provider for this task' });
     }
 
-    if (job.status !== 'OPEN') {
+    if (job.status !== 'PENDING') {
       return res.status(400).json({ success: false, message: 'A provider has already been selected for this task' });
     }
 
@@ -669,13 +673,13 @@ const getProviderJobs = async (req, res, next) => {
     const [latestAssignment, total] = await Promise.all([
       prisma.jobAssignment.findFirst({
         where: { providerId },
-        orderBy: { updatedAt: 'desc' },
-        select: { updatedAt: true }
+        orderBy: { assignedAt: 'desc' },
+        select: { assignedAt: true }
       }),
       prisma.jobAssignment.count({ where: { providerId } })
     ]);
 
-    const lastUpdated = latestAssignment ? latestAssignment.updatedAt.getTime() : 0;
+    const lastUpdated = latestAssignment ? latestAssignment.assignedAt.getTime() : 0;
     const etag = `W/"${lastUpdated}-${total}-${page}-${limit}"`;
 
     if (req.headers['if-none-match'] === etag) {
@@ -692,6 +696,10 @@ const getProviderJobs = async (req, res, next) => {
             assignments: { 
               where: { status: 'ACCEPTED' },
               select: { id: true, providerId: true, status: true, selectedAt: true }
+            },
+            reviews: {
+              where: { reviewerId: req.user.id },
+              select: { id: true, reviewerId: true, targetUserId: true, rating: true, createdAt: true }
             }
           } 
         } 

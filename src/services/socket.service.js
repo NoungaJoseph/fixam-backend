@@ -10,9 +10,24 @@ const debugLog = (...args) => {
 };
 
 const initSocket = (server) => {
+  const allowedOrigins = [
+    process.env.DASHBOARD_URL,
+    process.env.WEBSITE_URL,
+    ...(process.env.NODE_ENV === 'production' ? [] : [
+      'http://localhost:3000',
+      'http://localhost:4000',
+      'http://localhost:5173'
+    ])
+  ].filter(Boolean);
+
   io = socketio(server, {
     cors: {
-      origin: "*",
+      origin: (origin, callback) => {
+        const isLocalDev = process.env.NODE_ENV !== 'production'
+          && (origin?.startsWith('http://192.168.') || origin?.startsWith('http://localhost') || origin?.startsWith('http://10.'));
+        if (!origin || allowedOrigins.includes(origin) || isLocalDev) return callback(null, true);
+        return callback(new Error('Not allowed by CORS'));
+      },
       methods: ["GET", "POST"]
     }
   });
@@ -75,6 +90,25 @@ const initSocket = (server) => {
       const { receiverId, callType, conversationId } = data;
       
       try {
+        if (!receiverId || receiverId === socket.userId) {
+          socket.emit('call:error', { message: 'Invalid receiver' });
+          return;
+        }
+
+        const receiver = await prisma.user.findUnique({
+          where: { id: receiverId },
+          select: { id: true, isBlocked: true }
+        });
+        if (!receiver || receiver.isBlocked) {
+          socket.emit('call:error', { message: 'Receiver not found' });
+          return;
+        }
+
+        const caller = await prisma.user.findUnique({
+          where: { id: socket.userId },
+          select: { fullName: true, avatar: true }
+        });
+
         // Create call session in DB
         const callSession = await prisma.callSession.create({
           data: {
@@ -88,20 +122,31 @@ const initSocket = (server) => {
         // Notify receiver
         const receiverSocketId = users.get(receiverId);
         if (receiverSocketId) {
-          const user = await prisma.user.findUnique({
-            where: { id: socket.userId },
-            select: { fullName: true, avatar: true }
-          });
-          
           io.to(receiverSocketId).emit('call:incoming', {
             callId: callSession.id,
             callerId: socket.userId,
-            callerName: user?.fullName,
-            callerAvatar: user?.avatar,
+            callerName: caller?.fullName,
+            callerAvatar: caller?.avatar,
             callType: callType || 'AUDIO',
             conversationId
           });
         }
+
+        const { sendPushNotification } = require('./notification.service');
+        await sendPushNotification(
+          receiverId,
+          `Incoming ${callType === 'VIDEO' ? 'Video' : 'Audio'} Call`,
+          `${caller?.fullName || 'Someone'} is calling you`,
+          {
+            type: 'INCOMING_CALL',
+            callId: callSession.id,
+            callerId: socket.userId,
+            callerName: caller?.fullName || '',
+            callerAvatar: caller?.avatar || '',
+            callType: callType || 'AUDIO',
+            conversationId: conversationId || ''
+          }
+        ).catch((err) => console.error('[Call] Push failed:', err.message));
         
         socket.emit('call:initiated', { 
           callId: callSession.id,
@@ -115,16 +160,17 @@ const initSocket = (server) => {
     socket.on('call:accept', async (data) => {
       const { callId } = data;
       try {
+        const call = await prisma.callSession.findFirst({
+          where: { id: callId, receiverId: socket.userId }
+        });
+        if (!call) {
+          socket.emit('call:error', { callId, message: 'Call not found' });
+          return;
+        }
+
         await prisma.callSession.update({
           where: { id: callId },
-          data: { 
-            status: 'ONGOING',
-            startTime: new Date()
-          }
-        });
-        
-        const call = await prisma.callSession.findUnique({
-          where: { id: callId }
+          data: { status: 'ONGOING', startTime: new Date() }
         });
         
         const callerSocketId = users.get(call.callerId);
@@ -141,13 +187,17 @@ const initSocket = (server) => {
     socket.on('call:reject', async (data) => {
       const { callId } = data;
       try {
+        const call = await prisma.callSession.findFirst({
+          where: { id: callId, receiverId: socket.userId }
+        });
+        if (!call) {
+          socket.emit('call:error', { callId, message: 'Call not found' });
+          return;
+        }
+
         await prisma.callSession.update({
           where: { id: callId },
           data: { status: 'MISSED', endTime: new Date() }
-        });
-        
-        const call = await prisma.callSession.findUnique({
-          where: { id: callId }
         });
         
         const callerSocketId = users.get(call.callerId);
@@ -164,13 +214,20 @@ const initSocket = (server) => {
     socket.on('call:end', async (data) => {
       const { callId } = data;
       try {
+        const call = await prisma.callSession.findFirst({
+          where: {
+            id: callId,
+            OR: [{ callerId: socket.userId }, { receiverId: socket.userId }]
+          }
+        });
+        if (!call) {
+          socket.emit('call:error', { callId, message: 'Call not found' });
+          return;
+        }
+
         await prisma.callSession.update({
           where: { id: callId },
           data: { status: 'ENDED', endTime: new Date() }
-        });
-        
-        const call = await prisma.callSession.findUnique({
-          where: { id: callId }
         });
         
         // Notify both parties
@@ -185,15 +242,28 @@ const initSocket = (server) => {
       }
     });
 
-    socket.on('call:signal', (data) => {
+    socket.on('call:signal', async (data) => {
       const { callId, signal, targetUserId } = data;
-      const targetSocketId = users.get(targetUserId);
-      if (targetSocketId) {
-        io.to(targetSocketId).emit('call:signal', {
-          callId,
-          signal,
-          fromUserId: socket.userId
+      try {
+        const call = await prisma.callSession.findFirst({
+          where: {
+            id: callId,
+            OR: [{ callerId: socket.userId }, { receiverId: socket.userId }]
+          },
+          select: { callerId: true, receiverId: true }
         });
+        if (!call || ![call.callerId, call.receiverId].includes(targetUserId)) return;
+
+        const targetSocketId = users.get(targetUserId);
+        if (targetSocketId) {
+          io.to(targetSocketId).emit('call:signal', {
+            callId,
+            signal,
+            fromUserId: socket.userId
+          });
+        }
+      } catch (err) {
+        console.error('Error sending call signal:', err.message);
       }
     });
 

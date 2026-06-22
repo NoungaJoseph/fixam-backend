@@ -4,8 +4,8 @@ const debugLog = (...args) => {
   if (process.env.NODE_ENV !== 'production') console.log(...args);
 };
 
-const ACTIVE_JOB_STATUSES = ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'ACCEPTED'];
-const ACTIVE_BOOKING_STATUSES = ['PENDING', 'ACCEPTED', 'ASSIGNED'];
+const ACTIVE_JOB_STATUSES = ['PENDING', 'ASSIGNED', 'IN_PROGRESS'];
+const ACTIVE_BOOKING_STATUSES = ['PENDING', 'ACCEPTED', 'IN_PROGRESS'];
 
 const findDirectConversationId = async (userId, participantId) => {
   const existing = await prisma.$queryRaw`
@@ -275,7 +275,7 @@ const findActiveTaskBetweenUsers = async (currentUserId, otherUserId) => {
   if (bookingOrConditions.length > 0) {
     booking = await prisma.booking.findFirst({
       where: {
-        status: { in: ['PENDING', 'ACCEPTED', 'ASSIGNED', 'IN_PROGRESS'] },
+        status: { in: ACTIVE_BOOKING_STATUSES },
         OR: bookingOrConditions
       },
       include: {

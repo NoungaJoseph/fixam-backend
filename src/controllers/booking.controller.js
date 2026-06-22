@@ -16,6 +16,7 @@ const includeBooking = {
   client: { select: { id: true, fullName: true, avatar: true, phone: true, email: true } },
   provider: { select: { id: true, fullName: true, avatar: true, phone: true, email: true } },
   task: true,
+  reviews: { select: { id: true, reviewerId: true, targetUserId: true, rating: true, createdAt: true } },
 };
 
 const createBooking = async (req, res, next) => {

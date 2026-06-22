@@ -37,6 +37,7 @@ const reviewRoutes = require('./routes/review.routes');
 const paymentRoutes = require('./routes/payment.routes');
 const systemRoutes = require('./routes/system.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
+const sportsRoutes = require('./routes/sports.routes');
 const { errorHandler } = require('./middlewares/error.middleware');
 
 
@@ -54,15 +55,19 @@ app.use(helmet({
 const allowedOrigins = [
   process.env.DASHBOARD_URL,
   process.env.WEBSITE_URL,
-  'http://localhost:3000',
-  'http://localhost:4000',
-  'http://localhost:5173'
+  ...(process.env.NODE_ENV === 'production' ? [] : [
+    'http://localhost:3000',
+    'http://localhost:4000',
+    'http://localhost:5173'
+  ])
 ].filter(Boolean);
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin, or any origin from localhost / local network
-    if (!origin || allowedOrigins.includes(origin) || origin.startsWith('http://192.168.') || origin.startsWith('http://localhost') || origin.startsWith('http://10.')) {
+    const isLocalDev = process.env.NODE_ENV !== 'production'
+      && (origin?.startsWith('http://192.168.') || origin?.startsWith('http://localhost') || origin?.startsWith('http://10.'));
+
+    if (!origin || allowedOrigins.includes(origin) || isLocalDev) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
@@ -73,8 +78,11 @@ app.use(cors({
 // Raw body MUST come before express.json() — required for Kora webhook HMAC verification
 app.use('/api/payments/webhook/kora', express.raw({ type: 'application/json' }));
 
-app.use(express.json());
-app.use('/uploads', express.static('uploads'));
+app.use(express.json({ limit: '1mb' }));
+app.use('/uploads', express.static('uploads', {
+  maxAge: process.env.NODE_ENV === 'production' ? '7d' : 0,
+  fallthrough: false
+}));
 if (process.env.NODE_ENV !== 'production') {
   app.use(morgan('dev'));
 }
@@ -123,6 +131,7 @@ app.use('/api/reviews', reviewRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/system', systemRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/sports', sportsRoutes);
 
 
 // Health Check
@@ -146,7 +155,7 @@ app.get('/api/health', async (req, res) => {
     checks: {
       database: dbStatus,
       uptime: process.uptime(),
-      memory: process.memoryUsage()
+      ...(process.env.NODE_ENV === 'production' ? {} : { memory: process.memoryUsage() })
     }
   });
 });

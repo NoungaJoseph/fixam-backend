@@ -246,6 +246,7 @@ const uploadVerificationDocs = async (req, res, next) => {
       profile = await prisma.providerProfile.create({
         data: {
           userId: req.user.id,
+          skills: [],
           profileMode: req.user.role === 'CLIENT' ? 'CLIENT' : 'WORK'
         }
       });
