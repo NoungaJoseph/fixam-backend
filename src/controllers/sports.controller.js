@@ -65,25 +65,26 @@ const fetchSportsData = async (lang) => {
     }
   }
 
-  // 2. Fetch Live Football News via RSS (International + Cameroon)
+  // 2. Fetch Live General News via RSS (World + Cameroon)
   try {
-    const internationalRssUrl = lang === 'fr' 
-      ? 'https://www.lequipe.fr/rss/actu_rss_Football.xml' 
-      : 'http://feeds.bbci.co.uk/sport/football/rss.xml';
+    // Google News RSS for World News
+    const worldRssUrl = lang === 'fr' 
+      ? 'https://news.google.com/rss/headlines/section/topic/WORLD?hl=fr&gl=FR&ceid=FR:fr'
+      : 'https://news.google.com/rss/headlines/section/topic/WORLD?hl=en-US&gl=US&ceid=US:en';
 
-    // Google News RSS for Cameroon Football
+    // Google News RSS for Cameroon General News
     const cameroonRssUrl = lang === 'fr'
-      ? 'https://news.google.com/rss/search?q=Cameroun+Football&hl=fr&gl=FR&ceid=FR:fr'
-      : 'https://news.google.com/rss/search?q=Cameroon+Football&hl=en-US&gl=US&ceid=US:en';
+      ? 'https://news.google.com/rss/search?q=Cameroun&hl=fr&gl=FR&ceid=FR:fr'
+      : 'https://news.google.com/rss/search?q=Cameroon&hl=en-US&gl=US&ceid=US:en';
 
-    const [intFeed, camFeed] = await Promise.all([
-      parser.parseURL(internationalRssUrl).catch(() => ({ items: [] })),
+    const [worldFeed, camFeed] = await Promise.all([
+      parser.parseURL(worldRssUrl).catch(() => ({ items: [] })),
       parser.parseURL(cameroonRssUrl).catch(() => ({ items: [] }))
     ]);
     
-    // Take 4 international news items and 4 Cameroon news items
+    // Take 4 world news items and 4 Cameroon news items
     const newsItems = [
-      ...intFeed.items.slice(0, 4).map(i => ({ ...i, source: 'Int' })),
+      ...worldFeed.items.slice(0, 4).map(i => ({ ...i, source: 'World' })),
       ...camFeed.items.slice(0, 4).map(i => ({ ...i, source: 'CMR' }))
     ];
 
@@ -93,11 +94,11 @@ const fetchSportsData = async (lang) => {
     shuffledNews.forEach(item => {
       // Clean up Google News title (usually "Article Title - Source Name")
       let title = item.title;
-      if (item.source === 'CMR' && title.lastIndexOf(' - ') !== -1) {
+      if (title.lastIndexOf(' - ') !== -1) {
         title = title.substring(0, title.lastIndexOf(' - '));
       }
       
-      const prefix = item.source === 'CMR' ? '🇨🇲' : '📰';
+      const prefix = item.source === 'CMR' ? '🇨🇲' : '🌍';
       items.push({
         type: 'NEWS',
         title: title,
