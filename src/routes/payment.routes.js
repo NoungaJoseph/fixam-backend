@@ -1,6 +1,7 @@
 const express = require('express')
 const router = express.Router()
 const { protect } = require('../middlewares/auth.middleware')
+const idempotencyMiddleware = require('../middlewares/idempotency.middleware')
 const {
   topup,
   checkPaymentStatus,
@@ -8,7 +9,7 @@ const {
   koraWebhook
 } = require('../controllers/payment.controller')
 
-router.post('/topup', protect, topup)
+router.post('/topup', protect, idempotencyMiddleware, topup)
 router.get('/status/:reference', protect, checkPaymentStatus)
 router.get('/redirect', handleRedirect)
 router.post('/webhook/kora', koraWebhook)

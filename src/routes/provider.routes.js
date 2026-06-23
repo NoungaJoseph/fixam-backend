@@ -2,9 +2,11 @@ const express = require('express');
 const router = express.Router();
 const providerController = require('../controllers/provider.controller');
 const { protect, authorize } = require('../middlewares/auth.middleware');
+const cacheMiddleware = require('../middlewares/cache.middleware');
 
-router.get('/', providerController.getProviders);
-router.get('/top-of-month', providerController.getProvidersOfTheMonth);
+// Cache public provider lists for 5 minutes
+router.get('/', cacheMiddleware(300), providerController.getProviders);
+router.get('/top-of-month', cacheMiddleware(300), providerController.getProvidersOfTheMonth);
 router.get('/favorites', protect, providerController.getFavoriteProviders);
 router.get('/nearby', providerController.getNearbyProviders);
 router.get('/:providerId', providerController.getProviderById);
