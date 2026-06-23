@@ -46,8 +46,8 @@ const generateToken = (id, role) => {
 const setTokenCookie = (res, token) => {
   res.cookie('jwt', token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
+    secure: true, // required for sameSite 'none'
+    sameSite: 'none', // required for cross-origin requests from dashboard
     maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
   });
 };
@@ -740,8 +740,8 @@ const logout = (req, res) => {
   res.cookie('jwt', '', {
     httpOnly: true,
     expires: new Date(0),
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict'
+    secure: true,
+    sameSite: 'none'
   });
   res.status(200).json({ success: true, message: 'Logged out successfully' });
 };
