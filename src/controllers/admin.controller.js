@@ -1366,6 +1366,21 @@ const getConversationBetweenUsers = async (req, res, next) => {
   }
 };
 
+const getAllBookings = async (req, res, next) => {
+  try {
+    const bookings = await prisma.booking.findMany({
+      include: {
+        client: { select: { id: true, fullName: true, email: true, avatar: true } },
+        provider: { select: { id: true, fullName: true, email: true, avatar: true } },
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.status(200).json({ success: true, data: bookings });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   verifyProvider,
   approveTransaction,
@@ -1396,5 +1411,6 @@ module.exports = {
   getWireHistory,
   sendBroadcastEmail,
   sendSecurityAlert,
-  getConversationBetweenUsers
+  getConversationBetweenUsers,
+  getAllBookings
 };
