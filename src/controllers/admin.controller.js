@@ -1344,6 +1344,7 @@ const getConversationBetweenUsers = async (req, res, next) => {
         ],
         support: null // Exclude support conversations if we only want standard ones
       },
+      orderBy: { lastMessageAt: 'desc' },
       include: {
         messages: {
           orderBy: { createdAt: 'asc' }
