@@ -1,24 +1,31 @@
-const { Resend } = require('resend');
+const nodemailer = require('nodemailer');
 
-const resend = new Resend(process.env.RESEND_API_KEY || process.env.EMAIL_PASS);
+const transporter = nodemailer.createTransport({
+  host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+  port: process.env.EMAIL_PORT || 465,
+  secure: process.env.EMAIL_PORT == 465 || true,
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
 
 const sendEmail = async (options) => {
-  const { error, data } = await resend.emails.send({
-    from: process.env.EMAIL_FROM || 'Fixam <support@fixam.net>',
-    to: options.email,
-    subject: options.subject,
-    text: options.message,
-    html: options.html,
-  });
-
-  if (error) {
-    console.error('[EmailService] Resend API Error:', error.message);
+  try {
+    const info = await transporter.sendMail({
+      from: process.env.EMAIL_FROM || 'Fixam <support@fixam.net>',
+      to: options.email,
+      subject: options.subject,
+      text: options.message,
+      html: options.html,
+    });
+    return info;
+  } catch (error) {
+    console.error('[EmailService] Nodemailer Error:', error.message);
     if (process.env.NODE_ENV === 'production') {
       throw new Error(error.message);
     }
   }
-  
-  return data;
 };
 
 const sendOTP = async (email, otp, language = 'en') => {
