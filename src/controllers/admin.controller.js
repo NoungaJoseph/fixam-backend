@@ -1332,6 +1332,40 @@ const sendSecurityAlert = async (req, res, next) => {
   }
 };
 
+const getConversationBetweenUsers = async (req, res, next) => {
+  try {
+    const { user1Id, user2Id } = req.params;
+
+    const conversation = await prisma.conversation.findFirst({
+      where: {
+        AND: [
+          { participants: { some: { userId: user1Id } } },
+          { participants: { some: { userId: user2Id } } }
+        ],
+        support: null // Exclude support conversations if we only want standard ones
+      },
+      include: {
+        messages: {
+          orderBy: { createdAt: 'asc' }
+        },
+        participants: {
+          include: {
+            user: { select: { id: true, fullName: true, avatar: true, role: true } }
+          }
+        }
+      }
+    });
+
+    if (!conversation) {
+      return res.status(200).json({ success: true, data: { messages: [], participants: [] } });
+    }
+
+    res.status(200).json({ success: true, data: conversation });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   verifyProvider,
   approveTransaction,
@@ -1361,5 +1395,6 @@ module.exports = {
   wireCoins,
   getWireHistory,
   sendBroadcastEmail,
-  sendSecurityAlert
+  sendSecurityAlert,
+  getConversationBetweenUsers
 };

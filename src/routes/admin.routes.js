@@ -22,6 +22,7 @@ router.get('/pending-jobs', adminController.getPendingJobs);
 router.get('/approved-jobs', adminController.getApprovedJobs);
 router.get('/settings', adminController.getSettings);
 router.get('/wallet/wire-history', adminController.getWireHistory);
+router.get('/conversations/between/:user1Id/:user2Id', adminController.getConversationBetweenUsers);
 
 router.post('/verify-provider', adminController.verifyProvider);
 router.post('/approve-transaction', adminController.approveTransaction);
