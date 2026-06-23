@@ -5,13 +5,21 @@ const { calculateProviderStats } = require('../utils/providerStats');
 
 const getMe = async (req, res, next) => {
   try {
-    if (req.user.providerProfile?.id) {
-      const providerId = req.user.providerProfile.id;
+    const freshUser = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      include: {
+        wallet: true,
+        providerProfile: true,
+      }
+    });
+
+    if (freshUser?.providerProfile?.id) {
+      const providerId = freshUser.providerProfile.id;
       
       // Run heavy background recalculation asynchronously - DO NOT await to keep /me instantly fast
       calculateProviderStats(providerId).catch(err => console.error('Stats calc error:', err));
     }
-    res.status(200).json({ success: true, data: req.user });
+    res.status(200).json({ success: true, data: freshUser || req.user });
   } catch (error) {
     next(error);
   }
