@@ -1,5 +1,5 @@
 const prisma = require('../config/prisma');
-
+const sendEmail = require('../services/email.service');
 const getSupportConversations = async (req, res, next) => {
   try {
     const conversations = await prisma.conversation.findMany({
