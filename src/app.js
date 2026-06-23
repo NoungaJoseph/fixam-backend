@@ -56,11 +56,10 @@ app.use(helmet({
 const allowedOrigins = [
   process.env.DASHBOARD_URL,
   process.env.WEBSITE_URL,
-  ...(process.env.NODE_ENV === 'production' ? [] : [
-    'http://localhost:3000',
-    'http://localhost:4000',
-    'http://localhost:5173'
-  ])
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://localhost:4000',
+  'http://localhost:5173'
 ].filter(Boolean);
 
 app.use(cors({
