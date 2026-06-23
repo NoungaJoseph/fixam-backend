@@ -116,17 +116,26 @@ const verifyProvider = async (req, res, next) => {
       });
     }
 
-    const title = isVerified ? 'Verification approved' : 'Verification needs attention';
-    const body = isVerified
-      ? 'Your Fixam professional profile has been verified. You can now receive and accept more jobs.'
+    const titleEn = isVerified ? 'Identity Verification Approved' : 'Verification Needs Attention';
+    const titleFr = isVerified ? 'Vérification d\'identité approuvée' : 'La vérification nécessite votre attention';
+    
+    const bodyEn = isVerified
+      ? 'Congratulations! Your Fixam identity has been successfully verified. You can now receive and accept more jobs on the platform.'
       : `We could not approve your verification yet.${reason ? ` Reason: ${reason}` : ' Please submit clearer documents and try again.'}`;
+      
+    const bodyFr = isVerified
+      ? 'Félicitations ! L\'identité de votre profil Fixam a été vérifiée avec succès. Vous pouvez désormais recevoir et accepter plus de tâches sur la plateforme.'
+      : `Nous n'avons pas pu approuver votre vérification pour le moment.${reason ? ` Raison : ${reason}` : ' Veuillez soumettre des documents plus clairs et réessayer.'}`;
+
+    const pushTitle = `${titleEn} / ${titleFr}`;
+    const pushBody = `${bodyEn}\n\n${bodyFr}`;
 
     // Create Notification
     const notification = await prisma.notification.create({
       data: {
         userId: profile.userId,
-        title,
-        body,
+        title: pushTitle,
+        body: pushBody,
         data: { type: 'VERIFICATION', status, reason }
       }
     });
@@ -134,15 +143,35 @@ const verifyProvider = async (req, res, next) => {
     if (profile.user.email) {
       sendEmail({
         email: profile.user.email,
-        subject: `Fixam - ${title}`,
-        message: body,
+        subject: `Fixam - ${titleEn} | ${titleFr}`,
+        message: `${bodyEn}\n\n${bodyFr}`,
         html: `
-          <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;border:1px solid #dbeafe;border-radius:16px;overflow:hidden">
-            <div style="background:#1E67D1;color:#fff;padding:22px 26px;font-weight:800;font-size:20px">Fixam Verification</div>
-            <div style="padding:24px;color:#0D1B2A">
-              <h2 style="margin:0 0 10px">${title}</h2>
-              <p style="line-height:1.6">${body}</p>
-              <p style="font-size:12px;color:#64748b;margin-top:22px">Open the Fixam app to review your verification status.</p>
+          <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background-color: #ffffff;">
+            <div style="background-color: ${isVerified ? '#22C55E' : '#EF4444'}; color: #ffffff; padding: 24px; text-align: center;">
+              <h1 style="margin: 0; font-size: 24px; font-weight: 800;">Fixam</h1>
+              <p style="margin: 5px 0 0; font-size: 16px; opacity: 0.9;">Identity Verification / Vérification d'identité</p>
+            </div>
+            
+            <div style="padding: 32px 24px;">
+              <!-- English Section -->
+              <div style="margin-bottom: 30px;">
+                <h2 style="margin: 0 0 12px; color: #0f172a; font-size: 20px;">${titleEn}</h2>
+                <p style="margin: 0; color: #475569; font-size: 16px; line-height: 1.6;">${bodyEn}</p>
+                ${!isVerified ? `<p style="margin: 16px 0 0; color: #0f172a; font-weight: 600;">Please open the Fixam app to retry.</p>` : ''}
+              </div>
+
+              <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 0 0 30px;" />
+
+              <!-- French Section -->
+              <div style="margin-bottom: 10px;">
+                <h2 style="margin: 0 0 12px; color: #0f172a; font-size: 20px;">${titleFr}</h2>
+                <p style="margin: 0; color: #475569; font-size: 16px; line-height: 1.6;">${bodyFr}</p>
+                ${!isVerified ? `<p style="margin: 16px 0 0; color: #0f172a; font-weight: 600;">Veuillez ouvrir l'application Fixam pour réessayer.</p>` : ''}
+              </div>
+            </div>
+            
+            <div style="background-color: #f8fafc; padding: 20px; text-align: center; color: #64748b; font-size: 13px;">
+              <p style="margin: 0;">&copy; ${new Date().getFullYear()} Fixam. All rights reserved. / Tous droits réservés.</p>
             </div>
           </div>
         `

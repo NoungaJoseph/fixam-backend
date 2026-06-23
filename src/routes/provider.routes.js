@@ -3,6 +3,8 @@ const router = express.Router();
 const providerController = require('../controllers/provider.controller');
 const { protect, authorize } = require('../middlewares/auth.middleware');
 const cacheMiddleware = require('../middlewares/cache.middleware');
+const validate = require('../middlewares/validate.middleware');
+const { updateProviderProfileSchema } = require('../validations/provider.validation');
 
 // Cache public provider lists for 5 minutes
 router.get('/', cacheMiddleware(300), providerController.getProviders);
@@ -14,7 +16,7 @@ router.post('/:providerId/favorite', protect, providerController.addFavoriteProv
 router.delete('/:providerId/favorite', protect, providerController.removeFavoriteProvider);
 router.put('/status', protect, authorize('PROVIDER'), providerController.updateProviderStatus);
 router.post('/status', protect, authorize('PROVIDER'), providerController.updateProviderStatus);
-router.put('/profile', protect, authorize('PROVIDER'), providerController.updateProviderProfile);
+router.put('/profile', protect, authorize('PROVIDER'), validate(updateProviderProfileSchema), providerController.updateProviderProfile);
 router.post('/verify', protect, authorize('PROVIDER', 'CLIENT'), providerController.uploadVerificationDocs);
 
 module.exports = router;

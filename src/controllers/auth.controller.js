@@ -43,6 +43,15 @@ const generateToken = (id, role) => {
   return jwt.sign({ id, role }, process.env.JWT_SECRET, { expiresIn: '30d' });
 };
 
+const setTokenCookie = (res, token) => {
+  res.cookie('jwt', token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+  });
+};
+
 const register = async (req, res, next) => {
   try {
     debugLog('Registering user:', { email: req.body.email, phone: req.body.phone, role: req.body.role });
@@ -200,6 +209,7 @@ const login = async (req, res, next) => {
       });
     }
 
+    setTokenCookie(res, token);
     res.status(200).json({ success: true, token, user });
   } catch (error) {
     console.error('Login error details:', error);
@@ -268,6 +278,7 @@ const verifyOTP = async (req, res, next) => {
     }
 
     const token = generateToken(user.id, user.role);
+    setTokenCookie(res, token);
     res.status(200).json({ success: true, token, user });
   } catch (error) {
     next(error);
@@ -391,6 +402,7 @@ const verifyLoginTwoFactor = async (req, res, next) => {
     });
 
     const token = generateToken(user.id, user.role);
+    setTokenCookie(res, token);
     res.status(200).json({ success: true, token, user });
   } catch (error) {
     next(error);
@@ -696,6 +708,7 @@ const verifyEmailOTP = async (req, res, next) => {
       }
 
       const token = generateToken(newUser.id, newUser.role);
+      setTokenCookie(res, token);
       return res.status(200).json({ success: true, message: 'Email verified and account created successfully', user: newUser, token });
     }
 
@@ -716,10 +729,25 @@ const verifyEmailOTP = async (req, res, next) => {
     });
 
     const token = generateToken(user.id, user.role);
+    setTokenCookie(res, token);
     res.status(200).json({ success: true, token, user });
   } catch (error) {
     next(error);
   }
+};
+
+const logout = (req, res) => {
+  res.cookie('jwt', '', {
+    httpOnly: true,
+    expires: new Date(0),
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict'
+  });
+  res.status(200).json({ success: true, message: 'Logged out successfully' });
+};
+
+const me = async (req, res) => {
+  res.status(200).json({ success: true, user: req.user });
 };
 
 module.exports = {
@@ -735,5 +763,7 @@ module.exports = {
   forgotPassword,
   verifyResetOtp,
   resetPassword,
-  verifyEmailOTP
+  verifyEmailOTP,
+  logout,
+  me
 };

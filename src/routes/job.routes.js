@@ -2,8 +2,10 @@ const express = require('express');
 const router = express.Router();
 const jobController = require('../controllers/job.controller');
 const { protect, authorize } = require('../middlewares/auth.middleware');
+const validate = require('../middlewares/validate.middleware');
+const { createJobSchema } = require('../validations/job.validation');
 
-router.post('/', protect, authorize('CLIENT', 'PROVIDER'), jobController.createJob);
+router.post('/', protect, authorize('CLIENT', 'PROVIDER'), validate(createJobSchema), jobController.createJob);
 router.get('/client', protect, authorize('CLIENT', 'PROVIDER'), jobController.getClientJobs);
 router.get('/available', protect, authorize('PROVIDER'), jobController.getAvailableJobsForProvider);
 router.get('/my-jobs', protect, authorize('PROVIDER'), jobController.getProviderJobs);
