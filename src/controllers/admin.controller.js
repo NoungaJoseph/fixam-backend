@@ -140,6 +140,13 @@ const verifyProvider = async (req, res, next) => {
       }
     });
 
+    try {
+      const io = getIO();
+      io.to(profile.userId).emit('notification:new', notification);
+    } catch (err) {
+      console.error('[Socket Error] Verification notification emit failed:', err.message);
+    }
+
     // Send FCM Push Notification
     await sendPushNotification(
       profile.userId,
