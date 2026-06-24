@@ -2,17 +2,19 @@ const getSystemStatus = async (req, res) => {
   try {
     const prisma = require('../config/prisma');
 
-    let maintenanceEnabled = false;
+    let appMaintenanceEnabled = false;
+    let webMaintenanceEnabled = false;
     let maintenanceMessage = 'We are improving Fixam for you. Back soon!';
 
     try {
       const settings = await prisma.settings.findUnique({
         where: { id: 'global' },
-        select: { maintenanceEnabled: true, maintenanceMessage: true }
+        select: { appMaintenanceEnabled: true, webMaintenanceEnabled: true, maintenanceMessage: true }
       });
 
       if (settings) {
-        maintenanceEnabled = settings.maintenanceEnabled === true;
+        appMaintenanceEnabled = settings.appMaintenanceEnabled === true;
+        webMaintenanceEnabled = settings.webMaintenanceEnabled === true;
         if (settings.maintenanceMessage) {
           maintenanceMessage = settings.maintenanceMessage;
         }
@@ -20,12 +22,14 @@ const getSystemStatus = async (req, res) => {
     } catch (dbError) {
       // If DB fails, definitely not in maintenance — proceed normally
       console.warn('[System] DB error on status check:', dbError.message);
-      maintenanceEnabled = false;
+      appMaintenanceEnabled = false;
+      webMaintenanceEnabled = false;
     }
 
     return res.json({
       success: true,
-      maintenance: maintenanceEnabled,
+      appMaintenanceEnabled,
+      webMaintenanceEnabled,
       message: maintenanceMessage,
       timestamp: new Date().toISOString()
     });
@@ -33,7 +37,8 @@ const getSystemStatus = async (req, res) => {
     // Never block app startup on error
     return res.json({
       success: true,
-      maintenance: false,
+      appMaintenanceEnabled: false,
+      webMaintenanceEnabled: false,
       message: ''
     });
   }

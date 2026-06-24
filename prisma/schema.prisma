@@ -511,11 +511,12 @@ model Settings {
   defaultLanguage    String   @default("English")
   baseCurrency       String   @default("XAF")
   apiEndpoint        String   @default("https://api.fixam.cm/v1")
-  adminSecret        String   @default("secret")
-  maintenanceEnabled Boolean  @default(false)
-  maintenanceMessage String   @default("We are improving Fixam for you. Back soon!")
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  adminSecret               String   @default("secret")
+  appMaintenanceEnabled     Boolean  @default(false)
+  webMaintenanceEnabled     Boolean  @default(false)
+  maintenanceMessage        String   @default("We are improving Fixam for you. Back soon!")
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
 }
 
 model Report {
