@@ -1207,10 +1207,24 @@ const getSettings = async (req, res, next) => {
 const updateSettings = async (req, res, next) => {
   try {
     const data = req.body;
+    
+    const allowedFields = [
+      'platformName', 'supportEmail', 'serviceFee', 'defaultLanguage', 
+      'baseCurrency', 'apiEndpoint', 'adminSecret', 'appMaintenanceEnabled', 
+      'webMaintenanceEnabled', 'maintenanceMessage'
+    ];
+    
+    const updateData = {};
+    for (const key of allowedFields) {
+      if (data[key] !== undefined) {
+        updateData[key] = data[key];
+      }
+    }
+
     const settings = await prisma.settings.upsert({
       where: { id: 'global' },
-      update: data,
-      create: { id: 'global', ...data }
+      update: updateData,
+      create: { id: 'global', ...updateData }
     });
     res.status(200).json({ success: true, data: settings });
   } catch (error) {
