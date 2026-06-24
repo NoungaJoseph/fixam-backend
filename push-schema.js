@@ -6,8 +6,9 @@ if (!process.env.DIRECT_URL && process.env.DATABASE_URL) {
   // Supabase specific: construct direct URL from pooled URL
   let directUrl = process.env.DATABASE_URL;
   if (directUrl.includes('pooler.supabase.com')) {
-    directUrl = directUrl.replace(':6543', ':5432');
-    directUrl = directUrl.split('?')[0]; // Remove query params like ?pgbouncer=true
+    // Keep port 6543 for IPv4 compatibility (Railway), but remove ?pgbouncer=true (Transaction pooling) 
+    // so it uses Session pooling which supports DDL/migrations!
+    directUrl = directUrl.split('?')[0]; 
   }
   process.env.DIRECT_URL = directUrl;
   console.log('[Setup] Constructed DIRECT_URL from DATABASE_URL for Prisma.');
