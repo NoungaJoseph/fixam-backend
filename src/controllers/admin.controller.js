@@ -59,6 +59,7 @@ const getSupportConversations = async (req, res, next) => {
 };
 const { getIO } = require('../services/socket.service');
 const { sendEmail, sendMarketingBroadcast, sendSecurityNotice } = require('../services/email.service');
+const { sendPushNotification } = require('../services/notification.service');
 
 const toNumber = (val) => Number(val) || 0;
 
@@ -82,7 +83,7 @@ const giveWelcomeCoins = async (userId, coins, reason) => {
         reference: 'WELCOME_' + userId + '_' + Date.now()
       }
     });
-    const { sendPushNotification } = require('../services/notification.service');
+    
     await sendPushNotification(
       userId,
       coins === 1 ? '🎉 Welcome to Fixam!' : '🎁 Identity Verified!',
@@ -138,6 +139,15 @@ const verifyProvider = async (req, res, next) => {
         data: { type: 'VERIFICATION', status, reason }
       }
     });
+
+    // Send FCM Push Notification
+    await sendPushNotification(
+      profile.userId,
+      pushTitle,
+      pushBody,
+      { type: 'VERIFICATION', status, reason: String(reason || '') }
+    ).catch(err => console.error('[Push Error] Verification push failed:', err.message));
+
 
     if (profile.user.email) {
       sendEmail({
