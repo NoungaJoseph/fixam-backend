@@ -34,7 +34,7 @@ const sendOTP = async (email, otp, language = 'en') => {
       <div style="background: #F5F5F5; padding: 15px; border-radius: 8px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #333;">
         ${otp}
       </div>
-      <p style="font-size: 12px; color: #777; margin-top: 20px;">${isFr ? 'Ce code expire dans 10 minutes. Si vous ne l\\'avez pas demandé, veuillez ignorer cet e-mail.' : 'This code expires in 10 minutes. If you did not request this, please ignore this email.'}</p>
+      <p style="font-size: 12px; color: #777; margin-top: 20px;">${isFr ? "Ce code expire dans 10 minutes. Si vous ne l'avez pas demandé, veuillez ignorer cet e-mail." : "This code expires in 10 minutes. If you did not request this, please ignore this email."}</p>
     </div>
   `;
 
@@ -54,8 +54,8 @@ const sendWelcomeEmail = async (email, fullName, language = 'en') => {
       <h2 style="color: #1E67D1;">${subject}</h2>
       <p>${isFr ? 'Bonjour' : 'Hello'} ${fullName || (isFr ? 'là' : 'there')},</p>
       <p>${isFr ? 'Nous sommes ravis de vous compter parmi nous sur Fixam, le meilleur marché pour les services. Nous avons crédité votre portefeuille de 1 pièce de bienvenue pour bien commencer !' : 'We are thrilled to have you join Fixam, the best marketplace for services. We have credited your wallet with 1 welcome coin to get you started!'}</p>
-      <p>${isFr ? 'Si vous avez des questions, n\\'hésitez pas à contacter notre équipe de support.' : 'If you have any questions, feel free to reach out to our support team.'}</p>
-      <p>${isFr ? 'Cordialement,' : 'Best regards,'}<br>${isFr ? 'L\\'équipe Fixam' : 'The Fixam Team'}</p>
+      <p>${isFr ? "Si vous avez des questions, n'hésitez pas à contacter notre équipe de support." : "If you have any questions, feel free to reach out to our support team."}</p>
+      <p>${isFr ? "Cordialement," : "Best regards,"}<br>${isFr ? "L'équipe Fixam" : "The Fixam Team"}</p>
     </div>
   `;
   await sendEmail({ email, subject, html });
@@ -75,7 +75,7 @@ const sendSuspiciousLoginAlert = async (email, details, language = 'en') => {
         ${isFr ? 'Appareil' : 'Device'}: ${details.device}<br/>
         ${isFr ? 'Heure' : 'Time'}: ${details.time}
       </div>
-      <p>${isFr ? 'Si ce n\\'était pas vous, veuillez changer votre mot de passe immédiatement.' : 'If this wasn\\'t you, please change your password immediately.'}</p>
+      <p>${isFr ? "Si ce n'était pas vous, veuillez changer votre mot de passe immédiatement." : "If this wasn't you, please change your password immediately."}</p>
     </div>
   `;
   await sendEmail({ email, subject, html });
