@@ -1,9 +1,18 @@
 const { execSync } = require('child_process');
+require('dotenv').config();
 
 // Ensure DIRECT_URL is set for Prisma
-if (!process.env.DIRECT_URL) {
-  process.env.DIRECT_URL = process.env.DATABASE_URL;
-  console.log('[Setup] Set DIRECT_URL from DATABASE_URL for Prisma.');
+if (!process.env.DIRECT_URL && process.env.DATABASE_URL) {
+  // Supabase specific: construct direct URL from pooled URL
+  let directUrl = process.env.DATABASE_URL;
+  if (directUrl.includes('pooler.supabase.com')) {
+    directUrl = directUrl.replace(':6543', ':5432');
+    directUrl = directUrl.split('?')[0]; // Remove query params like ?pgbouncer=true
+  }
+  process.env.DIRECT_URL = directUrl;
+  console.log('[Setup] Constructed DIRECT_URL from DATABASE_URL for Prisma.');
+} else if (!process.env.DIRECT_URL) {
+  console.error('[Setup] DIRECT_URL and DATABASE_URL are both missing!');
 }
 
 try {
