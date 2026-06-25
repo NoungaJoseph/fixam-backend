@@ -1,6 +1,10 @@
 const axios = require('axios');
 const Parser = require('rss-parser');
-const parser = new Parser();
+const parser = new Parser({
+  headers: {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+  }
+});
 
 let cachedSportsData = { en: null, fr: null };
 let lastFetchTime = { en: 0, fr: 0 };
@@ -200,28 +204,6 @@ const fetchSportsData = async (lang) => {
       console.error('[SportsController] Error fetching WC scorers:', err.message);
     }
 
-    // Static Off-Season European Leagues Standings & Scorers (prevents rate limits during break)
-    items.push({
-      type: 'NEWS',
-      title: lang === 'fr'
-        ? "Classement Premier League (Saison précédente): 1. Man City (91 pts) | 2. Arsenal (89 pts) | 3. Liverpool (82 pts)"
-        : "Premier League Table (Last Season): 1. Man City (91 pts) | 2. Arsenal (89 pts) | 3. Liverpool (82 pts)",
-      prefix: '🏆'
-    });
-    items.push({
-      type: 'NEWS',
-      title: lang === 'fr'
-        ? "Meilleurs Buteurs PL (Saison précédente): Erling Haaland (27 buts) | Cole Palmer (22 buts) | Alexander Isak (21 buts)"
-        : "PL Top Scorers (Last Season): Erling Haaland (27 goals) | Cole Palmer (22 goals) | Alexander Isak (21 goals)",
-      prefix: '🔥'
-    });
-    items.push({
-      type: 'NEWS',
-      title: lang === 'fr'
-        ? "Qualifiés en LDC: Real Madrid, Man City, Bayern Munich, PSG, Arsenal, Dortmund"
-        : "CL Qualified Teams: Real Madrid, Man City, Bayern Munich, PSG, Arsenal, Dortmund",
-      prefix: '⭐'
-    });
   } else {
     // Return mock entries if API key is not configured
     items.push({
