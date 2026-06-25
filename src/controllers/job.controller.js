@@ -56,22 +56,68 @@ const addTimingMetadata = (job) => {
     isPastExpectedCompletion: Boolean(expectedCompletionAt && new Date(expectedCompletionAt) < new Date() && status === 'IN_PROGRESS'),
   };
 };
-
 const createJob = async (req, res, next) => {
   try {
     const validatedData = createJobSchema.parse(req.body);
     const budgetRange = normalizeBudgetRange(validatedData);
 
-    const job = await prisma.job.create({
-      data: {
-        ...validatedData,
-        ...budgetRange,
-        clientId: req.user.id,
-        status: 'PENDING',
-        coinCost: calculateJobCoinCost(budgetRange.budgetMax),
-        approvalStatus: 'PENDING_APPROVAL',  // New jobs require admin approval
-        scheduledTime: validatedData.scheduledTime ? new Date(validatedData.scheduledTime) : null
-      }
+    // 1. Fetch latest user profile to ensure up-to-date verification & wallet states
+    const clientUser = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      include: { providerProfile: true, wallet: true }
+    });
+
+    // 2. Check client verification status
+    const verificationStatus = clientUser?.providerProfile?.verification;
+    if (verificationStatus !== 'VERIFIED') {
+      return res.status(403).json({
+        success: false,
+        message: 'Your account must be verified before you can post a task.',
+        code: verificationStatus === 'PENDING' ? 'VERIFICATION_PENDING' : 'VERIFICATION_REQUIRED'
+      });
+    }
+
+    // 3. Check client wallet balance
+    const coinCost = calculateJobCoinCost(budgetRange.budgetMax);
+    const clientWallet = clientUser?.wallet;
+    if (!clientWallet || clientWallet.balance < coinCost) {
+      return res.status(400).json({
+        success: false,
+        message: `You do not have enough coins to post this task. Cost is ${coinCost} coins. Please top up.`
+      });
+    }
+
+    // 4. Deduct coins and create job in a transaction
+    const job = await prisma.$transaction(async (tx) => {
+      // Decrement wallet balance
+      await tx.wallet.update({
+        where: { id: clientWallet.id },
+        data: { balance: { decrement: coinCost } }
+      });
+
+      // Record deduction transaction
+      await tx.transaction.create({
+        data: {
+          walletId: clientWallet.id,
+          amount: -coinCost,
+          type: 'DEDUCTION',
+          status: 'SUCCESS',
+          description: `Posted task: ${validatedData.title}`
+        }
+      });
+
+      // Create job
+      return await tx.job.create({
+        data: {
+          ...validatedData,
+          ...budgetRange,
+          clientId: req.user.id,
+          status: 'PENDING',
+          coinCost: coinCost,
+          approvalStatus: 'PENDING_APPROVAL',  // New jobs require admin approval
+          scheduledTime: validatedData.scheduledTime ? new Date(validatedData.scheduledTime) : null
+        }
+      });
     });
 
     // Notify admins about new job awaiting approval

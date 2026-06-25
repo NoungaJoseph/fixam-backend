@@ -1087,6 +1087,90 @@ const approveJob = async (req, res, next) => {
       console.error('[Push Error] Job approve push failed:', pushErr.message);
     }
 
+    // Notify nearby providers offering the matching service
+    try {
+      const matchesSkill = (providerSkills, jobCategory) => {
+        if (!providerSkills || !Array.isArray(providerSkills) || !jobCategory) return false;
+        const cleanJobCat = jobCategory.toLowerCase().trim();
+        return providerSkills.some(skill => {
+          const cleanSkill = String(skill || '').toLowerCase().trim();
+          return cleanSkill === cleanJobCat || cleanSkill.includes(cleanJobCat) || cleanJobCat.includes(cleanSkill);
+        });
+      };
+
+      const matchesLocation = (providerArea, jobLocation) => {
+        if (!providerArea || !jobLocation) return false;
+        const cleanArea = String(providerArea).toLowerCase().trim();
+        const cleanLoc = String(jobLocation).toLowerCase().trim();
+        return cleanArea.includes(cleanLoc) || cleanLoc.includes(cleanArea);
+      };
+
+      const providers = await prisma.user.findMany({
+        where: {
+          role: 'PROVIDER',
+          isBlocked: false,
+          providerProfile: {
+            isNot: null
+          }
+        },
+        include: {
+          providerProfile: true
+        }
+      });
+
+      const matchingProviders = providers.filter(provider => {
+        const profile = provider.providerProfile;
+        if (!profile) return false;
+        return (
+          matchesSkill(profile.skills, job.category) &&
+          matchesLocation(profile.serviceArea, job.location)
+        );
+      });
+
+      console.log(`[Proximity Alert] Found ${matchingProviders.length} matching providers for category "${job.category}" and location "${job.location}"`);
+
+      const { getIO } = require('../services/socket.service');
+      const { sendPushNotification } = require('../services/notification.service');
+      const io = getIO();
+
+      for (const provider of matchingProviders) {
+        // Create DB notification
+        const providerNotif = await prisma.notification.create({
+          data: {
+            userId: provider.id,
+            title: 'New Task Near You 📍',
+            body: `A new task for "${job.category}" was posted nearby in "${job.location}": "${job.title}"`,
+            data: { type: 'NEW_JOB_NEARBY', jobId: job.id, category: job.category }
+          }
+        });
+
+        // Emit socket notification
+        try {
+          io.to(provider.id).emit('notification:new', providerNotif);
+        } catch (socketErr) {
+          console.error('[Socket Error] Proximity notification failed for provider:', provider.id, socketErr.message);
+        }
+
+        // Send Push Notification
+        try {
+          await sendPushNotification(
+            provider.id,
+            'New Task Near You 📍',
+            `A new ${job.category} task is available in ${job.location}`,
+            {
+              type: 'NEW_JOB_NEARBY',
+              jobId: job.id,
+              screen: 'TaskDetails'
+            }
+          );
+        } catch (pushErr) {
+          console.error('[Push Error] Proximity push failed for provider:', provider.id, pushErr.message);
+        }
+      }
+    } catch (proximityErr) {
+      console.error('[Proximity Alert] Proximity provider notifications failed:', proximityErr);
+    }
+
     res.status(200).json({ success: true, data: job, message: 'Job approved successfully' });
   } catch (error) {
     next(error);

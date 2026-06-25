@@ -285,6 +285,26 @@ const updateBookingStatus = async (req, res, next) => {
 
     if (status === 'ACCEPTED') {
       try {
+        const notif = await prisma.notification.create({
+          data: {
+            userId: booking.clientId,
+            title: 'Booking Confirmed ✅',
+            body: `Your booking with ${booking.provider?.fullName || 'the provider'} is confirmed`,
+            data: {
+              type: 'BOOKING_CONFIRMED',
+              bookingId: booking.id,
+              providerId: booking.providerId,
+              status: booking.status
+            }
+          }
+        });
+
+        try {
+          getIO().to(booking.clientId).emit('notification:new', notif);
+        } catch (socketErr) {
+          console.error('[Socket Error] Confirmed notification emit failed:', socketErr.message);
+        }
+
         await sendPushNotification(
           booking.clientId,
           'Booking Confirmed ✅',
