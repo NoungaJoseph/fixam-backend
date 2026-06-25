@@ -90,6 +90,8 @@ const updateProfile = async (req, res, next) => {
 
     if (profileMode === 'WORK' && req.user.role !== 'PROVIDER') {
       updateData.role = 'PROVIDER';
+    } else if (profileMode === 'PERSONAL' && req.user.role !== 'CLIENT') {
+      updateData.role = 'CLIENT';
     }
 
     const user = await prisma.user.update({
