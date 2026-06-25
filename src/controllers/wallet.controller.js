@@ -135,11 +135,23 @@ const getBalance = async (req, res, next) => {
     const completedTasksCount = completedJobsCount + completedBookingsCount;
 
     const completedJobs = await prisma.job.count({
-      where: { clientId: req.user.id, status: 'COMPLETED' }
+      where: {
+        status: 'COMPLETED',
+        OR: [
+          { clientId: req.user.id },
+          { assignments: { some: { provider: { userId: req.user.id } } } }
+        ]
+      }
     });
 
     const completedBookings = await prisma.booking.count({
-      where: { clientId: req.user.id, status: 'COMPLETED' }
+      where: {
+        status: 'COMPLETED',
+        OR: [
+          { clientId: req.user.id },
+          { providerId: req.user.id }
+        ]
+      }
     });
 
     const completedTasks = completedJobs + completedBookings;

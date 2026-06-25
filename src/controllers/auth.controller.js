@@ -583,6 +583,7 @@ const verifyEmailOTP = async (req, res, next) => {
             fullName, email: plEmail, phone, password, dob, role, referralCode, location,
             referredBy: referrerId,
             preferredLanguage: language, isEmailVerified: true, welcomeCoinsGiven: true,
+            isOnline: role === 'PROVIDER',
             wallet: { create: { balance: 1 } },
             ...(role === 'PROVIDER' ? {
               providerProfile: {

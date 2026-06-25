@@ -312,6 +312,20 @@ const applyForJob = async (req, res, next) => {
     const { jobId } = req.params;
     const providerId = req.user.providerProfile.id;
 
+    if (req.user.isBlocked) {
+      return res.status(403).json({ success: false, message: req.user.blockedReason || 'This account has been blocked.', code: 'ACCOUNT_BLOCKED' });
+    }
+
+    const verificationStatus = req.user.providerProfile?.verification;
+    if (verificationStatus !== 'VERIFIED') {
+      return res.status(403).json({
+        success: false,
+        message: 'Please verify your identity before applying to jobs.',
+        requiresVerification: true,
+        code: verificationStatus === 'PENDING' ? 'VERIFICATION_PENDING' : 'VERIFICATION_REQUIRED'
+      });
+    }
+
     const job = await prisma.job.findUnique({ where: { id: jobId }, include: { client: true } });
     if (!job || job.status !== 'PENDING' || job.approvalStatus !== 'APPROVED') {
       return res.status(400).json({ success: false, message: 'Job not available' });
@@ -321,18 +335,18 @@ const applyForJob = async (req, res, next) => {
       where: { jobId_providerId: { jobId, providerId } }
     });
     if (existing) {
-      return res.status(409).json({ success: false, data: existing, message: 'You have already applied for this task.' });
+      return res.status(409).json({ success: false, data: existing, message: 'You have already applied for this task.', code: 'ALREADY_APPLIED' });
     }
 
     if (!req.user.isOnline) {
-      return res.status(403).json({ success: false, message: 'You must be available for work to apply for tasks.' });
+      return res.status(403).json({ success: false, message: 'You must be available for work to apply for tasks.', code: 'PROVIDER_OFFLINE' });
     }
 
     // Providers can apply for free, but must have enough coins for the task before applying.
     // The coins are deducted only if the client selects this provider.
     const wallet = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
     if (!wallet || wallet.balance < job.coinCost) {
-      return res.status(403).json({ success: false, message: `You need at least ${job.coinCost} coin${job.coinCost > 1 ? 's' : ''} in your balance to apply for this task.` });
+      return res.status(403).json({ success: false, message: `You need at least ${job.coinCost} coin${job.coinCost > 1 ? 's' : ''} in your balance to apply for this task.`, code: 'INSUFFICIENT_COINS' });
     }
 
     const assignment = await prisma.jobAssignment.create({

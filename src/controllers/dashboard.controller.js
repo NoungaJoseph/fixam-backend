@@ -9,7 +9,12 @@ const getDashboardData = async (req, res, next) => {
     // Fast ETag check
     const [latestJob, latestBooking, latestTx, latestConv] = await Promise.all([
       prisma.job.findFirst({
-        where: role === 'PROVIDER' ? { status: 'PENDING', approvalStatus: 'APPROVED', assignments: { none: { provider: { userId } } } } : { clientId: userId },
+        where: role === 'PROVIDER' 
+          ? { OR: [
+              { status: 'PENDING', approvalStatus: 'APPROVED', assignments: { none: { provider: { userId } } } },
+              { assignments: { some: { provider: { userId } } } }
+            ] }
+          : { clientId: userId },
         orderBy: { updatedAt: 'desc' },
         select: { updatedAt: true }
       }),
@@ -143,61 +148,78 @@ const getDashboardData = async (req, res, next) => {
     });
 
     // Process Wallet stats (mimicking wallet.controller.js)
-    let enrichedWallet = { balance: 0, thisMonthTransactions: 0, thisMonthSpent: 0, completedTasks: 0, nextLevelTasks: 5, progressPercent: 0 };
+    let thisMonthTxStats = { _sum: { amount: 0 } };
+    const now = new Date();
+    const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
     if (wallet) {
-      const now = new Date();
-      const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      
-      const thisMonthTxStats = await prisma.transaction.aggregate({
+      thisMonthTxStats = await prisma.transaction.aggregate({
         _count: { id: true },
         _sum: { amount: true },
         where: { walletId: wallet.id, status: 'SUCCESS', createdAt: { gte: firstDayOfMonth } }
       });
-
-      const completedJobsCount = await prisma.job.count({
-        where: {
-          status: 'COMPLETED',
-          updatedAt: { gte: firstDayOfMonth },
-          OR: [
-            { clientId: userId },
-            { assignments: { some: { provider: { userId } } } }
-          ]
-        }
-      });
-
-      const completedBookingsCount = await prisma.booking.count({
-        where: {
-          status: 'COMPLETED',
-          updatedAt: { gte: firstDayOfMonth },
-          OR: [
-            { clientId: userId },
-            { providerId: userId }
-          ]
-        }
-      });
-
-      const completedTasksCount = completedJobsCount + completedBookingsCount;
-
-      const completedJobs = await prisma.job.count({ where: { clientId: userId, status: 'COMPLETED' } });
-      const completedBookings = await prisma.booking.count({ where: { clientId: userId, status: 'COMPLETED' } });
-      const completedTasks = completedJobs + completedBookings;
-      
-      let nextLevelTasks = 5;
-      if (completedTasks >= 5) nextLevelTasks = 10;
-      if (completedTasks >= 10) nextLevelTasks = 20;
-      if (completedTasks >= 20) nextLevelTasks = 50;
-      if (completedTasks >= 50) nextLevelTasks = Math.floor(completedTasks / 10) * 10 + 10;
-      
-      const progressPercent = Math.min(100, Math.round((completedTasks / nextLevelTasks) * 100));
-      enrichedWallet = {
-        ...wallet,
-        thisMonthTransactions: completedTasksCount,
-        thisMonthSpent: Math.abs(thisMonthTxStats._sum.amount || 0),
-        completedTasks,
-        nextLevelTasks,
-        progressPercent
-      };
     }
+
+    const completedJobsCount = await prisma.job.count({
+      where: {
+        status: 'COMPLETED',
+        updatedAt: { gte: firstDayOfMonth },
+        OR: [
+          { clientId: userId },
+          { assignments: { some: { provider: { userId } } } }
+        ]
+      }
+    });
+
+    const completedBookingsCount = await prisma.booking.count({
+      where: {
+        status: 'COMPLETED',
+        updatedAt: { gte: firstDayOfMonth },
+        OR: [
+          { clientId: userId },
+          { providerId: userId }
+        ]
+      }
+    });
+
+    const completedTasksCount = completedJobsCount + completedBookingsCount;
+
+    const completedJobs = await prisma.job.count({
+      where: {
+        status: 'COMPLETED',
+        OR: [
+          { clientId: userId },
+          { assignments: { some: { provider: { userId } } } }
+        ]
+      }
+    });
+    const completedBookings = await prisma.booking.count({
+      where: {
+        status: 'COMPLETED',
+        OR: [
+          { clientId: userId },
+          { providerId: userId }
+        ]
+      }
+    });
+    const completedTasks = completedJobs + completedBookings;
+    
+    let nextLevelTasks = 5;
+    if (completedTasks >= 5) nextLevelTasks = 10;
+    if (completedTasks >= 10) nextLevelTasks = 20;
+    if (completedTasks >= 20) nextLevelTasks = 50;
+    if (completedTasks >= 50) nextLevelTasks = Math.floor(completedTasks / 10) * 10 + 10;
+    
+    const progressPercent = Math.min(100, Math.round((completedTasks / nextLevelTasks) * 100));
+    
+    let enrichedWallet = {
+      ...(wallet || { balance: 0 }),
+      thisMonthTransactions: completedTasksCount,
+      thisMonthSpent: Math.abs(thisMonthTxStats._sum.amount || 0),
+      completedTasks,
+      nextLevelTasks,
+      progressPercent
+    };
 
     // Process Conversations
     const conversations = conversationsRaw.map((conv) => ({

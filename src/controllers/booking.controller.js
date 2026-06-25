@@ -46,14 +46,22 @@ const createBooking = async (req, res, next) => {
       include: { providerProfile: true }
     });
     
-    const isVerified = clientUser.fullName && !clientUser.isBlocked;
+    if (clientUser?.isBlocked) {
+      return res.status(403).json({
+        success: false,
+        message: clientUser.blockedReason || 'This account has been blocked.',
+        code: 'ACCOUNT_BLOCKED'
+      });
+    }
+
+    const isVerified = clientUser?.providerProfile?.verification === 'VERIFIED';
     
     if (!isVerified) {
       return res.status(403).json({
         success: false,
         message: 'Please verify your identity before booking',
         requiresVerification: true,
-        code: 'VERIFICATION_REQUIRED'
+        code: clientUser?.providerProfile?.verification === 'PENDING' ? 'VERIFICATION_PENDING' : 'VERIFICATION_REQUIRED'
       });
     }
 
@@ -233,7 +241,7 @@ const updateBookingStatus = async (req, res, next) => {
     }
 
     if (status === 'ACCEPTED' && isProvider && !req.user.isOnline) {
-      return res.status(403).json({ success: false, message: 'You must be available for work to accept a booking.' });
+      return res.status(403).json({ success: false, message: 'You must be available for work to accept a booking.', code: 'PROVIDER_OFFLINE' });
     }
 
     // Mark any related notifications for this user as read
