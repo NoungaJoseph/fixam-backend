@@ -4,6 +4,7 @@ const parser = new Parser();
 
 let cachedSportsData = { en: null, fr: null };
 let lastFetchTime = { en: 0, fr: 0 };
+let isFetching = { en: false, fr: false };
 const CACHE_DURATION_MS = 2 * 60 * 1000; // Cache for 2 minutes
 
 const fetchSportsData = async (lang) => {
@@ -12,9 +13,9 @@ const fetchSportsData = async (lang) => {
 
   // 1. Fetch Football-Data.org Match Stats (World Cup, CL, PL, etc.)
   if (apiKey) {
+    const headers = { 'X-Auth-Token': apiKey };
+
     try {
-      const headers = { 'X-Auth-Token': apiKey };
-      
       // Calculate dates for yesterday and tomorrow to get a wider range of matches
       const today = new Date();
       const yesterday = new Date(today);
@@ -63,6 +64,187 @@ const fetchSportsData = async (lang) => {
     } catch (error) {
       console.error('[SportsController] Error fetching matches:', error.message);
     }
+
+    // 1.5 Fetch World Cup Match Data to Determine Active Stage and Qualified Teams
+    let activeStage = 'GROUP_STAGE';
+    let activeStagePriority = 1;
+    let wcMatches = [];
+
+    const stagePriority = {
+      'GROUP_STAGE': 1,
+      'ROUND_OF_32': 2,
+      'LAST_32': 2,
+      'ROUND_OF_16': 3,
+      'LAST_16': 3,
+      'QUARTER_FINALS': 4,
+      'SEMI_FINALS': 5,
+      'THIRD_PLACE': 6,
+      'FINAL': 7
+    };
+
+    try {
+      const wcMatchesRes = await axios.get('https://api.football-data.org/v4/competitions/WC/matches', { headers });
+      wcMatches = wcMatchesRes.data?.matches || [];
+
+      wcMatches.forEach(m => {
+        const p = stagePriority[m.stage] || 0;
+        if (p > activeStagePriority) {
+          activeStage = m.stage;
+          activeStagePriority = p;
+        }
+      });
+    } catch (err) {
+      console.error('[SportsController] Error fetching WC matches list:', err.message);
+    }
+
+    // Process World Cup info based on active tournament stage
+    if (activeStagePriority > 1) {
+      // Knockout stage logic: find teams active in this round
+      try {
+        const stageMatches = wcMatches.filter(m => m.stage === activeStage);
+        let stageTeams = [];
+        stageMatches.forEach(m => {
+          if (m.homeTeam?.shortName || m.homeTeam?.name) stageTeams.push(m.homeTeam.shortName || m.homeTeam.name);
+          if (m.awayTeam?.shortName || m.awayTeam?.name) stageTeams.push(m.awayTeam.shortName || m.awayTeam.name);
+        });
+        const uniqueStageTeams = [...new Set(stageTeams)];
+
+        let stageLabel = activeStage.replace(/_/g, ' ');
+        if (activeStage === 'LAST_32' || activeStage === 'ROUND_OF_32') stageLabel = 'Round of 32';
+        if (activeStage === 'LAST_16' || activeStage === 'ROUND_OF_16') stageLabel = 'Round of 16';
+        if (activeStage === 'QUARTER_FINALS') stageLabel = 'Quarter-Finals';
+        if (activeStage === 'SEMI_FINALS') stageLabel = 'Semi-Finals';
+        if (activeStage === 'FINAL') stageLabel = 'Finals';
+
+        if (uniqueStageTeams.length > 0) {
+          items.push({
+            type: 'NEWS',
+            title: lang === 'fr'
+              ? `Mondial ${stageLabel}: ${uniqueStageTeams.slice(0, 8).join(', ')}`
+              : `World Cup ${stageLabel} Teams: ${uniqueStageTeams.slice(0, 8).join(', ')}`,
+            prefix: '⭐'
+          });
+        }
+
+        // Check if the final has finished to crown the champion
+        const finalMatch = wcMatches.find(m => m.stage === 'FINAL' && m.status === 'FINISHED');
+        if (finalMatch && finalMatch.score?.winner) {
+          const winner = finalMatch.score.winner === 'HOME_TEAM' ? finalMatch.homeTeam : finalMatch.awayTeam;
+          const winnerName = winner?.shortName || winner?.name || 'TBD';
+          items.push({
+            type: 'NEWS',
+            title: lang === 'fr'
+              ? `👑 CHAMPION DU MONDE 2026: ${winnerName.toUpperCase()} ! 🎉`
+              : `👑 WORLD CUP 2026 CHAMPIONS: ${winnerName.toUpperCase()}! 🎉`,
+            prefix: '🏆'
+          });
+        }
+      } catch (err) {
+        console.error('[SportsController] Error processing WC knockout stage:', err.message);
+      }
+    } else {
+      // Group stage logic: fetch standings & calculate qualified teams
+      try {
+        const wcStandingsRes = await axios.get('https://api.football-data.org/v4/competitions/WC/standings', { headers });
+        const standings = wcStandingsRes.data?.standings || [];
+        
+        // Show standings of the first 4 groups
+        const groupsToShow = standings.filter(s => s.type === 'TOTAL').slice(0, 4);
+        groupsToShow.forEach(group => {
+          const groupName = group.group ? group.group.replace('GROUP_', 'Group ') : 'Table';
+          const teams = group.table.slice(0, 2).map(t => `${t.position}. ${t.team?.tla || t.team?.shortName || t.team?.name} (${t.points} pts)`).join(' | ');
+          items.push({
+            type: 'NEWS',
+            title: lang === 'fr' ? `Mondial ${groupName}: ${teams}` : `World Cup ${groupName}: ${teams}`,
+            prefix: '🏆'
+          });
+        });
+
+        // Calculate currently qualified teams
+        let qualified = [];
+        standings.filter(s => s.type === 'TOTAL').forEach(group => {
+          group.table.slice(0, 2).forEach(t => {
+            if (t.playedGames === 3) {
+              qualified.push(t.team?.shortName || t.team?.name);
+            }
+          });
+        });
+
+        if (qualified.length > 0) {
+          const uniqueQualifiers = [...new Set(qualified)].slice(0, 8).join(', ');
+          items.push({
+            type: 'NEWS',
+            title: lang === 'fr'
+              ? `Qualifiés Mondial (16es): ${uniqueQualifiers} qualifiés pour le tour suivant !`
+              : `World Cup Qualified (Rd of 32): ${uniqueQualifiers} have qualified for the next stage!`,
+            prefix: '⭐'
+          });
+        }
+      } catch (err) {
+        console.error('[SportsController] Error fetching WC standings:', err.message);
+      }
+    }
+
+    try {
+      const wcScorersRes = await axios.get('https://api.football-data.org/v4/competitions/WC/scorers', { headers });
+      const scorers = wcScorersRes.data?.scorers || [];
+      if (scorers.length > 0) {
+        const topScorers = scorers.slice(0, 5).map(s => `${s.player.name} (${s.goals} goals)`).join(' | ');
+        items.push({
+          type: 'NEWS',
+          title: lang === 'fr' ? `Meilleurs Buteurs Mondial: ${topScorers}` : `World Cup Top Scorers: ${topScorers}`,
+          prefix: '🔥'
+        });
+      }
+    } catch (err) {
+      console.error('[SportsController] Error fetching WC scorers:', err.message);
+    }
+
+    // Static Off-Season European Leagues Standings & Scorers (prevents rate limits during break)
+    items.push({
+      type: 'NEWS',
+      title: lang === 'fr'
+        ? "Classement Premier League (Saison précédente): 1. Man City (91 pts) | 2. Arsenal (89 pts) | 3. Liverpool (82 pts)"
+        : "Premier League Table (Last Season): 1. Man City (91 pts) | 2. Arsenal (89 pts) | 3. Liverpool (82 pts)",
+      prefix: '🏆'
+    });
+    items.push({
+      type: 'NEWS',
+      title: lang === 'fr'
+        ? "Meilleurs Buteurs PL (Saison précédente): Erling Haaland (27 buts) | Cole Palmer (22 buts) | Alexander Isak (21 buts)"
+        : "PL Top Scorers (Last Season): Erling Haaland (27 goals) | Cole Palmer (22 goals) | Alexander Isak (21 goals)",
+      prefix: '🔥'
+    });
+    items.push({
+      type: 'NEWS',
+      title: lang === 'fr'
+        ? "Qualifiés en LDC: Real Madrid, Man City, Bayern Munich, PSG, Arsenal, Dortmund"
+        : "CL Qualified Teams: Real Madrid, Man City, Bayern Munich, PSG, Arsenal, Dortmund",
+      prefix: '⭐'
+    });
+  } else {
+    // Return mock entries if API key is not configured
+    items.push({
+      type: 'NEWS',
+      title: lang === 'fr'
+        ? "Mondial Groupe A: 1. MEX (9 pts) | 2. RSA (4 pts)"
+        : "World Cup Group A: 1. MEX (9 pts) | 2. RSA (4 pts)",
+      prefix: '🏆'
+    });
+    items.push({
+      type: 'NEWS',
+      title: lang === 'fr'
+        ? "Meilleurs Buteurs Mondial: Lionel Messi (5 buts) | Vinicius Junior (4 buts) | Kylian Mbappé (4 buts)"
+        : "World Cup Top Scorers: Lionel Messi (5 goals) | Vinicius Junior (4 goals) | Kylian Mbappé (4 goals)",
+      prefix: '🔥'
+    });
+    items.push({
+      type: 'NEWS',
+      title: lang === 'fr'
+        ? "Qualifiés Mondial (16es): Mexique, Suisse, Canada, Argentine, Brésil, France, Angleterre, Pays-Bas"
+        : "World Cup Qualified: Mexico, Switzerland, Canada, Argentina, Brazil, France, England, Netherlands",
+      prefix: '⭐'
+    });
   }
 
   // 2. Fetch Live General News via RSS (World + Cameroon)
@@ -119,14 +301,21 @@ exports.getTickerData = async (req, res) => {
     const now = Date.now();
     
     if (!cachedSportsData[lang] || (now - lastFetchTime[lang] > CACHE_DURATION_MS)) {
-      cachedSportsData[lang] = await fetchSportsData(lang);
-      lastFetchTime[lang] = now;
+      if (!isFetching[lang]) {
+        isFetching[lang] = true;
+        try {
+          cachedSportsData[lang] = await fetchSportsData(lang);
+          lastFetchTime[lang] = now;
+        } finally {
+          isFetching[lang] = false;
+        }
+      }
     }
 
     res.status(200).json({
       success: true,
       data: {
-        items: cachedSportsData[lang]
+        items: cachedSportsData[lang] || []
       }
     });
   } catch (error) {
