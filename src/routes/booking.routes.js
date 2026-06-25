@@ -11,6 +11,7 @@ router.use(protect);
 router.post('/', validate(createBookingSchema), idempotencyMiddleware, bookingController.createBooking);
 router.get('/mine', bookingController.getMyBookings);
 router.get('/check', bookingController.checkBooking);
+router.get('/:bookingId', bookingController.getBookingById);
 router.patch('/:bookingId/status', validate(updateBookingStatusSchema), bookingController.updateBookingStatus);
 
 module.exports = router;

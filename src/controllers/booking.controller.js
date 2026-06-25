@@ -369,9 +369,36 @@ const checkBooking = async (req, res, next) => {
   }
 };
 
+const getBookingById = async (req, res, next) => {
+  try {
+    const { bookingId } = req.params;
+    const booking = await prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: includeBooking,
+    });
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: 'Booking not found.' });
+    }
+
+    const isClient = booking.clientId === req.user.id;
+    const isProvider = booking.providerId === req.user.id;
+    const isAdmin = req.user.role === 'ADMIN';
+
+    if (!isClient && !isProvider && !isAdmin) {
+      return res.status(403).json({ success: false, message: 'Not allowed to view this booking.' });
+    }
+
+    res.status(200).json({ success: true, data: booking });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createBooking,
   getMyBookings,
   updateBookingStatus,
   checkBooking,
+  getBookingById,
 };
