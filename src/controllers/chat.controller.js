@@ -64,8 +64,114 @@ const hasActiveWorkBetweenUsers = async (userId, participantId) => {
   return false;
 };
 
+const getConversationStatus = async (userId, otherUserId) => {
+  // 1. If other user is Admin, it's always allowed (Support chats)
+  const otherUser = await prisma.user.findUnique({
+    where: { id: otherUserId },
+    select: { role: true }
+  });
+  if (otherUser?.role === 'ADMIN') {
+    return { active: true, reason: 'ADMIN' };
+  }
+
+  const currentUser = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { role: true }
+  });
+  if (currentUser?.role === 'ADMIN') {
+    return { active: true, reason: 'ADMIN' };
+  }
+
+  // Find providerProfile for both users to resolve matching jobs
+  const profiles = await prisma.providerProfile.findMany({
+    where: { userId: { in: [userId, otherUserId] } },
+    select: { id: true, userId: true }
+  });
+  
+  const user1ProviderId = profiles.find(p => p.userId === userId)?.id;
+  const user2ProviderId = profiles.find(p => p.userId === otherUserId)?.id;
+
+  const jobOrConditions = [];
+  if (user2ProviderId) {
+    jobOrConditions.push({ clientId: userId, assignments: { some: { providerId: user2ProviderId } } });
+  }
+  if (user1ProviderId) {
+    jobOrConditions.push({ clientId: otherUserId, assignments: { some: { providerId: user1ProviderId } } });
+  }
+
+  // Find active jobs
+  if (jobOrConditions.length > 0) {
+    const activeJob = await prisma.job.findFirst({
+      where: {
+        status: { in: ['PENDING', 'ASSIGNED', 'IN_PROGRESS'] },
+        OR: jobOrConditions
+      }
+    });
+    if (activeJob) return { active: true, reason: 'ACTIVE_JOB' };
+  }
+
+  // Find active bookings
+  const bookingOrConditions = [
+    { clientId: userId, providerId: otherUserId },
+    { clientId: otherUserId, providerId: userId }
+  ];
+
+  const activeBooking = await prisma.booking.findFirst({
+    where: {
+      status: { in: ['PENDING', 'ACCEPTED', 'IN_PROGRESS'] },
+      OR: bookingOrConditions
+    }
+  });
+  if (activeBooking) return { active: true, reason: 'ACTIVE_BOOKING' };
+
+  // Find completed/cancelled jobs/bookings within the last 24 hours
+  const cutoffDate = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+  if (jobOrConditions.length > 0) {
+    const recentJob = await prisma.job.findFirst({
+      where: {
+        status: { in: ['COMPLETED', 'CANCELLED'] },
+        updatedAt: { gte: cutoffDate },
+        OR: jobOrConditions
+      },
+      orderBy: { updatedAt: 'desc' }
+    });
+    if (recentJob) {
+      return { 
+        active: true, 
+        reason: 'RECENT_JOB', 
+        expiresAt: new Date(recentJob.updatedAt.getTime() + 24 * 60 * 60 * 1000) 
+      };
+    }
+  }
+
+  const recentBooking = await prisma.booking.findFirst({
+    where: {
+      status: { in: ['COMPLETED', 'CANCELLED'] },
+      updatedAt: { gte: cutoffDate },
+      OR: bookingOrConditions
+    },
+    orderBy: { updatedAt: 'desc' }
+  });
+  if (recentBooking) {
+    return { 
+      active: true, 
+      reason: 'RECENT_BOOKING', 
+      expiresAt: new Date(recentBooking.updatedAt.getTime() + 24 * 60 * 60 * 1000) 
+    };
+  }
+
+  // Otherwise, closed!
+  return { active: false, reason: 'CLOSED' };
+};
+
 const assertCanMessageDirectUser = async (requester, participantId) => {
-  // No restrictions anymore
+  const status = await getConversationStatus(requester.id, participantId);
+  if (!status.active) {
+    const error = new Error('requiresBooking');
+    error.statusCode = 403;
+    throw error;
+  }
 };
 
 const formatConversationForUser = async (conversationId, userId) => {
@@ -115,7 +221,12 @@ const formatConversationForUser = async (conversationId, userId) => {
 };
 
 const assertCanCreateDirectConversation = async (requester, target) => {
-  // No restrictions anymore
+  const status = await getConversationStatus(requester.id, target.id);
+  if (!status.active) {
+    const error = new Error('requiresBooking');
+    error.statusCode = 403;
+    throw error;
+  }
 };
 
 const createOrGetConversation = async (requester, participantId) => {
@@ -713,12 +824,19 @@ const getConversationById = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Conversation not found' });
     }
 
+    const otherParticipant = conversation.participants.find((p) => p.userId !== req.user.id);
+    let chatStatus = { active: true, reason: 'ADMIN' };
+    if (!conversation.support && otherParticipant?.userId) {
+      chatStatus = await getConversationStatus(req.user.id, otherParticipant.userId);
+    }
+
     const formatted = {
       id: conversation.id,
       lastMessageAt: conversation.lastMessageAt,
       createdAt: conversation.createdAt,
       updatedAt: conversation.updatedAt,
       isSystem: Boolean(conversation.support),
+      chatStatus,
       participants: conversation.participants.map((p) => ({
         userId: p.userId,
         unreadCount: p.unreadCount,
