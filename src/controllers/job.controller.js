@@ -227,10 +227,43 @@ const getJobById = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Not allowed to view this job' });
     }
 
+    const sortedAssignments = [...(job.assignments || [])].sort((a, b) => {
+      if ((b.boostCoins || 0) !== (a.boostCoins || 0)) {
+        return (b.boostCoins || 0) - (a.boostCoins || 0);
+      }
+      return new Date(a.assignedAt).getTime() - new Date(b.assignedAt).getTime();
+    });
+
+    const filteredAssignments = sortedAssignments.map((assignment, index) => {
+      const isOwn = assignment.provider?.userId === req.user.id;
+      if (isClient || isAdmin || isOwn) {
+        return {
+          ...assignment,
+          isAnonymous: false
+        };
+      }
+      return {
+        id: `anon-${index}`,
+        boostCoins: assignment.boostCoins || 0,
+        status: assignment.status,
+        assignedAt: assignment.assignedAt,
+        isAnonymous: true,
+        provider: {
+          id: `anon-prov-${index}`,
+          user: {
+            fullName: `Provider #${index + 1}`,
+            avatar: null,
+            isAnonymous: true
+          }
+        }
+      };
+    });
+
     res.status(200).json({
       success: true,
       data: {
         ...addTimingMetadata(job),
+        assignments: filteredAssignments,
         client: {
           ...job.client,
           isVerified: job.client?.providerProfile?.verification === 'VERIFIED',
@@ -391,12 +424,37 @@ const applyForJob = async (req, res, next) => {
     // Providers can apply for free, but must have enough coins for the task before applying.
     // The coins are deducted only if the client selects this provider.
     const wallet = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
-    if (!wallet || wallet.balance < job.coinCost) {
-      return res.status(403).json({ success: false, message: `You need at least ${job.coinCost} coin${job.coinCost > 1 ? 's' : ''} in your balance to apply for this task.`, code: 'INSUFFICIENT_COINS' });
+    const boostCoinsAmount = Math.max(0, Number(req.body.boostCoins || 0));
+
+    if (!wallet || wallet.balance < (job.coinCost + boostCoinsAmount)) {
+      return res.status(403).json({ 
+        success: false, 
+        message: `You need at least ${job.coinCost + boostCoinsAmount} coin${(job.coinCost + boostCoinsAmount) > 1 ? 's' : ''} in your balance to apply and boost this task.`, 
+        code: 'INSUFFICIENT_COINS' 
+      });
+    }
+
+    if (boostCoinsAmount > 0) {
+      await prisma.$transaction([
+        prisma.wallet.update({
+          where: { id: wallet.id },
+          data: { balance: { decrement: boostCoinsAmount } }
+        }),
+        prisma.transaction.create({
+          data: {
+            walletId: wallet.id,
+            amount: boostCoinsAmount,
+            type: 'DEDUCTION',
+            status: 'SUCCESS',
+            reference: `BID_BOOST-${Date.now()}`,
+            description: `Bid boost for task: ${job.title}`
+          }
+        })
+      ]);
     }
 
     const assignment = await prisma.jobAssignment.create({
-      data: { jobId, providerId, status: 'PENDING' }
+      data: { jobId, providerId, status: 'PENDING', boostCoins: boostCoinsAmount }
     });
 
     const applicationCount = await prisma.jobAssignment.count({ where: { jobId } });

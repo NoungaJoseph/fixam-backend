@@ -138,6 +138,7 @@ model User {
   usersBlocked         User[]                    @relation("BlockedUsers")
   blockedBy            User[]                    @relation("BlockedUsers")
   favoriteProviders    ClientFavoriteProvider[]  @relation("ClientFavoriteProviders")
+  unlockedProviders    UnlockedProvider[]        @relation("ClientUnlocks")
 
   @@index([role])
 }
@@ -165,11 +166,12 @@ model ProviderProfile {
   profileMode       String             @default("WORK")
   profileScore      Int                @default(0)
   skillRank         String             @default("Newcomer")
-
+  boostExpiresAt    DateTime?
   user        User                     @relation(fields: [userId], references: [id])
   assignments JobAssignment[]
   documents   VerificationDocument[]
   favoritedBy ClientFavoriteProvider[]
+  unlockedBy  UnlockedProvider[] @relation("ProviderUnlocks")
 
   @@index([verification])
   @@index([rating])
@@ -219,6 +221,7 @@ model JobAssignment {
   assignedAt DateTime         @default(now())
   selectedAt DateTime?
   refundedAt DateTime?
+  boostCoins Int              @default(0)
 
   job      Job             @relation(fields: [jobId], references: [id])
   provider ProviderProfile @relation(fields: [providerId], references: [id])
@@ -527,4 +530,18 @@ model Report {
   description  String?
   status       String   @default("PENDING") // PENDING, RESOLVED, DISMISSED
   createdAt    DateTime @default(now())
+}
+
+model UnlockedProvider {
+  id         String   @id @default(uuid())
+  clientId   String
+  providerId String
+  createdAt  DateTime @default(now())
+
+  client   User            @relation("ClientUnlocks", fields: [clientId], references: [id])
+  provider ProviderProfile @relation("ProviderUnlocks", fields: [providerId], references: [id])
+
+  @@unique([clientId, providerId])
+  @@index([clientId])
+  @@index([providerId])
 }

@@ -1,6 +1,7 @@
 const prisma = require('../config/prisma');
 const { setupProviderSchema } = require('../validators/provider.validator');
 const { calculateProviderStats, enrichProvidersWithStats } = require('../utils/providerStats');
+const { isRemoteSkill } = require('../utils/skillClassifier');
 
 const updateProviderProfile = async (req, res, next) => {
   try {
@@ -51,8 +52,10 @@ const getProviders = async (req, res, next) => {
     
     const enriched = await enrichProvidersWithStats(providers);
     const sorted = enriched.sort((a, b) => {
-      const scoreA = (a.profileScore || 0) + (a.verification === 'VERIFIED' ? 5 : 0) + (a.user?.isOnline ? 2 : 0) + Number(a.rating || 0);
-      const scoreB = (b.profileScore || 0) + (b.verification === 'VERIFIED' ? 5 : 0) + (b.user?.isOnline ? 2 : 0) + Number(b.rating || 0);
+      const isBoostedA = a.boostExpiresAt && new Date(a.boostExpiresAt) > new Date() ? 100 : 0;
+      const isBoostedB = b.boostExpiresAt && new Date(b.boostExpiresAt) > new Date() ? 100 : 0;
+      const scoreA = (a.profileScore || 0) + (a.verification === 'VERIFIED' ? 5 : 0) + (a.user?.isOnline ? 2 : 0) + Number(a.rating || 0) + isBoostedA;
+      const scoreB = (b.profileScore || 0) + (b.verification === 'VERIFIED' ? 5 : 0) + (b.user?.isOnline ? 2 : 0) + Number(b.rating || 0) + isBoostedB;
       return scoreB - scoreA;
     });
 
@@ -84,8 +87,10 @@ const getProvidersOfTheMonth = async (req, res, next) => {
 
     const enriched = await enrichProvidersWithStats(providers);
     const sorted = enriched.sort((a, b) => {
-      const scoreA = (a.profileScore || 0) + (a.verification === 'VERIFIED' ? 5 : 0) + (a.user?.isOnline ? 2 : 0) + Number(a.rating || 0) + (a.jobsCompleted || 0);
-      const scoreB = (b.profileScore || 0) + (b.verification === 'VERIFIED' ? 5 : 0) + (b.user?.isOnline ? 2 : 0) + Number(b.rating || 0) + (b.jobsCompleted || 0);
+      const isBoostedA = a.boostExpiresAt && new Date(a.boostExpiresAt) > new Date() ? 100 : 0;
+      const isBoostedB = b.boostExpiresAt && new Date(b.boostExpiresAt) > new Date() ? 100 : 0;
+      const scoreA = (a.profileScore || 0) + (a.verification === 'VERIFIED' ? 5 : 0) + (a.user?.isOnline ? 2 : 0) + Number(a.rating || 0) + (a.jobsCompleted || 0) + isBoostedA;
+      const scoreB = (b.profileScore || 0) + (b.verification === 'VERIFIED' ? 5 : 0) + (b.user?.isOnline ? 2 : 0) + Number(b.rating || 0) + (b.jobsCompleted || 0) + isBoostedB;
       return scoreB - scoreA;
     }).slice(0, 3).map(p => ({ ...p, isProviderOfMonth: true }));
 
@@ -146,10 +151,45 @@ const getProviderById = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Provider not found' });
     }
 
+    // Check if client has unlocked this provider
+    let phoneUnlocked = false;
+    if (req.user) {
+      if (req.user.role === 'ADMIN' || req.user.id === provider.userId) {
+        phoneUnlocked = true;
+      } else {
+        const unlock = await prisma.unlockedProvider.findFirst({
+          where: {
+            clientId: req.user.id,
+            providerId: provider.id
+          }
+        });
+        if (unlock) phoneUnlocked = true;
+      }
+    }
+
+    const rawPhone = provider.user?.phone || '';
+    const maskedPhone = rawPhone ? rawPhone.substring(0, Math.max(0, rawPhone.length - 4)) + 'XXXX' : '';
+    const finalPhone = phoneUnlocked ? rawPhone : maskedPhone;
+
     const stats = await calculateProviderStats(provider.id).catch(() => null);
+    
+    const enrichedData = {
+      ...provider,
+      phoneUnlocked,
+      user: provider.user ? {
+        ...provider.user,
+        phone: finalPhone
+      } : null,
+      rating: stats ? stats.trustScore : provider.rating,
+      skillRank: stats ? stats.skillRank : provider.skillRank,
+      jobsCompleted: stats ? stats.completedJobs : 0,
+      completionRate: stats ? stats.completionRate : 0,
+      profileCompleteness: stats ? stats.profileCompleteness : 0
+    };
+
     res.status(200).json({
       success: true,
-      data: stats ? { ...provider, rating: stats.trustScore, skillRank: stats.skillRank, jobsCompleted: stats.completedJobs, completionRate: stats.completionRate, profileCompleteness: stats.profileCompleteness } : provider
+      data: enrichedData
     });
   } catch (error) {
     next(error);
@@ -288,6 +328,141 @@ const updateProviderStatus = async (req, res, next) => {
   }
 };
 
+const boostProviderProfile = async (req, res, next) => {
+  try {
+    const { duration } = req.body; // '1_WEEK' or '1_MONTH'
+    if (duration !== '1_WEEK' && duration !== '1_MONTH') {
+      return res.status(400).json({ success: false, message: 'Invalid boost duration' });
+    }
+
+    const cost = duration === '1_WEEK' ? 3 : 10;
+    const durationMs = duration === '1_WEEK' ? 7 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000;
+
+    const profile = await prisma.providerProfile.findUnique({
+      where: { userId: req.user.id }
+    });
+
+    if (!profile) {
+      return res.status(404).json({ success: false, message: 'Provider profile not found' });
+    }
+
+    const wallet = await prisma.wallet.findUnique({
+      where: { userId: req.user.id }
+    });
+
+    if (!wallet || wallet.balance < cost) {
+      return res.status(400).json({ success: false, message: 'Insufficient coins in wallet' });
+    }
+
+    await prisma.$transaction([
+      prisma.wallet.update({
+        where: { id: wallet.id },
+        data: { balance: { decrement: cost } }
+      }),
+      prisma.transaction.create({
+        data: {
+          walletId: wallet.id,
+          amount: cost,
+          type: 'DEDUCTION',
+          status: 'SUCCESS',
+          reference: `BOOST-${Date.now()}`,
+          description: `Provider profile boost for ${duration === '1_WEEK' ? '1 Week' : '1 Month'}`
+        }
+      })
+    ]);
+
+    const currentExpiry = profile.boostExpiresAt ? new Date(profile.boostExpiresAt) : new Date();
+    const baseDate = currentExpiry > new Date() ? currentExpiry : new Date();
+    const newExpiry = new Date(baseDate.getTime() + durationMs);
+
+    const updatedProfile = await prisma.providerProfile.update({
+      where: { id: profile.id },
+      data: { boostExpiresAt: newExpiry }
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Profile boosted successfully',
+      data: updatedProfile
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const unlockProviderProfile = async (req, res, next) => {
+  try {
+    const { providerId } = req.params;
+    const cost = 2;
+
+    const provider = await prisma.providerProfile.findUnique({
+      where: { id: providerId },
+      include: { user: true }
+    });
+
+    if (!provider) {
+      return res.status(404).json({ success: false, message: 'Provider not found' });
+    }
+
+    if (provider.userId === req.user.id) {
+      return res.status(400).json({ success: false, message: 'You cannot unlock your own profile' });
+    }
+
+    const existingUnlock = await prisma.unlockedProvider.findFirst({
+      where: {
+        clientId: req.user.id,
+        providerId: providerId
+      }
+    });
+
+    if (existingUnlock) {
+      return res.status(200).json({ success: true, message: 'Profile already unlocked', data: existingUnlock });
+    }
+
+    const wallet = await prisma.wallet.findUnique({
+      where: { userId: req.user.id }
+    });
+
+    if (!wallet || wallet.balance < cost) {
+      return res.status(400).json({ success: false, message: 'Insufficient coins in wallet' });
+    }
+
+    const [_, __, unlockRecord] = await prisma.$transaction([
+      prisma.wallet.update({
+        where: { id: wallet.id },
+        data: { balance: { decrement: cost } }
+      }),
+      prisma.transaction.create({
+        data: {
+          walletId: wallet.id,
+          amount: cost,
+          type: 'DEDUCTION',
+          status: 'SUCCESS',
+          reference: `UNLOCK-${Date.now()}`,
+          description: `Unlocked provider contact for ${provider.user?.fullName || 'Provider'}`
+        }
+      }),
+      prisma.unlockedProvider.create({
+        data: {
+          clientId: req.user.id,
+          providerId: providerId
+        }
+      })
+    ]);
+
+    res.status(200).json({
+      success: true,
+      message: 'Provider contact unlocked successfully',
+      data: {
+        ...unlockRecord,
+        phone: provider.user?.phone
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   updateProviderProfile,
   updateProviderStatus,
@@ -299,4 +474,6 @@ module.exports = {
   addFavoriteProvider,
   removeFavoriteProvider,
   uploadVerificationDocs,
+  boostProviderProfile,
+  unlockProviderProfile,
 };
