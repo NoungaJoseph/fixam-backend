@@ -2,12 +2,13 @@ const prisma = require('../config/prisma');
 const { createJobSchema } = require('../validators/job.validator');
 const { calculateProviderStats } = require('../utils/providerStats');
 
-const calculateJobCoinCost = (budget) => {
-  const amount = Number(budget || 0);
-  if (amount > 10000) {
-    return Math.max(2, Math.ceil((amount - 10000) / 25000) + 1);
-  }
-  return 1;
+const calculateJobCoinCost = (providersCount) => {
+  const count = parseInt(providersCount) || 1;
+  if (count >= 1 && count <= 5) return 1;
+  if (count >= 6 && count <= 10) return 2;
+  if (count >= 11 && count <= 20) return 3;
+  if (count >= 21 && count <= 30) return 4;
+  return 5;
 };
 
 const normalizeBudgetRange = (data) => {
@@ -78,7 +79,8 @@ const createJob = async (req, res, next) => {
     }
 
     // 3. Check client wallet balance
-    const coinCost = calculateJobCoinCost(budgetRange.budgetMax);
+    const providersNeeded = validatedData.providersNeeded || 1;
+    const coinCost = calculateJobCoinCost(providersNeeded);
     const clientWallet = clientUser?.wallet;
     if (!clientWallet || clientWallet.balance < coinCost) {
       return res.status(400).json({
@@ -111,9 +113,10 @@ const createJob = async (req, res, next) => {
         data: {
           ...validatedData,
           ...budgetRange,
+          providersNeeded,
+          coinCost,
           clientId: req.user.id,
           status: 'PENDING',
-          coinCost: coinCost,
           approvalStatus: 'PENDING_APPROVAL',  // New jobs require admin approval
           scheduledTime: validatedData.scheduledTime ? new Date(validatedData.scheduledTime) : null
         }
@@ -525,8 +528,9 @@ const selectProviderForJob = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Only the client can choose a provider for this task' });
     }
 
-    if (job.status !== 'PENDING') {
-      return res.status(400).json({ success: false, message: 'A provider has already been selected for this task' });
+    const acceptedCount = job.assignments.filter(a => a.status === 'ACCEPTED').length;
+    if (job.status !== 'PENDING' || acceptedCount >= (job.providersNeeded || 1)) {
+      return res.status(400).json({ success: false, message: 'All required providers have already been selected for this task' });
     }
 
     const selected = job.assignments.find((assignment) => assignment.id === assignmentId);
@@ -565,15 +569,23 @@ const selectProviderForJob = async (req, res, next) => {
         include: { provider: { include: { user: true } } }
       });
 
-      await tx.job.update({
-        where: { id: jobId },
-        data: { status: 'IN_PROGRESS', selectedAssignmentId: assignmentId }
-      });
+      const newAcceptedCount = acceptedCount + 1;
+      if (newAcceptedCount >= (job.providersNeeded || 1)) {
+        await tx.job.update({
+          where: { id: jobId },
+          data: { status: 'IN_PROGRESS', selectedAssignmentId: assignmentId }
+        });
 
-      await tx.jobAssignment.updateMany({
-        where: { jobId, id: { not: assignmentId } },
-        data: { status: 'REJECTED' }
-      });
+        await tx.jobAssignment.updateMany({
+          where: { jobId, status: 'PENDING' },
+          data: { status: 'REJECTED' }
+        });
+      } else {
+        await tx.job.update({
+          where: { id: jobId },
+          data: { selectedAssignmentId: assignmentId }
+        });
+      }
 
       const selectedJob = await tx.job.findUnique({
         where: { id: jobId },

@@ -151,6 +151,8 @@ model ProviderProfile {
   rate              Float?
   rating            Float              @default(0.0)
   reviewCount       Int                @default(0)
+  profileViews      Int                @default(0)
+  searchAppearances Int                @default(0)
   availability      Json?
   serviceArea       String?
   experienceLevel   String?
@@ -163,12 +165,15 @@ model ProviderProfile {
   certificates      Json?
   employmentHistory Json?
   socialLinks       Json?
+  setupBonusClaimed Boolean            @default(false)
   profileMode       String             @default("WORK")
   profileScore      Int                @default(0)
   skillRank         String             @default("Newcomer")
   boostExpiresAt    DateTime?
+  
   user        User                     @relation(fields: [userId], references: [id])
   assignments JobAssignment[]
+  
   documents   VerificationDocument[]
   favoritedBy ClientFavoriteProvider[]
   unlockedBy  UnlockedProvider[] @relation("ProviderUnlocks")
@@ -194,6 +199,7 @@ model Job {
   rejectionReason      String?
   scheduledTime        DateTime?
   coinCost             Int               @default(1)
+  providersNeeded      Int               @default(1)
   selectedAssignmentId String?
   createdAt            DateTime          @default(now())
   updatedAt            DateTime          @updatedAt

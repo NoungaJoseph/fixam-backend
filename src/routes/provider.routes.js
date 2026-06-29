@@ -12,6 +12,7 @@ router.get('/top-of-month', cacheMiddleware(300), providerController.getProvider
 router.get('/favorites', protect, providerController.getFavoriteProviders);
 router.get('/nearby', providerController.getNearbyProviders);
 router.post('/boost', protect, authorize('PROVIDER'), providerController.boostProviderProfile);
+router.post('/claim-setup-bonus', protect, authorize('PROVIDER'), providerController.claimSetupBonus);
 router.get('/:providerId', protect, providerController.getProviderById);
 router.post('/:providerId/unlock', protect, authorize('CLIENT'), providerController.unlockProviderProfile);
 router.post('/:providerId/favorite', protect, providerController.addFavoriteProvider);

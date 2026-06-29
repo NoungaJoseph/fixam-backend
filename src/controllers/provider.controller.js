@@ -67,6 +67,16 @@ const getProviders = async (req, res, next) => {
     });
 
     const maskedProviders = maskProvidersPhone(sorted);
+
+    // Track search appearances
+    const providerIds = sorted.map(p => p.id);
+    if (providerIds.length > 0) {
+      prisma.providerProfile.updateMany({
+        where: { id: { in: providerIds } },
+        data: { searchAppearances: { increment: 1 } }
+      }).catch(err => console.error('[Stats Error]', err));
+    }
+
     res.status(200).json({ success: true, data: maskedProviders });
   } catch (error) {
     next(error);
@@ -133,6 +143,16 @@ const getNearbyProviders = async (req, res, next) => {
 
     const enriched = await enrichProvidersWithStats(providers);
     const maskedProviders = maskProvidersPhone(enriched);
+
+    // Track search appearances
+    const providerIds = enriched.map(p => p.id);
+    if (providerIds.length > 0) {
+      prisma.providerProfile.updateMany({
+        where: { id: { in: providerIds } },
+        data: { searchAppearances: { increment: 1 } }
+      }).catch(err => console.error('[Stats Error]', err));
+    }
+
     res.status(200).json({ success: true, data: maskedProviders });
   } catch (error) {
     next(error);
@@ -206,6 +226,13 @@ const getProviderById = async (req, res, next) => {
       completionRate: stats ? stats.completionRate : 0,
       profileCompleteness: stats ? stats.profileCompleteness : 0
     };
+
+    if (req.user && req.user.role === 'CLIENT' && req.user.id !== provider.userId) {
+      prisma.providerProfile.update({
+        where: { id: provider.id },
+        data: { profileViews: { increment: 1 } }
+      }).catch(err => console.error('[Stats Error]', err));
+    }
 
     res.status(200).json({
       success: true,
@@ -517,6 +544,67 @@ const unlockProviderProfile = async (req, res, next) => {
   }
 };
 
+const claimSetupBonus = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    
+    // Check if provider profile exists and hasn't claimed bonus
+    const profile = await prisma.providerProfile.findUnique({
+      where: { userId }
+    });
+    
+    if (!profile) {
+      return res.status(404).json({ success: false, message: 'Provider profile not found' });
+    }
+    
+    if (profile.setupBonusClaimed) {
+      return res.status(400).json({ success: false, message: 'Setup bonus already claimed' });
+    }
+    
+    // Check if profile is complete (e.g., bio, rate, etc. are set)
+    // The requirement says "upon completion of the setup". Let's assume frontend controls the button state,
+    // but we should verify that basic fields exist
+    if (!profile.bio || !profile.skills || profile.skills.length === 0 || profile.verification !== 'VERIFIED') {
+      return res.status(400).json({ success: false, message: 'Profile is not fully complete or verified yet' });
+    }
+    
+    const wallet = await prisma.wallet.findUnique({ where: { userId } });
+    if (!wallet) {
+      return res.status(404).json({ success: false, message: 'Wallet not found' });
+    }
+    
+    const BONUS_AMOUNT = 1;
+    
+    await prisma.$transaction([
+      prisma.providerProfile.update({
+        where: { id: profile.id },
+        data: { setupBonusClaimed: true }
+      }),
+      prisma.wallet.update({
+        where: { id: wallet.id },
+        data: { balance: { increment: BONUS_AMOUNT } }
+      }),
+      prisma.transaction.create({
+        data: {
+          walletId: wallet.id,
+          amount: BONUS_AMOUNT,
+          type: 'TOPUP',
+          status: 'SUCCESS',
+          reference: `SETUP-BONUS-${Date.now()}`,
+          description: 'Profile Setup Bonus'
+        }
+      })
+    ]);
+    
+    res.status(200).json({
+      success: true,
+      message: 'Bonus claimed successfully! 1 coin added to your wallet.'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   updateProviderProfile,
   updateProviderStatus,
@@ -531,4 +619,5 @@ module.exports = {
   boostProviderProfile,
   unlockProviderProfile,
   maskProvidersPhone,
+  claimSetupBonus,
 };

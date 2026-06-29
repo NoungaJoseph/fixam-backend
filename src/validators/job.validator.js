@@ -10,6 +10,7 @@ const createJobSchema = z.object({
   budget: z.number().positive().optional(),
   budgetMin: z.number().positive().optional(),
   budgetMax: z.number().positive().optional(),
+  providersNeeded: z.number().int().positive().optional(),
   scheduledTime: z.string().optional(),
 }).superRefine((data, ctx) => {
   const min = data.budgetMin ?? data.budget;

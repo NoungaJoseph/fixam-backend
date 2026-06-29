@@ -137,14 +137,19 @@ const getDashboardData = async (req, res, next) => {
       orderBy: { _count: { category: 'desc' } },
     });
 
+    const myProviderProfileQuery = role === 'PROVIDER' 
+      ? prisma.providerProfile.findUnique({ where: { userId } }) 
+      : Promise.resolve(null);
+
     // Run all database queries in parallel
-    const [providersRaw, jobsRaw, wallet, conversationsRaw, bookings, popularCategories] = await Promise.all([
+    const [providersRaw, jobsRaw, wallet, conversationsRaw, bookings, popularCategories, myProviderProfile] = await Promise.all([
       providersQuery,
       jobsQuery,
       walletQuery,
       conversationsQuery,
       bookingsQuery,
-      popularCategoriesQuery
+      popularCategoriesQuery,
+      myProviderProfileQuery
     ]);
 
     // Process Providers
@@ -322,7 +327,8 @@ const getDashboardData = async (req, res, next) => {
         conversations,
         transactions,
         bookings,
-        popularCategories
+        popularCategories,
+        ...(role === 'PROVIDER' && myProviderProfile ? { myProviderProfile } : {})
       }
     });
 
