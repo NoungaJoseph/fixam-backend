@@ -1,5 +1,6 @@
 const prisma = require('../config/prisma');
 const { enrichProvidersWithStats } = require('../utils/providerStats');
+const { maskProvidersPhone } = require('./provider.controller');
 
 const getDashboardData = async (req, res, next) => {
   try {
@@ -130,22 +131,54 @@ const getDashboardData = async (req, res, next) => {
       });
     }
 
+    const popularCategoriesQuery = prisma.job.groupBy({
+      by: ['category'],
+      _count: { category: true },
+      orderBy: { _count: { category: 'desc' } },
+    });
+
     // Run all database queries in parallel
-    const [providersRaw, jobsRaw, wallet, conversationsRaw, bookings] = await Promise.all([
+    const [providersRaw, jobsRaw, wallet, conversationsRaw, bookings, popularCategories] = await Promise.all([
       providersQuery,
       jobsQuery,
       walletQuery,
       conversationsQuery,
-      bookingsQuery
+      bookingsQuery,
+      popularCategoriesQuery
     ]);
 
     // Process Providers
     const enrichedProvidersRaw = await enrichProvidersWithStats(providersRaw);
-    const providers = enrichedProvidersRaw.sort((a, b) => {
+    let providers = enrichedProvidersRaw.sort((a, b) => {
       const scoreA = (a.profileScore || 0) + (a.verification === 'VERIFIED' ? 5 : 0) + (a.user?.isOnline ? 2 : 0) + Number(a.rating || 0);
       const scoreB = (b.profileScore || 0) + (b.verification === 'VERIFIED' ? 5 : 0) + (b.user?.isOnline ? 2 : 0) + Number(b.rating || 0);
       return scoreB - scoreA;
     });
+
+    providers = maskProvidersPhone(providers);
+
+    if (role === 'CLIENT') {
+      const activeUnlocks = await prisma.unlockedProvider.findMany({
+        where: { clientId: userId, expiresAt: { gt: new Date() } },
+        include: { provider: { select: { id: true, user: { select: { phone: true } } } } }
+      });
+      
+      const unlockMap = {};
+      activeUnlocks.forEach(u => {
+        if (u.provider?.user?.phone) unlockMap[u.providerId] = u.provider.user.phone;
+      });
+
+      providers = providers.map(p => {
+        if (unlockMap[p.id]) {
+          return {
+            ...p,
+            phoneUnlocked: true,
+            user: { ...p.user, phone: unlockMap[p.id] }
+          };
+        }
+        return p;
+      });
+    }
 
     // Process Wallet stats (mimicking wallet.controller.js)
     let thisMonthTxStats = { _sum: { amount: 0 } };
@@ -288,7 +321,8 @@ const getDashboardData = async (req, res, next) => {
         wallet: enrichedWallet,
         conversations,
         transactions,
-        bookings
+        bookings,
+        popularCategories
       }
     });
 

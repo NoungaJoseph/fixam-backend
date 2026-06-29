@@ -3,6 +3,13 @@ const { setupProviderSchema } = require('../validators/provider.validator');
 const { calculateProviderStats, enrichProvidersWithStats } = require('../utils/providerStats');
 const { isRemoteSkill } = require('../utils/skillClassifier');
 
+const maskProvidersPhone = (providers) => providers.map(p => {
+  if (!p.user || !p.user.phone) return p;
+  const rawPhone = p.user.phone;
+  const maskedPhone = rawPhone.length > 4 ? rawPhone.substring(0, rawPhone.length - 4) + 'XXXX' : 'XXXX';
+  return { ...p, phoneUnlocked: false, user: { ...p.user, phone: maskedPhone } };
+});
+
 const updateProviderProfile = async (req, res, next) => {
   try {
     const validatedData = setupProviderSchema.parse(req.body);
@@ -59,7 +66,8 @@ const getProviders = async (req, res, next) => {
       return scoreB - scoreA;
     });
 
-    res.status(200).json({ success: true, data: sorted });
+    const maskedProviders = maskProvidersPhone(sorted);
+    res.status(200).json({ success: true, data: maskedProviders });
   } catch (error) {
     next(error);
   }
@@ -94,7 +102,8 @@ const getProvidersOfTheMonth = async (req, res, next) => {
       return scoreB - scoreA;
     }).slice(0, 3).map(p => ({ ...p, isProviderOfMonth: true }));
 
-    res.status(200).json({ success: true, data: sorted });
+    const maskedProviders = maskProvidersPhone(sorted);
+    res.status(200).json({ success: true, data: maskedProviders });
   } catch (error) {
     next(error);
   }
@@ -123,7 +132,8 @@ const getNearbyProviders = async (req, res, next) => {
     });
 
     const enriched = await enrichProvidersWithStats(providers);
-    res.status(200).json({ success: true, data: enriched });
+    const maskedProviders = maskProvidersPhone(enriched);
+    res.status(200).json({ success: true, data: maskedProviders });
   } catch (error) {
     next(error);
   }
@@ -246,7 +256,31 @@ const getFavoriteProviders = async (req, res, next) => {
       orderBy: { createdAt: 'desc' }
     });
 
-    res.status(200).json({ success: true, data: favorites.map((favorite) => favorite.provider) });
+    let providers = favorites.map((favorite) => favorite.provider);
+    providers = maskProvidersPhone(providers);
+
+    const activeUnlocks = await prisma.unlockedProvider.findMany({
+      where: { clientId: req.user.id, expiresAt: { gt: new Date() } },
+      include: { provider: { select: { id: true, user: { select: { phone: true } } } } }
+    });
+    
+    const unlockMap = {};
+    activeUnlocks.forEach(u => {
+      if (u.provider?.user?.phone) unlockMap[u.providerId] = u.provider.user.phone;
+    });
+
+    providers = providers.map(p => {
+      if (unlockMap[p.id]) {
+        return {
+          ...p,
+          phoneUnlocked: true,
+          user: { ...p.user, phone: unlockMap[p.id] }
+        };
+      }
+      return p;
+    });
+
+    res.status(200).json({ success: true, data: providers });
   } catch (error) {
     next(error);
   }
@@ -496,4 +530,5 @@ module.exports = {
   uploadVerificationDocs,
   boostProviderProfile,
   unlockProviderProfile,
+  maskProvidersPhone,
 };
