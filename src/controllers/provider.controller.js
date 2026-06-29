@@ -151,7 +151,7 @@ const getProviderById = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Provider not found' });
     }
 
-    // Check if client has unlocked this provider
+    // Check if client has unlocked this provider (within 24h window)
     let phoneUnlocked = false;
     if (req.user) {
       if (req.user.role === 'ADMIN' || req.user.id === provider.userId) {
@@ -163,7 +163,17 @@ const getProviderById = async (req, res, next) => {
             providerId: provider.id
           }
         });
-        if (unlock) phoneUnlocked = true;
+        if (unlock) {
+          // null expiresAt = old record (treat as expired), must re-unlock
+          if (unlock.expiresAt && new Date(unlock.expiresAt) > new Date()) {
+            phoneUnlocked = true;
+          } else {
+            // Expired or old record — delete so they can unlock again
+            await prisma.unlockedProvider.deleteMany({
+              where: { clientId: req.user.id, providerId: provider.id }
+            });
+          }
+        }
       }
     }
 
@@ -416,7 +426,14 @@ const unlockProviderProfile = async (req, res, next) => {
     });
 
     if (existingUnlock) {
-      return res.status(200).json({ success: true, message: 'Profile already unlocked', data: existingUnlock });
+      // Check if still valid
+      if (new Date(existingUnlock.expiresAt) > new Date()) {
+        return res.status(200).json({ success: true, message: 'Profile already unlocked', data: existingUnlock });
+      }
+      // Expired — delete so we can re-unlock below
+      await prisma.unlockedProvider.deleteMany({
+        where: { clientId: req.user.id, providerId: providerId }
+      });
     }
 
     const wallet = await prisma.wallet.findUnique({
@@ -426,6 +443,8 @@ const unlockProviderProfile = async (req, res, next) => {
     if (!wallet || wallet.balance < cost) {
       return res.status(400).json({ success: false, message: 'Insufficient coins in wallet' });
     }
+
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours from now
 
     const [_, __, unlockRecord] = await prisma.$transaction([
       prisma.wallet.update({
@@ -445,7 +464,8 @@ const unlockProviderProfile = async (req, res, next) => {
       prisma.unlockedProvider.create({
         data: {
           clientId: req.user.id,
-          providerId: providerId
+          providerId: providerId,
+          expiresAt
         }
       })
     ]);

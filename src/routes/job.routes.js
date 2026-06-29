@@ -11,6 +11,7 @@ router.get('/available', protect, authorize('PROVIDER'), jobController.getAvaila
 router.get('/my-jobs', protect, authorize('PROVIDER'), jobController.getProviderJobs);
 router.get('/all', protect, authorize('ADMIN'), jobController.getAllJobs);
 router.get('/:jobId', protect, jobController.getJobById);
+router.get('/popular-categories', protect, jobController.getPopularCategories);
 router.post('/:jobId/apply', protect, authorize('PROVIDER'), jobController.applyForJob);
 router.post('/:jobId/applications/:assignmentId/select', protect, authorize('CLIENT', 'PROVIDER'), jobController.selectProviderForJob);
 router.put('/:jobId/status', protect, jobController.updateJobStatus);

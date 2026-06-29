@@ -537,6 +537,7 @@ model UnlockedProvider {
   clientId   String
   providerId String
   createdAt  DateTime @default(now())
+  expiresAt  DateTime?
 
   client   User            @relation("ClientUnlocks", fields: [clientId], references: [id])
   provider ProviderProfile @relation("ProviderUnlocks", fields: [providerId], references: [id])

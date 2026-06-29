@@ -364,11 +364,20 @@ const getAvailableJobsForProvider = async (req, res, next) => {
       return 'New client';
     };
 
+    // Get review counts for each client
+    const reviewCounts = await prisma.review.groupBy({
+      by: ['targetUserId'],
+      where: { targetUserId: { in: clientIds } },
+      _count: { id: true }
+    });
+    const userReviews = new Map(reviewCounts.map(r => [r.targetUserId, r._count.id]));
+
     const enrichedJobs = jobs.map(job => addTimingMetadata({
       ...job,
       clientVerified: job.client?.providerProfile?.verification === 'VERIFIED',
       clientSpending: userSpending.get(job.clientId) || 0,
       clientSpendingTier: getSpendingTier(userSpending.get(job.clientId) || 0),
+      clientReviewCount: userReviews.get(job.clientId) || 0,
     }));
 
     res.status(200).json({
@@ -850,6 +859,23 @@ const getProviderJobs = async (req, res, next) => {
   }
 };
 
+const getPopularCategories = async (req, res, next) => {
+  try {
+    const categoryCounts = await prisma.job.groupBy({
+      by: ['category'],
+      _count: { category: true },
+      orderBy: { _count: { category: 'desc' } },
+    });
+    
+    res.json({
+      success: true,
+      data: categoryCounts
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createJob,
   getJobById,
@@ -860,5 +886,6 @@ module.exports = {
   selectProviderForJob,
   updateJobStatus,
   updateJob,
-  getAllJobs
+  getAllJobs,
+  getPopularCategories
 };
