@@ -645,7 +645,7 @@ const claimSetupBonus = async (req, res, next) => {
         data: {
           walletId: wallet.id,
           amount: BONUS_AMOUNT,
-          type: 'TOPUP',
+          type: 'PURCHASE',
           status: 'SUCCESS',
           reference: `SETUP-BONUS-${Date.now()}`,
           description: 'Profile Setup Bonus'
