@@ -136,11 +136,20 @@ const getDashboardData = async (req, res, next) => {
       _count: { category: true },
       orderBy: { _count: { category: 'desc' } },
     });
-
     const myProviderProfileQuery = role === 'PROVIDER' 
-      ? prisma.providerProfile.findUnique({ where: { userId } }) 
+      ? prisma.providerProfile.findUnique({ 
+          where: { userId },
+          include: { 
+            monthlyStats: {
+              orderBy: [
+                { year: 'desc' },
+                { month: 'desc' }
+              ]
+            }
+          }
+        }) 
       : Promise.resolve(null);
-
+    
     // Run all database queries in parallel
     const [providersRaw, jobsRaw, wallet, conversationsRaw, bookings, popularCategories, myProviderProfile] = await Promise.all([
       providersQuery,

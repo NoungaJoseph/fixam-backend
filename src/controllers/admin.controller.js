@@ -108,13 +108,7 @@ const verifyProvider = async (req, res, next) => {
 
     const isVerified = status === 'VERIFIED';
     
-    if (isVerified && !profile.user.verificationCoinsGiven) {
-      await giveWelcomeCoins(profile.user.id, 2, 'Identity verification reward — 2 bonus coins');
-      await prisma.user.update({
-        where: { id: profile.user.id },
-        data: { verificationCoinsGiven: true }
-      });
-    }
+
 
     const titleEn = isVerified ? 'Identity Verification Approved' : 'Verification Needs Attention';
     const titleFr = isVerified ? 'Vérification d\'identité approuvée' : 'La vérification nécessite votre attention';

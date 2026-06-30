@@ -177,10 +177,49 @@ model ProviderProfile {
   documents   VerificationDocument[]
   favoritedBy ClientFavoriteProvider[]
   unlockedBy  UnlockedProvider[] @relation("ProviderUnlocks")
+  monthlyStats ProviderMonthlyStats[]
+  reports     ProviderReport[]
 
   @@index([verification])
   @@index([rating])
 }
+
+model ProviderMonthlyStats {
+  id                String          @id @default(uuid())
+  providerId        String
+  year              Int
+  month             Int
+  profileViews      Int             @default(0)
+  searchAppearances Int             @default(0)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  provider          ProviderProfile @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, year, month])
+  @@index([providerId])
+}
+
+model ProviderReport {
+  id             String          @id @default(uuid())
+  providerId     String
+  year           Int
+  month          Int
+  views          Int             @default(0)
+  searches       Int             @default(0)
+  jobsCompleted  Int             @default(0)
+  earnings       Float           @default(0.0)
+  rating         Float           @default(0.0)
+  successRate    Float           @default(0.0)
+  coinsPurchased Int             @default(0)
+  generatedAt    DateTime        @default(now())
+
+  provider       ProviderProfile @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, year, month])
+  @@index([providerId])
+}
+
 
 model Job {
   id                   String            @id @default(uuid())

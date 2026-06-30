@@ -10,6 +10,60 @@ const maskProvidersPhone = (providers) => providers.map(p => {
   return { ...p, phoneUnlocked: false, user: { ...p.user, phone: maskedPhone } };
 });
 
+const trackMonthlySearches = (providerIds) => {
+  if (!providerIds || providerIds.length === 0) return;
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+
+  Promise.all(providerIds.map(providerId => 
+    prisma.providerMonthlyStats.upsert({
+      where: {
+        providerId_year_month: {
+          providerId,
+          year,
+          month
+        }
+      },
+      update: {
+        searchAppearances: { increment: 1 }
+      },
+      create: {
+        providerId,
+        year,
+        month,
+        searchAppearances: 1
+      }
+    })
+  )).catch(err => console.error('[Monthly Search Stats Error]', err));
+};
+
+const trackMonthlyView = (providerId) => {
+  if (!providerId) return;
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+
+  prisma.providerMonthlyStats.upsert({
+    where: {
+      providerId_year_month: {
+        providerId,
+        year,
+        month
+      }
+    },
+    update: {
+      profileViews: { increment: 1 }
+    },
+    create: {
+      providerId,
+      year,
+      month,
+      profileViews: 1
+    }
+  }).catch(err => console.error('[Monthly View Stats Error]', err));
+};
+
 const updateProviderProfile = async (req, res, next) => {
   try {
     const validatedData = setupProviderSchema.parse(req.body);
@@ -75,6 +129,7 @@ const getProviders = async (req, res, next) => {
         where: { id: { in: providerIds } },
         data: { searchAppearances: { increment: 1 } }
       }).catch(err => console.error('[Stats Error]', err));
+      trackMonthlySearches(providerIds);
     }
 
     res.status(200).json({ success: true, data: maskedProviders });
@@ -151,6 +206,7 @@ const getNearbyProviders = async (req, res, next) => {
         where: { id: { in: providerIds } },
         data: { searchAppearances: { increment: 1 } }
       }).catch(err => console.error('[Stats Error]', err));
+      trackMonthlySearches(providerIds);
     }
 
     res.status(200).json({ success: true, data: maskedProviders });
@@ -232,6 +288,7 @@ const getProviderById = async (req, res, next) => {
         where: { id: provider.id },
         data: { profileViews: { increment: 1 } }
       }).catch(err => console.error('[Stats Error]', err));
+      trackMonthlyView(provider.id);
     }
 
     res.status(200).json({
@@ -605,6 +662,166 @@ const claimSetupBonus = async (req, res, next) => {
   }
 };
 
+const getProviderReports = async (req, res, next) => {
+  try {
+    const profile = await prisma.providerProfile.findUnique({
+      where: { userId: req.user.id }
+    });
+    if (!profile) {
+      return res.status(404).json({ success: false, message: 'Provider profile not found' });
+    }
+    const reports = await prisma.providerReport.findMany({
+      where: { providerId: profile.id },
+      orderBy: [
+        { year: 'desc' },
+        { month: 'desc' }
+      ]
+    });
+    res.status(200).json({ success: true, data: reports });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const generateProviderReport = async (req, res, next) => {
+  try {
+    const { year, month } = req.body;
+    if (!year || !month) {
+      return res.status(400).json({ success: false, message: 'Year and month are required' });
+    }
+
+    const yearNum = Number(year);
+    const monthNum = Number(month);
+
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1;
+    const currentDay = now.getDate();
+    const lastDayOfMonth = new Date(currentYear, currentMonth, 0).getDate();
+
+    const isCurrentMonth = yearNum === currentYear && monthNum === currentMonth;
+    const isPastMonth = yearNum < currentYear || (yearNum === currentYear && monthNum < currentMonth);
+    const isMonthEnd = isCurrentMonth && currentDay === lastDayOfMonth;
+
+    if (!isPastMonth && !isMonthEnd) {
+      return res.status(400).json({ success: false, message: 'Cannot generate report for an ongoing month until month end' });
+    }
+
+    const profile = await prisma.providerProfile.findUnique({
+      where: { userId: req.user.id }
+    });
+    if (!profile) {
+      return res.status(404).json({ success: false, message: 'Provider profile not found' });
+    }
+
+    const existing = await prisma.providerReport.findUnique({
+      where: {
+        providerId_year_month: {
+          providerId: profile.id,
+          year: yearNum,
+          month: monthNum
+        }
+      }
+    });
+    if (existing) {
+      return res.status(400).json({ success: false, message: 'Report already generated for this month' });
+    }
+
+    const monthlyStats = await prisma.providerMonthlyStats.findUnique({
+      where: {
+        providerId_year_month: {
+          providerId: profile.id,
+          year: yearNum,
+          month: monthNum
+        }
+      }
+    }) || { profileViews: 0, searchAppearances: 0 };
+
+    const startOfMonth = new Date(yearNum, monthNum - 1, 1);
+    const endOfMonth = new Date(yearNum, monthNum, 0, 23, 59, 59, 999);
+
+    const completedJobs = await prisma.job.findMany({
+      where: {
+        status: 'COMPLETED',
+        updatedAt: {
+          gte: startOfMonth,
+          lte: endOfMonth
+        },
+        assignments: {
+          some: {
+            providerId: profile.id,
+            status: 'ACCEPTED'
+          }
+        }
+      }
+    });
+
+    const completedBookings = await prisma.booking.findMany({
+      where: {
+        status: 'COMPLETED',
+        updatedAt: {
+          gte: startOfMonth,
+          lte: endOfMonth
+        },
+        providerId: profile.userId
+      }
+    });
+
+    const totalJobsCount = completedJobs.length + completedBookings.length;
+    const totalEarnings = completedJobs.reduce((sum, j) => sum + (j.budget || 0), 0) + 
+                          completedBookings.reduce((sum, b) => sum + (b.budget || 0), 0);
+
+    const stats = await calculateProviderStats(profile.id).catch(() => null);
+    const rating = stats ? stats.trustScore : profile.rating;
+    const successRate = stats ? stats.completionRate : 100;
+
+    const coinPurchases = await prisma.coinPurchase.aggregate({
+      _sum: {
+        coins: true
+      },
+      where: {
+        userId: req.user.id,
+        status: 'SUCCESS',
+        createdAt: {
+          gte: startOfMonth,
+          lte: endOfMonth
+        }
+      }
+    });
+    const coinsPurchased = coinPurchases._sum.coins || 0;
+
+    if (
+      monthlyStats.profileViews === 0 &&
+      monthlyStats.searchAppearances === 0 &&
+      totalJobsCount === 0 &&
+      totalEarnings === 0 &&
+      coinsPurchased === 0
+    ) {
+      return res.status(400).json({ success: false, message: 'No data available for this month' });
+    }
+
+    const report = await prisma.providerReport.create({
+      data: {
+        providerId: profile.id,
+        year: yearNum,
+        month: monthNum,
+        views: monthlyStats.profileViews,
+        searches: monthlyStats.searchAppearances,
+        jobsCompleted: totalJobsCount,
+        earnings: totalEarnings,
+        rating,
+        successRate,
+        coinsPurchased
+      }
+    });
+
+    res.status(201).json({ success: true, data: report });
+  } catch (error) {
+    console.error('[Generate Report Error]', error);
+    next(error);
+  }
+};
+
 module.exports = {
   updateProviderProfile,
   updateProviderStatus,
@@ -620,4 +837,6 @@ module.exports = {
   unlockProviderProfile,
   maskProvidersPhone,
   claimSetupBonus,
+  getProviderReports,
+  generateProviderReport,
 };
