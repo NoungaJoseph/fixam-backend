@@ -49,6 +49,15 @@ enum TransactionType {
 enum PaymentMethod {
   MTN_MOMO
   ORANGE_MONEY
+  CARD
+  BANK_TRANSFER
+  M_PESA
+  AIRTEL_MONEY
+  VODAFONE_CASH
+  MOOV_MONEY
+  WAVE
+  TIGO_PESA
+  ETISALAT_CASH
 }
 
 enum PaymentStatus {
@@ -119,6 +128,7 @@ model User {
   welcomeCoinsGiven      Boolean   @default(false)
   verificationCoinsGiven Boolean   @default(false)
   preferredLanguage      String    @default("en")
+  country                String?   @default("Cameroon")
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
 
@@ -240,6 +250,8 @@ model Job {
   coinCost             Int               @default(1)
   providersNeeded      Int               @default(1)
   selectedAssignmentId String?
+  isRemote             Boolean           @default(false)
+  country              String?           @default("Cameroon")
   createdAt            DateTime          @default(now())
   updatedAt            DateTime          @updatedAt
 

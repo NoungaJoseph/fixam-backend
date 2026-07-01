@@ -7,21 +7,41 @@ const twilio = require('twilio');
 const { sendPushNotification } = require('../services/notification.service');
 
 // Normalize phone number to E.164 format for Cameroon
-const formatPhone = (phone) => {
-  const cleaned = phone.replace(/\s+/g, '').replace(/-/g, '');
-  if (cleaned.startsWith('+')) return cleaned;
-  if (cleaned.startsWith('00')) return '+' + cleaned.slice(2);
-  if (cleaned.startsWith('237')) return '+' + cleaned;
-  return '+237' + cleaned;
+const countryDialCodes = {
+  'Cameroon': '237',
+  'Kenya': '254',
+  'Ghana': '233',
+  'Ivory Coast': '225',
+  'Tanzania': '255',
+  'Egypt': '20',
+  'Nigeria': '234'
 };
 
-const sendSMSOTP = async (phoneNumber, otp) => {
+const normalizePhoneWithCountry = (phone, country = 'Cameroon') => {
+  const cleaned = phone.replace(/\D/g, '');
+  const prefix = countryDialCodes[country] || '237';
+  if (cleaned.startsWith(prefix)) {
+    return cleaned;
+  }
+  return prefix + cleaned;
+};
+
+const formatPhone = (phone, country = 'Cameroon') => {
+  const cleaned = phone.replace(/\s+/g, '').replace(/-/g, '').replace('+', '');
+  const prefix = countryDialCodes[country] || '237';
+  if (cleaned.startsWith(prefix)) {
+    return '+' + cleaned;
+  }
+  return '+' + prefix + cleaned;
+};
+
+const sendSMSOTP = async (phoneNumber, otp, country = 'Cameroon') => {
   try {
     const twilioClient = twilio(
       process.env.TWILIO_ACCOUNT_SID,
       process.env.TWILIO_AUTH_TOKEN
     );
-    const formattedPhone = formatPhone(phoneNumber);
+    const formattedPhone = formatPhone(phoneNumber, country);
     await twilioClient.messages.create({
       body: `Your Fixam verification code is: ${otp}. Valid for 10 minutes. Do not share this code.`,
       from: process.env.TWILIO_PHONE_NUMBER.trim(),
@@ -55,11 +75,12 @@ const setTokenCookie = (res, token) => {
 const register = async (req, res, next) => {
   try {
     debugLog('Registering user:', { email: req.body.email, phone: req.body.phone, role: req.body.role });
-    let { fullName, email, phone, password, role, referralCode, referral, providerProfile, language, location } = req.body;
+    let { fullName, email, phone, password, role, referralCode, referral, providerProfile, language, location, country } = req.body;
     referralCode = referralCode || referral;
     
     if (email) email = email.trim().toLowerCase();
-    if (phone) phone = phone.replace(/\D/g, '');
+    const selectedCountry = country || 'Cameroon';
+    if (phone) phone = normalizePhoneWithCountry(phone, selectedCountry);
     const validation = registerSchema.safeParse({ fullName, email, phone, password, role });
     if (!validation.success) {
       return res.status(400).json({ success: false, message: 'Full name, valid email, valid phone number and password are required.' });
@@ -97,6 +118,7 @@ const register = async (req, res, next) => {
     // Cache the entire registration payload
     const payload = {
       fullName, email, phone, password: hashedPassword, dob, role: role || 'CLIENT', location: location || '',
+      country: selectedCountry,
       referralCode: generatedReferralCode, language: language || 'en', providerProfile,
       originalReferral: referralCode
     };
@@ -114,11 +136,11 @@ const register = async (req, res, next) => {
 
 const login = async (req, res, next) => {
   try {
-    debugLog('Login attempt:', { email: req.body.email, phone: req.body.phone });
-    let { email, phone, password } = req.body;
+    debugLog('Login attempt:', { email: req.body.email, phone: req.body.phone, country: req.body.country });
+    let { email, phone, password, country } = req.body;
     
     if (email) email = email.trim().toLowerCase();
-    if (phone) phone = phone.replace(/\D/g, '');
+    if (phone) phone = normalizePhoneWithCountry(phone, country || 'Cameroon');
     
     const user = await prisma.user.findFirst({
       where: email ? { email } : { phone },
@@ -219,11 +241,11 @@ const login = async (req, res, next) => {
 
 const requestOTP = async (req, res, next) => {
   try {
-    const { email, phone, language } = req.body;
+    const { email, phone, language, country } = req.body;
     
     let identifier;
     let formattedEmail = email ? email.trim().toLowerCase() : null;
-    let formattedPhone = phone ? phone.replace(/\D/g, '') : null;
+    let formattedPhone = phone ? normalizePhoneWithCountry(phone, country || 'Cameroon') : null;
     identifier = formattedEmail || formattedPhone;
     
     if (!identifier) {
@@ -244,7 +266,7 @@ const requestOTP = async (req, res, next) => {
       await sendOTP(formattedEmail, otp, language || 'en');
       return res.status(200).json({ success: true, message: 'OTP sent to email' });
     } else {
-      await sendSMSOTP(formattedPhone, otp);
+      await sendSMSOTP(formattedPhone, otp, country || 'Cameroon');
       return res.status(200).json({ success: true, message: 'OTP sent via SMS' });
     }
   } catch (error) {
@@ -254,8 +276,9 @@ const requestOTP = async (req, res, next) => {
 
 const verifyOTP = async (req, res, next) => {
   try {
-    const { email, phone, otp } = req.body;
-    const identifier = email || phone;
+    const { email, phone, otp, country } = req.body;
+    const normalizedPhone = phone ? normalizePhoneWithCountry(phone, country || 'Cameroon') : null;
+    const identifier = email || normalizedPhone;
     
     const cached = otpCache.get(identifier);
     if (!cached || cached.otp !== otp || Date.now() > cached.expires) {
@@ -265,7 +288,7 @@ const verifyOTP = async (req, res, next) => {
     otpCache.delete(identifier);
 
     const user = await prisma.user.findFirst({
-      where: email ? { email } : { phone },
+      where: email ? { email } : { phone: normalizedPhone },
       include: { wallet: true, providerProfile: true }
     });
 
@@ -567,7 +590,7 @@ const verifyEmailOTP = async (req, res, next) => {
 
     if (cached.type === 'registration' && cached.payload) {
       // Execute the database creation since OTP is valid
-      const { fullName, email: plEmail, phone, password, dob, role, referralCode, language, providerProfile, originalReferral, location } = cached.payload;
+      const { fullName, email: plEmail, phone, password, dob, role, referralCode, language, providerProfile, originalReferral, location, country } = cached.payload;
 
       const { newUser, referrerReward } = await prisma.$transaction(async (tx) => {
         let referrerId = null;
@@ -580,7 +603,7 @@ const verifyEmailOTP = async (req, res, next) => {
 
         const user = await tx.user.create({
           data: {
-            fullName, email: plEmail, phone, password, dob, role, referralCode, location,
+            fullName, email: plEmail, phone, password, dob, role, referralCode, location, country,
             referredBy: referrerId,
             preferredLanguage: language, isEmailVerified: true, welcomeCoinsGiven: true,
             isOnline: role === 'PROVIDER',

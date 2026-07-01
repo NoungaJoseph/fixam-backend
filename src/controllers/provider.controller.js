@@ -92,10 +92,14 @@ const updateProviderProfile = async (req, res, next) => {
 
 const getProviders = async (req, res, next) => {
   try {
+    const clientCountry = req.user?.country || 'Cameroon';
     const providers = await prisma.providerProfile.findMany({
       where: { 
         profileMode: 'WORK',
-        user: { isOnline: true }
+        user: { 
+          isOnline: true,
+          country: clientCountry
+        }
       },
       include: { 
         user: { 
@@ -140,10 +144,14 @@ const getProviders = async (req, res, next) => {
 
 const getProvidersOfTheMonth = async (req, res, next) => {
   try {
+    const clientCountry = req.user?.country || 'Cameroon';
     const providers = await prisma.providerProfile.findMany({
       where: { 
         profileMode: 'WORK',
-        user: { isOnline: true }
+        user: { 
+          isOnline: true,
+          country: clientCountry
+        }
       },
       include: { 
         user: { 
@@ -177,12 +185,16 @@ const getProvidersOfTheMonth = async (req, res, next) => {
 const getNearbyProviders = async (req, res, next) => {
   try {
     const { category, latitude, longitude, distance = 10 } = req.query;
+    const clientCountry = req.user?.country || 'Cameroon';
 
     const providers = await prisma.providerProfile.findMany({
       where: {
         profileMode: 'WORK',
         skills: category ? { has: category } : undefined,
-        user: { isOnline: true }
+        user: { 
+          isOnline: true,
+          country: clientCountry
+        }
       },
       include: { 
         user: { 

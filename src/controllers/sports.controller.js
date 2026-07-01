@@ -6,12 +6,12 @@ const parser = new Parser({
   }
 });
 
-let cachedSportsData = { en: null, fr: null };
-let lastFetchTime = { en: 0, fr: 0 };
-let isFetching = { en: false, fr: false };
+let cachedSportsData = {};
+let lastFetchTime = {};
+let isFetching = {};
 const CACHE_DURATION_MS = 2 * 60 * 1000; // Cache for 2 minutes
 
-const fetchSportsData = async (lang) => {
+const fetchSportsData = async (lang, country = 'Cameroon') => {
   const apiKey = process.env.SPORTS_API_KEY;
   let items = [];
 
@@ -229,27 +229,28 @@ const fetchSportsData = async (lang) => {
     });
   }
 
-  // 2. Fetch Live General News via RSS (World + Cameroon)
+  // 2. Fetch Live General News via RSS (World + Country)
   try {
     // Google News RSS for World News
     const worldRssUrl = lang === 'fr' 
       ? 'https://news.google.com/rss/headlines/section/topic/WORLD?hl=fr&gl=FR&ceid=FR:fr'
       : 'https://news.google.com/rss/headlines/section/topic/WORLD?hl=en-US&gl=US&ceid=US:en';
 
-    // Google News RSS for Cameroon General News
-    const cameroonRssUrl = lang === 'fr'
-      ? 'https://news.google.com/rss/search?q=Cameroun&hl=fr&gl=FR&ceid=FR:fr'
-      : 'https://news.google.com/rss/search?q=Cameroon&hl=en-US&gl=US&ceid=US:en';
+    // Google News RSS for Country General News
+    const queryTerm = country === 'Ivory Coast' ? "Côte d'Ivoire" : country;
+    const countryRssUrl = lang === 'fr'
+      ? `https://news.google.com/rss/search?q=${encodeURIComponent(queryTerm)}&hl=fr&gl=FR&ceid=FR:fr`
+      : `https://news.google.com/rss/search?q=${encodeURIComponent(queryTerm)}&hl=en-US&gl=US&ceid=US:en`;
 
-    const [worldFeed, camFeed] = await Promise.all([
+    const [worldFeed, countryFeed] = await Promise.all([
       parser.parseURL(worldRssUrl).catch(() => ({ items: [] })),
-      parser.parseURL(cameroonRssUrl).catch(() => ({ items: [] }))
+      parser.parseURL(countryRssUrl).catch(() => ({ items: [] }))
     ]);
     
-    // Take 4 world news items and 4 Cameroon news items
+    // Take 4 world news items and 4 country news items
     const newsItems = [
       ...worldFeed.items.slice(0, 4).map(i => ({ ...i, source: 'World' })),
-      ...camFeed.items.slice(0, 4).map(i => ({ ...i, source: 'CMR' }))
+      ...countryFeed.items.slice(0, 4).map(i => ({ ...i, source: 'Local' }))
     ];
 
     // Shuffle them so they mix nicely
@@ -262,7 +263,16 @@ const fetchSportsData = async (lang) => {
         title = title.substring(0, title.lastIndexOf(' - '));
       }
       
-      const prefix = item.source === 'CMR' ? '🇨🇲' : '🌍';
+      const countryEmojis = {
+        'Cameroon': '🇨🇲',
+        'Kenya': '🇰🇪',
+        'Ghana': '🇬🇭',
+        'Ivory Coast': '🇨🇮',
+        'Tanzania': '🇹🇿',
+        'Egypt': '🇪🇬',
+        'Nigeria': '🇳🇬'
+      };
+      const prefix = item.source === 'Local' ? (countryEmojis[country] || '📰') : '🌍';
       items.push({
         type: 'NEWS',
         title: title,
@@ -280,16 +290,18 @@ const fetchSportsData = async (lang) => {
 exports.getTickerData = async (req, res) => {
   try {
     const lang = req.query.lang === 'fr' ? 'fr' : 'en';
+    const country = req.query.country || 'Cameroon';
+    const cacheKey = `${country}_${lang}`;
     const now = Date.now();
     
-    if (!cachedSportsData[lang] || (now - lastFetchTime[lang] > CACHE_DURATION_MS)) {
-      if (!isFetching[lang]) {
-        isFetching[lang] = true;
+    if (!cachedSportsData[cacheKey] || (now - lastFetchTime[cacheKey] > CACHE_DURATION_MS)) {
+      if (!isFetching[cacheKey]) {
+        isFetching[cacheKey] = true;
         try {
-          cachedSportsData[lang] = await fetchSportsData(lang);
-          lastFetchTime[lang] = now;
+          cachedSportsData[cacheKey] = await fetchSportsData(lang, country);
+          lastFetchTime[cacheKey] = now;
         } finally {
-          isFetching[lang] = false;
+          isFetching[cacheKey] = false;
         }
       }
     }
@@ -297,7 +309,7 @@ exports.getTickerData = async (req, res) => {
     res.status(200).json({
       success: true,
       data: {
-        items: cachedSportsData[lang] || []
+        items: cachedSportsData[cacheKey] || []
       }
     });
   } catch (error) {

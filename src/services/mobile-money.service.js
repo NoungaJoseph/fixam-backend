@@ -13,9 +13,10 @@ async function requestToPayWithKora({
 }) {
   const formattedPhone = String(phone || '').replace(/\s+/g, '')
     .replace(/-/g, '').replace('+', '')
-  const phoneNumber = formattedPhone.startsWith('237')
-    ? formattedPhone
-    : '237' + formattedPhone
+  
+  const prefixes = ['237', '254', '233', '225', '255', '20', '234']
+  const hasPrefix = prefixes.some(p => formattedPhone.startsWith(p))
+  const phoneNumber = hasPrefix ? formattedPhone : '237' + formattedPhone
 
   // Validate required fields
   if (!amount || amount <= 0) {

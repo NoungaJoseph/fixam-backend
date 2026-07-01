@@ -29,14 +29,7 @@ const topup = async (req, res) => {
       })
     }
 
-    // Format phone - ensure it has country code
-    const formatPhone = (p) => {
-      const cleaned = String(p).replace(/\s+/g, '')
-        .replace(/-/g, '').replace('+', '')
-      if (cleaned.startsWith('237')) return cleaned
-      return '237' + cleaned
-    }
-    const formattedPhone = formatPhone(phone)
+    // Phone formatting handled dynamically after user profile fetch
 
     // Get or create user wallet
     let wallet = await prisma.wallet.findUnique({
@@ -51,8 +44,40 @@ const topup = async (req, res) => {
     // Get user info for Kora
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { fullName: true, email: true }
+      select: { fullName: true, email: true, country: true }
     })
+
+    const countryDialCodes = {
+      'Cameroon': '237',
+      'Kenya': '254',
+      'Ghana': '233',
+      'Ivory Coast': '225',
+      'Tanzania': '255',
+      'Egypt': '20',
+      'Nigeria': '234'
+    };
+
+    const countryToCurrency = {
+      'Cameroon': 'XAF',
+      'Kenya': 'KES',
+      'Ghana': 'GHS',
+      'Ivory Coast': 'XOF',
+      'Tanzania': 'TZS',
+      'Egypt': 'EGP',
+      'Nigeria': 'NGN'
+    };
+
+    const userCountry = user?.country || 'Cameroon';
+    const currency = countryToCurrency[userCountry] || 'XAF';
+    const prefix = countryDialCodes[userCountry] || '237';
+
+    // Format phone - ensure it has dynamic country code
+    const formatPhone = (p) => {
+      const cleaned = String(p).replace(/\s+/g, '').replace(/-/g, '').replace('+', '');
+      if (cleaned.startsWith(prefix)) return cleaned;
+      return prefix + cleaned;
+    };
+    const formattedPhone = formatPhone(phone);
 
     // Create pending transaction record
     const transaction = await prisma.transaction.create({
@@ -71,7 +96,7 @@ const topup = async (req, res) => {
     // Call Kora API
     const koraResult = await requestToPayWithKora({
       amount: Number(amount),
-      currency: 'XAF',
+      currency: currency,
       description: `Fixam - ${coins} coins purchase`,
       redirectUrl: 'https://fixam-backend-production.up.railway.app/api/payments/redirect',
       notificationUrl: 'https://fixam-backend-production.up.railway.app/api/payments/webhook/kora',

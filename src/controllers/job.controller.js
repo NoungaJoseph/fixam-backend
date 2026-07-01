@@ -108,6 +108,10 @@ const createJob = async (req, res, next) => {
         }
       });
 
+      // Determine if the job is remote based on category
+      const { isRemoteSkill } = require('../utils/skillClassifier');
+      const isRemote = isRemoteSkill(validatedData.category);
+
       // Create job
       return await tx.job.create({
         data: {
@@ -118,7 +122,9 @@ const createJob = async (req, res, next) => {
           clientId: req.user.id,
           status: 'PENDING',
           approvalStatus: 'PENDING_APPROVAL',  // New jobs require admin approval
-          scheduledTime: validatedData.scheduledTime ? new Date(validatedData.scheduledTime) : null
+          scheduledTime: validatedData.scheduledTime ? new Date(validatedData.scheduledTime) : null,
+          isRemote,
+          country: clientUser.country || 'Cameroon'
         }
       });
     });
@@ -290,18 +296,46 @@ const getAvailableJobsForProvider = async (req, res, next) => {
       approvalStatus: 'APPROVED'  // Only show approved jobs
     };
 
-    // Add search filter
+    // Filter by provider's country and location for local jobs, or show remote jobs from any country
+    const providerCountry = req.user.country || 'Cameroon';
+    const providerLocation = req.user.location || '';
+    
+    // Extract region/state from provider location if it exists
+    const parts = providerLocation.split(',');
+    const providerState = parts.length > 1 ? parts[1].trim() : providerLocation.trim();
+
+    whereClause.OR = [
+      // 1. Remote jobs from any country
+      { isRemote: true },
+      // 2. Local jobs in provider's country and region
+      {
+        isRemote: false,
+        country: providerCountry,
+        ...(providerState ? {
+          location: { contains: providerState, mode: 'insensitive' }
+        } : {})
+      }
+    ];
+
+    // Add search filter (nested inside AND to work with OR)
     if (search) {
-      whereClause.OR = [
-        { title: { contains: search, mode: 'insensitive' } },
-        { description: { contains: search, mode: 'insensitive' } },
-        { category: { contains: search, mode: 'insensitive' } }
+      whereClause.AND = [
+        {
+          OR: [
+            { title: { contains: search, mode: 'insensitive' } },
+            { description: { contains: search, mode: 'insensitive' } },
+            { category: { contains: search, mode: 'insensitive' } }
+          ]
+        }
       ];
     }
 
-    // Add location filter
+    // Add manual location filter if explicitly requested in query
     if (location) {
-      whereClause.location = { contains: location, mode: 'insensitive' };
+      whereClause.AND = [
+        ...(whereClause.AND || []),
+        { location: { contains: location, mode: 'insensitive' } }
+      ];
     }
     if (budgetMin || budgetMax) {
       whereClause.AND = [
