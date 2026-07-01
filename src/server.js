@@ -23,6 +23,30 @@ async function startServer() {
 
     console.log('Database connected successfully');
 
+    // Ensure database schema matches our multi-country requirements
+    try {
+      console.log('Validating and running multi-country DB migrations...');
+      const newEnums = ['M_PESA', 'AIRTEL_MONEY', 'VODAFONE_CASH', 'MOOV_MONEY', 'WAVE', 'TIGO_PESA', 'ETISALAT_CASH'];
+      for (const val of newEnums) {
+        try {
+          await prisma.$executeRawUnsafe(`ALTER TYPE "PaymentMethod" ADD VALUE '${val}'`);
+        } catch (e) {
+          // Ignore "already exists" errors
+          if (!e.message.includes('already exists') && !e.message.includes('labels')) {
+            console.log(`[Migration] Enum warning for ${val}:`, e.message);
+          }
+        }
+      }
+
+      await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "country" TEXT DEFAULT 'Cameroon'`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "Job" ADD COLUMN IF NOT EXISTS "country" TEXT DEFAULT 'Cameroon'`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "Job" ADD COLUMN IF NOT EXISTS "isRemote" BOOLEAN NOT NULL DEFAULT false`);
+
+      console.log('Multi-country DB columns & enums verified successfully');
+    } catch (migErr) {
+      console.error('[Migration] Failed to run auto-migration:', migErr.message);
+    }
+
     // Verify Firebase Admin initialization
     try {
       require('./config/firebase');
