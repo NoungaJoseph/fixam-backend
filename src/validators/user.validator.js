@@ -38,6 +38,7 @@ const updateProfileSchema = z.object({
     tiktok: z.string().optional()
   }).optional(),
   profileMode: z.enum(['PERSONAL', 'WORK']).optional(),
+  country: z.string().optional(),
 });
 
 module.exports = {
