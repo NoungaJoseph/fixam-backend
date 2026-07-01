@@ -142,8 +142,17 @@ const login = async (req, res, next) => {
     if (email) email = email.trim().toLowerCase();
     if (phone) phone = normalizePhoneWithCountry(phone, country || 'Cameroon');
     
+    const cleaned = phone ? phone.replace(/\D/g, '') : '';
     const user = await prisma.user.findFirst({
-      where: email ? { email } : { phone },
+      where: email 
+        ? { email } 
+        : {
+            OR: [
+              { phone },
+              { phone: cleaned },
+              { phone: { endsWith: cleaned.slice(-8) } }
+            ]
+          },
       include: { wallet: true, providerProfile: true }
     });
 
@@ -287,8 +296,17 @@ const verifyOTP = async (req, res, next) => {
 
     otpCache.delete(identifier);
 
+    const cleaned = normalizedPhone ? normalizedPhone.replace(/\D/g, '') : '';
     const user = await prisma.user.findFirst({
-      where: email ? { email } : { phone: normalizedPhone },
+      where: email 
+        ? { email } 
+        : {
+            OR: [
+              { phone: normalizedPhone },
+              { phone: cleaned },
+              { phone: { endsWith: cleaned.slice(-8) } }
+            ]
+          },
       include: { wallet: true, providerProfile: true }
     });
 
