@@ -101,7 +101,7 @@ const topup = async (req, res) => {
       redirectUrl: 'https://fixam-backend-production.up.railway.app/api/payments/redirect',
       notificationUrl: 'https://fixam-backend-production.up.railway.app/api/payments/webhook/kora',
       name: user?.fullName || 'Fixam User',
-      email: user?.email || 'user@fixam.com',
+      email: user?.email || 'user@fixam.net',
       phone: formattedPhone
     })
 

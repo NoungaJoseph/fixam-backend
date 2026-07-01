@@ -8,7 +8,7 @@ async function requestToPayWithKora({
   redirectUrl,
   notificationUrl,
   name = 'Fixam User',
-  email = 'user@fixam.com',
+  email = 'user@fixam.net',
   phone
 }) {
   const formattedPhone = String(phone || '').replace(/\s+/g, '')
@@ -40,7 +40,7 @@ async function requestToPayWithKora({
     redirect_url: redirectUrl,
     customer: {
       name: 'Fixam - ' + (name || 'User'),
-      email: email || 'payments@fixam.com'
+      email: email || 'payments@fixam.net'
     },
     merchant_bears_cost: false,
     mobile_money: {
