@@ -118,7 +118,7 @@ const getConversationStatus = async (userId, otherUserId) => {
 
   const activeBooking = await prisma.booking.findFirst({
     where: {
-      status: { in: ['PENDING', 'ACCEPTED', 'IN_PROGRESS'] },
+      status: { in: ['PENDING', 'ACCEPTED', 'IN_PROGRESS', 'COUNTER_PROPOSED'] },
       OR: bookingOrConditions
     }
   });
