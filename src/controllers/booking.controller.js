@@ -326,6 +326,10 @@ const updateBookingStatus = async (req, res, next) => {
         const providerProfile = await prisma.providerProfile.findUnique({ where: { userId: booking.providerId } });
         if (providerProfile) {
           await calculateProviderStats(providerProfile.id).catch(() => null);
+          if (status === 'COMPLETED') {
+            const { checkAndAwardLevelUp } = require('../utils/levelUpReward');
+            await checkAndAwardLevelUp(booking.providerId);
+          }
         }
       } catch (statsErr) {
         console.error('[Booking] Stats update failed:', statsErr.message);

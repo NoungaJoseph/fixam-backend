@@ -712,6 +712,12 @@ const updateJobStatus = async (req, res, next) => {
           .map((assignment) => calculateProviderStats(assignment.providerId).catch(() => null))
       );
 
+      const acceptedProviderUserId = existing.assignments.find(a => a.status === 'ACCEPTED')?.provider?.userId;
+      if (acceptedProviderUserId) {
+        const { checkAndAwardLevelUp } = require('../utils/levelUpReward');
+        await checkAndAwardLevelUp(acceptedProviderUserId);
+      }
+
       try {
         const { sendPushNotification } = require('../services/notification.service');
         const providerId = existing.assignments.find(a => a.status === 'ACCEPTED')?.provider?.userId;

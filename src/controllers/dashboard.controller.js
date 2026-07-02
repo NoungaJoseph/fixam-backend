@@ -253,21 +253,16 @@ const getDashboardData = async (req, res, next) => {
     });
     const completedTasks = completedJobs + completedBookings;
     
-    let nextLevelTasks = 5;
-    if (completedTasks >= 5) nextLevelTasks = 10;
-    if (completedTasks >= 10) nextLevelTasks = 20;
-    if (completedTasks >= 20) nextLevelTasks = 50;
-    if (completedTasks >= 50) nextLevelTasks = Math.floor(completedTasks / 10) * 10 + 10;
-    
-    const progressPercent = Math.min(100, Math.round((completedTasks / nextLevelTasks) * 100));
+    const { getLevelInfo } = require('../utils/levelUpReward');
+    const levelInfo = getLevelInfo(completedTasks);
     
     let enrichedWallet = {
       ...(wallet || { balance: 0 }),
       thisMonthTransactions: completedTasksCount,
       thisMonthSpent: Math.abs(thisMonthTxStats._sum.amount || 0),
       completedTasks,
-      nextLevelTasks,
-      progressPercent
+      nextLevelTasks: levelInfo.nextLevelTasks,
+      progressPercent: levelInfo.progressPercent
     };
 
     // Process Conversations
