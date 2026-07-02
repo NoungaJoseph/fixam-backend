@@ -42,6 +42,16 @@ async function startServer() {
       await prisma.$executeRawUnsafe(`ALTER TABLE "Job" ADD COLUMN IF NOT EXISTS "country" TEXT DEFAULT 'Cameroon'`);
       await prisma.$executeRawUnsafe(`ALTER TABLE "Job" ADD COLUMN IF NOT EXISTS "isRemote" BOOLEAN NOT NULL DEFAULT false`);
 
+      try {
+        await prisma.$executeRawUnsafe(`ALTER TYPE "BookingStatus" ADD VALUE 'COUNTER_PROPOSED'`);
+      } catch (e) {
+        if (!e.message.includes('already exists') && !e.message.includes('labels')) {
+          console.log(`[Migration] BookingStatus Enum warning:`, e.message);
+        }
+      }
+      await prisma.$executeRawUnsafe(`ALTER TABLE "Booking" ADD COLUMN IF NOT EXISTS "counterBudget" DOUBLE PRECISION`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "Booking" ADD COLUMN IF NOT EXISTS "counterNotes" TEXT`);
+
       console.log('Multi-country DB columns & enums verified successfully');
     } catch (migErr) {
       console.error('[Migration] Failed to run auto-migration:', migErr.message);

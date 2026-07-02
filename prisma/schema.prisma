@@ -75,6 +75,7 @@ enum BookingStatus {
   REJECTED
   CANCELLED
   COMPLETED
+  COUNTER_PROPOSED
 }
 
 enum SupportConversationStatus {
@@ -449,6 +450,8 @@ model Booking {
   coinCost        Int           @default(1)
   status          BookingStatus @default(PENDING)
   budget          Float
+  counterBudget   Float?
+  counterNotes    String?
   location        String
   notes           String?
   paymentStatus   PaymentStatus @default(PENDING)

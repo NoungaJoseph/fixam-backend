@@ -226,7 +226,7 @@ const updateBookingStatus = async (req, res, next) => {
   try {
     const { bookingId } = req.params;
     const { status, paymentStatus } = req.body;
-    const allowed = ['PENDING', 'ACCEPTED', 'IN_PROGRESS', 'REJECTED', 'CANCELLED', 'COMPLETED'];
+    const allowed = ['PENDING', 'ACCEPTED', 'IN_PROGRESS', 'REJECTED', 'CANCELLED', 'COMPLETED', 'COUNTER_PROPOSED'];
     const existing = await prisma.booking.findUnique({ where: { id: bookingId } });
     if (!existing) return res.status(404).json({ success: false, message: 'Booking not found.' });
 
@@ -240,8 +240,19 @@ const updateBookingStatus = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Invalid booking status.' });
     }
 
-    if (status === 'ACCEPTED' && isProvider && !req.user.isOnline) {
-      return res.status(403).json({ success: false, message: 'You must be available for work to accept a booking.', code: 'PROVIDER_OFFLINE' });
+    if (status === 'ACCEPTED') {
+      if (existing.status === 'COUNTER_PROPOSED') {
+        if (!isClient && !isAdmin) {
+          return res.status(403).json({ success: false, message: 'Only the client can accept a counter-offer.' });
+        }
+      } else {
+        if (!isProvider && !isAdmin) {
+          return res.status(403).json({ success: false, message: 'Only the provider can accept a booking.' });
+        }
+        if (!req.user.isOnline) {
+          return res.status(403).json({ success: false, message: 'You must be available for work to accept a booking.', code: 'PROVIDER_OFFLINE' });
+        }
+      }
     }
 
     // Mark any related notifications for this user as read
@@ -274,12 +285,18 @@ const updateBookingStatus = async (req, res, next) => {
       }
     }
 
+    const updateData = {
+      ...(status && { status }),
+      ...(paymentStatus && { paymentStatus }),
+    };
+
+    if (status === 'ACCEPTED' && existing.status === 'COUNTER_PROPOSED' && existing.counterBudget) {
+      updateData.budget = existing.counterBudget;
+    }
+
     const booking = await prisma.booking.update({
       where: { id: bookingId },
-      data: {
-        ...(status && { status }),
-        ...(paymentStatus && { paymentStatus }),
-      },
+      data: updateData,
       include: includeBooking,
     });
 
@@ -399,10 +416,85 @@ const getBookingById = async (req, res, next) => {
   }
 };
 
+const counterBooking = async (req, res, next) => {
+  try {
+    const { bookingId } = req.params;
+    const { counterBudget, counterNotes } = req.body;
+
+    const booking = await prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: {
+        provider: true,
+        client: true
+      }
+    });
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: 'Booking not found.' });
+    }
+
+    // Only the assigned provider can propose a counter-offer
+    if (booking.providerId !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Only the provider of this booking can propose a counter-offer.' });
+    }
+
+    // Proposing counter-offer is only allowed if the booking is currently PENDING or COUNTER_PROPOSED
+    if (booking.status !== 'PENDING' && booking.status !== 'COUNTER_PROPOSED') {
+      return res.status(400).json({ success: false, message: 'Counter-offers can only be proposed on pending bookings.' });
+    }
+
+    const updated = await prisma.booking.update({
+      where: { id: bookingId },
+      data: {
+        status: 'COUNTER_PROPOSED',
+        counterBudget,
+        counterNotes
+      },
+      include: includeBooking
+    });
+
+    // Create notification for client
+    const notification = await prisma.notification.create({
+      data: {
+        userId: booking.clientId,
+        title: 'Counter Offer Proposed 💰',
+        body: `${booking.provider?.fullName || 'The provider'} proposed a counter-offer of ${counterBudget} for your booking request.`,
+        data: { type: 'BOOKING', bookingId: booking.id, status: 'COUNTER_PROPOSED' }
+      }
+    });
+
+    emitBooking(updated);
+    try {
+      getIO().to(booking.clientId).emit('notification:new', notification);
+    } catch (_) {}
+
+    // Send push notification to client
+    try {
+      await sendPushNotification(
+        booking.clientId,
+        'Counter Offer Proposed 💰',
+        `${booking.provider?.fullName || 'The provider'} proposed a counter-offer of ${counterBudget} for your booking request.`,
+        {
+          type: 'COUNTER_PROPOSED',
+          bookingId: booking.id,
+          screen: 'BookingDetails'
+        }
+      );
+    } catch (pushErr) {
+      console.error('[Booking] Push notification failed:', pushErr.message);
+    }
+
+    res.status(200).json({ success: true, data: updated, message: 'Counter-offer proposed successfully.' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createBooking,
   getMyBookings,
   updateBookingStatus,
+  counterBooking,
   checkBooking,
   getBookingById,
 };

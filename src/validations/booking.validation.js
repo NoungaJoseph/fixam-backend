@@ -21,11 +21,22 @@ const updateBookingStatusSchema = z.object({
     bookingId: z.string().uuid("Invalid booking ID"),
   }),
   body: z.object({
-    status: z.enum(["PENDING", "ACCEPTED", "IN_PROGRESS", "COMPLETED", "REJECTED", "CANCELLED"])
+    status: z.enum(["PENDING", "ACCEPTED", "IN_PROGRESS", "COMPLETED", "REJECTED", "CANCELLED", "COUNTER_PROPOSED"])
+  })
+});
+
+const counterBookingSchema = z.object({
+  params: z.object({
+    bookingId: z.string().uuid("Invalid booking ID"),
+  }),
+  body: z.object({
+    counterBudget: z.number().positive("Counter budget must be greater than 0"),
+    counterNotes: z.string().optional()
   })
 });
 
 module.exports = {
   createBookingSchema,
-  updateBookingStatusSchema
+  updateBookingStatusSchema,
+  counterBookingSchema
 };
