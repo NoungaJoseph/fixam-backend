@@ -12,6 +12,7 @@ const createJobSchema = z.object({
   budgetMax: z.number().positive().optional(),
   providersNeeded: z.number().int().positive().optional(),
   scheduledTime: z.string().optional(),
+  isRemote: z.boolean().optional(),
 }).superRefine((data, ctx) => {
   const min = data.budgetMin ?? data.budget;
   const max = data.budgetMax ?? data.budget;

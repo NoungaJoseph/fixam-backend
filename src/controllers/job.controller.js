@@ -108,9 +108,11 @@ const createJob = async (req, res, next) => {
         }
       });
 
-      // Determine if the job is remote based on category
+      // Determine if the job is remote
       const { isRemoteSkill } = require('../utils/skillClassifier');
-      const isRemote = isRemoteSkill(validatedData.category);
+      const isRemote = typeof validatedData.isRemote === 'boolean'
+        ? validatedData.isRemote
+        : isRemoteSkill(validatedData.category);
 
       // Create job
       return await tx.job.create({

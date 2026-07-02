@@ -92,13 +92,16 @@ const updateProviderProfile = async (req, res, next) => {
 
 const getProviders = async (req, res, next) => {
   try {
+    const { category, search } = req.query;
     const clientCountry = req.user?.country || 'Cameroon';
+    const isRemote = isRemoteSkill(category || search);
+
     const providers = await prisma.providerProfile.findMany({
       where: { 
         profileMode: 'WORK',
         user: { 
           isOnline: true,
-          country: clientCountry
+          country: isRemote ? undefined : clientCountry
         }
       },
       include: { 

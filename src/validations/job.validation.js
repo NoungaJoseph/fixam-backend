@@ -11,7 +11,8 @@ const createJobSchema = z.object({
     budget: z.number().positive("Budget must be a positive number"),
     budgetMin: z.number().positive().optional().nullable(),
     budgetMax: z.number().positive().optional().nullable(),
-    scheduledTime: z.string().optional().nullable()
+    scheduledTime: z.string().optional().nullable(),
+    isRemote: z.boolean().optional().nullable()
   }).refine(data => {
     if (data.budgetMin && data.budgetMax) {
       return data.budgetMax >= data.budgetMin;
