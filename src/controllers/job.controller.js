@@ -907,8 +907,10 @@ const getProviderJobs = async (req, res, next) => {
 
 const getPopularCategories = async (req, res, next) => {
   try {
+    const userCountry = req.user?.country || 'Cameroon';
     const categoryCounts = await prisma.job.groupBy({
       by: ['category'],
+      where: { country: userCountry },
       _count: { category: true },
       orderBy: { _count: { category: 'desc' } },
     });

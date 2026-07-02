@@ -6,6 +6,7 @@ const getDashboardData = async (req, res, next) => {
   try {
     const userId = req.user.id;
     const role = req.user.role?.toUpperCase(); // 'CLIENT' or 'PROVIDER' or 'ADMIN'
+    const userCountry = req.user.country || 'Cameroon';
 
     // Fast ETag check
     const [latestJob, latestBooking, latestTx, latestConv] = await Promise.all([
@@ -133,6 +134,7 @@ const getDashboardData = async (req, res, next) => {
 
     const popularCategoriesQuery = prisma.job.groupBy({
       by: ['category'],
+      where: { country: userCountry },
       _count: { category: true },
       orderBy: { _count: { category: 'desc' } },
     });
