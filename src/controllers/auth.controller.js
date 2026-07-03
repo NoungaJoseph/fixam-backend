@@ -655,77 +655,6 @@ const verifyEmailOTP = async (req, res, next) => {
           }
         });
 
-        if (referrerId) {
-          const alreadyRewarded = await tx.transaction.findFirst({
-            where: {
-              description: {
-                contains: `Referral: ${user.id}`
-              }
-            }
-          });
-
-          if (alreadyRewarded || referrerId === user.id) {
-            return { newUser: user, referrerReward: null };
-          }
-
-          let referrerWallet = await tx.wallet.findUnique({
-            where: { userId: referrerId }
-          });
-
-          if (!referrerWallet) {
-            referrerWallet = await tx.wallet.create({
-              data: { userId: referrerId, balance: 0 }
-            });
-          }
-
-          const updatedUserWallet = await tx.wallet.update({
-            where: { id: user.wallet.id },
-            data: { balance: { increment: 1 } }
-          });
-
-          const updatedUser = { ...user, wallet: updatedUserWallet };
-
-          await tx.transaction.create({
-            data: {
-              walletId: user.wallet.id,
-              amount: 1,
-              type: 'PURCHASE',
-              status: 'SUCCESS',
-              description: `Referral signup bonus for using ${originalReferral.trim().toUpperCase()}`,
-              reference: 'REFERRAL_SIGNUP_' + user.id + '_' + Date.now(),
-              isSystemTransaction: true
-            }
-          });
-
-          await tx.wallet.update({
-            where: { id: referrerWallet.id },
-            data: { balance: { increment: 1 } }
-          });
-            
-          await tx.transaction.create({
-            data: {
-              walletId: referrerWallet.id, amount: 1, type: 'PURCHASE', status: 'SUCCESS',
-              description: `Referral: ${user.id} - ${user.fullName || 'New user'} joined using your code`,
-              isSystemTransaction: true
-            }
-          });
-            
-          await tx.notification.create({
-            data: {
-              userId: referrerId, title: 'Referral bonus earned',
-              body: `${user.fullName || 'Someone'} joined Fixam using your referral code. You earned 1 coin!`,
-              data: { type: 'COINS_ADDED', coins: '1', referredUserId: user.id }
-            }
-          });
-
-          return {
-            newUser: updatedUser,
-            referrerReward: {
-              userId: referrerId,
-              referredUserName: user.fullName || 'Someone'
-            }
-          };
-        }
         return { newUser: user, referrerReward: null };
       });
 
@@ -736,18 +665,9 @@ const verifyEmailOTP = async (req, res, next) => {
       sendPushNotification(
         newUser.id,
         'Welcome to Fixam!',
-        referrerReward ? 'You received 2 coins: 1 welcome coin and 1 referral coin.' : 'You received 1 free coin for joining Fixam!',
-        { type: 'COINS_ADDED', coins: referrerReward ? '2' : '1' }
+        'You received 1 free coin for joining Fixam!',
+        { type: 'COINS_ADDED', coins: '1' }
       ).catch(() => {});
-
-      if (referrerReward) {
-        sendPushNotification(
-          referrerReward.userId,
-          'Referral Reward!',
-          `${referrerReward.referredUserName} joined Fixam using your referral code. You earned 1 coin!`,
-          { type: 'COINS_ADDED', coins: '1' }
-        ).catch(() => {});
-      }
 
       const token = generateToken(newUser.id, newUser.role);
       setTokenCookie(res, token);

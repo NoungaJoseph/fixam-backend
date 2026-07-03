@@ -107,6 +107,115 @@ const verifyProvider = async (req, res, next) => {
     });
 
     const isVerified = status === 'VERIFIED';
+
+    if (isVerified && profile.user.referredBy) {
+      try {
+        const alreadyRewarded = await prisma.transaction.findFirst({
+          where: {
+            wallet: { userId: profile.userId },
+            description: { startsWith: 'Referral signup bonus' }
+          }
+        });
+
+        if (!alreadyRewarded) {
+          await prisma.$transaction(async (tx) => {
+            let referrerWallet = await tx.wallet.findUnique({
+              where: { userId: profile.user.referredBy }
+            });
+            if (!referrerWallet) {
+              referrerWallet = await tx.wallet.create({
+                data: { userId: profile.user.referredBy, balance: 0 }
+              });
+            }
+
+            let userWallet = await tx.wallet.findUnique({
+              where: { userId: profile.userId }
+            });
+            if (!userWallet) {
+              userWallet = await tx.wallet.create({
+                data: { userId: profile.userId, balance: 0 }
+              });
+            }
+
+            await tx.wallet.update({
+              where: { id: userWallet.id },
+              data: { balance: { increment: 1 } }
+            });
+
+            await tx.transaction.create({
+              data: {
+                walletId: userWallet.id,
+                amount: 1,
+                type: 'PURCHASE',
+                status: 'SUCCESS',
+                description: `Referral signup bonus (Identity Verified)`,
+                reference: 'REFERRAL_VERIFIED_' + profile.userId + '_' + Date.now(),
+                isSystemTransaction: true
+              }
+            });
+
+            await tx.wallet.update({
+              where: { id: referrerWallet.id },
+              data: { balance: { increment: 1 } }
+            });
+
+            await tx.transaction.create({
+              data: {
+                walletId: referrerWallet.id,
+                amount: 1,
+                type: 'PURCHASE',
+                status: 'SUCCESS',
+                description: `Referral: ${profile.user.fullName || 'New user'} verified their profile`,
+                reference: 'REFERRAL_EARNED_' + profile.userId + '_' + Date.now(),
+                isSystemTransaction: true
+              }
+            });
+
+            const rNotif = await tx.notification.create({
+              data: {
+                userId: profile.user.referredBy,
+                title: 'Referral Bonus Unlocked! / Bonus de parrainage débloqué !',
+                body: `${profile.user.fullName || 'Someone'} verified their profile. You earned 1 coin! / ${profile.user.fullName || 'Quelqu\'un'} a vérifié son profil. Vous avez gagné 1 pièce !`,
+                data: { type: 'COINS_ADDED', coins: '1', referredUserId: profile.userId }
+              }
+            });
+
+            const uNotif = await tx.notification.create({
+              data: {
+                userId: profile.userId,
+                title: 'Referral Bonus Unlocked! / Bonus de parrainage débloqué !',
+                body: 'Your identity has been verified! Both you and your referrer received 1 coin. / Votre identité a été vérifiée ! Vous et votre parrain avez reçu 1 pièce.',
+                data: { type: 'COINS_ADDED', coins: '1' }
+              }
+            });
+
+            try {
+              const io = getIO();
+              io.to(profile.user.referredBy).emit('notification:new', rNotif);
+              io.to(profile.userId).emit('notification:new', uNotif);
+            } catch (err) {
+              console.error('[Socket Error] Referral notifications emit failed:', err.message);
+            }
+
+            sendPushNotification(
+              profile.user.referredBy,
+              'Referral Bonus Unlocked! / Bonus de parrainage débloqué !',
+              `${profile.user.fullName || 'Someone'} verified their profile. You earned 1 coin!`,
+              { type: 'COINS_ADDED', coins: '1' }
+            ).catch(err => console.error('[Push Error] Referrer push failed:', err.message));
+
+            sendPushNotification(
+              profile.userId,
+              'Referral Bonus Unlocked! / Bonus de parrainage débloqué !',
+              'Your identity has been verified! Both you and your referrer received 1 coin.',
+              { type: 'COINS_ADDED', coins: '1' }
+            ).catch(err => console.error('[Push Error] Reffee push failed:', err.message));
+          });
+        }
+      } catch (refError) {
+        console.error('[Referral Payout Error] failed:', refError.message);
+      }
+    }
     
 
 
