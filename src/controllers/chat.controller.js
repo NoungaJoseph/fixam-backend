@@ -124,8 +124,8 @@ const getConversationStatus = async (userId, otherUserId) => {
   });
   if (activeBooking) return { active: true, reason: 'ACTIVE_BOOKING' };
 
-  // Find completed/cancelled jobs/bookings within the last 24 hours
-  const cutoffDate = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  // Find completed/cancelled jobs/bookings within the last 12 hours
+  const cutoffDate = new Date(Date.now() - 12 * 60 * 60 * 1000);
 
   if (jobOrConditions.length > 0) {
     const recentJob = await prisma.job.findFirst({
@@ -140,7 +140,7 @@ const getConversationStatus = async (userId, otherUserId) => {
       return { 
         active: true, 
         reason: 'RECENT_JOB', 
-        expiresAt: new Date(recentJob.updatedAt.getTime() + 24 * 60 * 60 * 1000) 
+        expiresAt: new Date(recentJob.updatedAt.getTime() + 12 * 60 * 60 * 1000) 
       };
     }
   }
@@ -157,7 +157,7 @@ const getConversationStatus = async (userId, otherUserId) => {
     return { 
       active: true, 
       reason: 'RECENT_BOOKING', 
-      expiresAt: new Date(recentBooking.updatedAt.getTime() + 24 * 60 * 60 * 1000) 
+      expiresAt: new Date(recentBooking.updatedAt.getTime() + 12 * 60 * 60 * 1000) 
     };
   }
 
