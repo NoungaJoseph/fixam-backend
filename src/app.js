@@ -56,6 +56,7 @@ app.use(helmet({
 const allowedOrigins = [
   process.env.DASHBOARD_URL,
   process.env.WEBSITE_URL,
+  'https://fixam-website-psi.vercel.app',
   'http://localhost:3000',
   'http://localhost:3001',
   'http://localhost:4000',

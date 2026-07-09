@@ -13,6 +13,7 @@ const initSocket = (server) => {
   const allowedOrigins = [
     process.env.DASHBOARD_URL,
     process.env.WEBSITE_URL,
+    'https://fixam-website-psi.vercel.app',
     ...(process.env.NODE_ENV === 'production' ? [] : [
       'http://localhost:3000',
       'http://localhost:4000',
