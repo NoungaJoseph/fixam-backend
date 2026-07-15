@@ -9,7 +9,15 @@ const allowedMimeTypes = new Set([
   'image/jpeg',
   'image/png',
   'image/webp',
-  'application/pdf'
+  'application/pdf',
+  'audio/mpeg',
+  'audio/mp4',
+  'audio/m4a',
+  'audio/x-m4a',
+  'audio/caf',
+  'audio/wav',
+  'audio/ogg',
+  'application/octet-stream'
 ]);
 
 const upload = multer({
