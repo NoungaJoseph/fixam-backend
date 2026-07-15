@@ -16,7 +16,7 @@ const uploadLocal = async (file, bucket, fileName) => {
   const dir = path.join(process.cwd(), 'uploads', bucket);
   await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(path.join(dir, fileName), file.buffer);
-  const baseUrl = process.env.PUBLIC_URL || 'https://fixam-backend-production.up.railway.app';
+  const baseUrl = process.env.PUBLIC_URL || 'https://api.usefixam.com';
   return `${baseUrl}/uploads/${bucket}/${fileName}`;
 };
 
