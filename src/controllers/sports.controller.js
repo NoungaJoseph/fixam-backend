@@ -209,27 +209,27 @@ const fetchSportsData = async (lang, country = 'Cameroon') => {
     items.push({
       type: 'NEWS',
       title: lang === 'fr'
-        ? "Mondial Groupe A: 1. MEX (9 pts) | 2. RSA (4 pts)"
-        : "World Cup Group A: 1. MEX (9 pts) | 2. RSA (4 pts)",
+        ? "Mondial 2026: Les demi-finales et la finale approchent ! Restez connectés pour les scores en direct."
+        : "World Cup 2026: Semi-finals and finals are here! Stay tuned for live goal updates.",
       prefix: '🏆'
     });
     items.push({
       type: 'NEWS',
       title: lang === 'fr'
-        ? "Meilleurs Buteurs Mondial: Lionel Messi (5 buts) | Vinicius Junior (4 buts) | Kylian Mbappé (4 buts)"
-        : "World Cup Top Scorers: Lionel Messi (5 goals) | Vinicius Junior (4 goals) | Kylian Mbappé (4 goals)",
+        ? "Meilleurs Buteurs Mondial: Kylian Mbappé (6 buts) | Erling Haaland (5 buts) | Jude Bellingham (4 buts)"
+        : "World Cup Top Scorers: Kylian Mbappé (6 goals) | Erling Haaland (5 goals) | Jude Bellingham (4 goals)",
       prefix: '🔥'
     });
     items.push({
       type: 'NEWS',
       title: lang === 'fr'
-        ? "Qualifiés Mondial (16es): Mexique, Suisse, Canada, Argentine, Brésil, France, Angleterre, Pays-Bas"
-        : "World Cup Qualified: Mexico, Switzerland, Canada, Argentina, Brazil, France, England, Netherlands",
+        ? "Favoris Mondial: Argentine, France, Brésil, Angleterre s'affrontent pour le trophée !"
+        : "World Cup Finalists: Argentina, France, Brazil, England competing for the trophy!",
       prefix: '⭐'
     });
   }
 
-  // 2. Fetch Live General News via RSS (World + Country)
+  // 2. Fetch Live General News + World Cup News via RSS (World + Country + World Cup)
   try {
     // Google News RSS for World News
     const worldRssUrl = lang === 'fr' 
@@ -242,15 +242,22 @@ const fetchSportsData = async (lang, country = 'Cameroon') => {
       ? `https://news.google.com/rss/search?q=${encodeURIComponent(queryTerm)}&hl=fr&gl=FR&ceid=FR:fr`
       : `https://news.google.com/rss/search?q=${encodeURIComponent(queryTerm)}&hl=en-US&gl=US&ceid=US:en`;
 
-    const [worldFeed, countryFeed] = await Promise.all([
+    // Google News RSS for World Cup Live News
+    const wcRssUrl = lang === 'fr'
+      ? 'https://news.google.com/rss/search?q=Coupe+du+Monde+de+la+FIFA&hl=fr&gl=FR&ceid=FR:fr'
+      : 'https://news.google.com/rss/search?q=FIFA+World+Cup&hl=en-US&gl=US&ceid=US:en';
+
+    const [worldFeed, countryFeed, wcFeed] = await Promise.all([
       parser.parseURL(worldRssUrl).catch(() => ({ items: [] })),
-      parser.parseURL(countryRssUrl).catch(() => ({ items: [] }))
+      parser.parseURL(countryRssUrl).catch(() => ({ items: [] })),
+      parser.parseURL(wcRssUrl).catch(() => ({ items: [] }))
     ]);
     
-    // Take 4 world news items and 4 country news items
+    // Take 3 world news items, 3 country news items, and 3 World Cup items
     const newsItems = [
-      ...worldFeed.items.slice(0, 4).map(i => ({ ...i, source: 'World' })),
-      ...countryFeed.items.slice(0, 4).map(i => ({ ...i, source: 'Local' }))
+      ...worldFeed.items.slice(0, 3).map(i => ({ ...i, source: 'World' })),
+      ...countryFeed.items.slice(0, 3).map(i => ({ ...i, source: 'Local' })),
+      ...wcFeed.items.slice(0, 3).map(i => ({ ...i, source: 'WorldCup' }))
     ];
 
     // Shuffle them so they mix nicely
@@ -272,7 +279,16 @@ const fetchSportsData = async (lang, country = 'Cameroon') => {
         'Egypt': '🇪🇬',
         'Nigeria': '🇳🇬'
       };
-      const prefix = item.source === 'Local' ? (countryEmojis[country] || '📰') : '🌍';
+      
+      let prefix = '📰';
+      if (item.source === 'Local') {
+        prefix = countryEmojis[country] || '📰';
+      } else if (item.source === 'WorldCup') {
+        prefix = '🏆';
+      } else if (item.source === 'World') {
+        prefix = '🌍';
+      }
+
       items.push({
         type: 'NEWS',
         title: title,

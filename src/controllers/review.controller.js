@@ -159,7 +159,47 @@ const getUserReviews = async (req, res, next) => {
   }
 };
 
+const getAllReviews = async (req, res, next) => {
+  try {
+    const reviews = await prisma.review.findMany({
+      include: {
+        job: { select: { id: true, title: true, category: true } },
+        booking: {
+          select: {
+            id: true,
+            task: { select: { id: true, title: true, category: true } }
+          }
+        },
+        reviewer: {
+          select: {
+            id: true,
+            fullName: true,
+            avatar: true,
+            providerProfile: { select: { id: true } }
+          }
+        },
+        targetUser: {
+          select: {
+            id: true,
+            fullName: true,
+            avatar: true,
+            providerProfile: { select: { id: true } }
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 100
+    });
+
+    res.status(200).json({ success: true, data: reviews });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createReview,
-  getUserReviews
+  getUserReviews,
+  getAllReviews
 };
+

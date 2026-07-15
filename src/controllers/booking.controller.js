@@ -82,7 +82,9 @@ const createBooking = async (req, res, next) => {
       URGENT: 2,
       EMERGENCY: 3
     };
-    const resolvedUrgency = urgencyLevel || 'NORMAL';
+    let resolvedUrgency = urgencyLevel || 'NORMAL';
+    if (resolvedUrgency === 'HIGH') resolvedUrgency = 'URGENT';
+    if (resolvedUrgency === 'LOW') resolvedUrgency = 'NORMAL';
     const coinCost = COIN_COSTS[resolvedUrgency] || 1;
 
     const booking = await prisma.$transaction(async (tx) => {
@@ -477,6 +479,11 @@ const counterBooking = async (req, res, next) => {
         {
           type: 'COUNTER_PROPOSED',
           bookingId: booking.id,
+          counterBudget: String(counterBudget),
+          counterNotes: counterNotes || '',
+          urgencyLevel: booking.urgencyLevel || 'EMERGENCY',
+          providerName: booking.provider?.fullName || 'The provider',
+          providerAvatar: booking.provider?.avatar || '',
           screen: 'BookingDetails'
         }
       );

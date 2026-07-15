@@ -8,11 +8,20 @@ const createBookingSchema = z.object({
     }),
     bookingTime: z.string().min(4, "Time is required"),
     bookingDuration: z.enum(["DAY", "HALF_DAY", "HOURLY", "FIXED"]),
-    urgencyLevel: z.enum(["LOW", "NORMAL", "HIGH", "EMERGENCY"]).default("NORMAL"),
-    budget: z.number().positive("Budget must be greater than 0"),
+    urgencyLevel: z.enum(["LOW", "NORMAL", "HIGH", "URGENT", "EMERGENCY"]).default("NORMAL"),
+    budget: z.number().nonnegative("Budget must be 0 or greater"),
     location: z.string().min(5, "Location must be at least 5 characters long"),
     notes: z.string().optional(),
     taskId: z.string().uuid("Invalid task ID").optional().nullable(),
+  }).refine((data) => {
+    const isUrgentOrEmergency = ['URGENT', 'EMERGENCY', 'HIGH'].includes(data.urgencyLevel);
+    if (!isUrgentOrEmergency && data.budget <= 0) {
+      return false;
+    }
+    return true;
+  }, {
+    message: "Budget must be greater than 0 for normal bookings",
+    path: ["budget"]
   })
 });
 
