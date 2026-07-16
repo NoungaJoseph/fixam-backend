@@ -63,11 +63,25 @@ const getDashboardData = async (req, res, next) => {
     // 2. Jobs Query
     let jobsQuery;
     if (role === 'PROVIDER') {
+      const providerLocation = req.user.location || '';
+      const parts = providerLocation.split(',');
+      const providerCity = parts[0] ? parts[0].trim() : '';
+
       jobsQuery = prisma.job.findMany({
         where: {
           status: 'PENDING',
           approvalStatus: 'APPROVED',
-          assignments: { none: { provider: { userId } } }
+          assignments: { none: { provider: { userId } } },
+          OR: [
+            { isRemote: true },
+            {
+              isRemote: false,
+              country: userCountry,
+              ...(providerCity ? {
+                location: { contains: providerCity, mode: 'insensitive' }
+              } : {})
+            }
+          ]
         },
         include: {
           client: { select: { id: true, fullName: true, avatar: true } },

@@ -302,19 +302,19 @@ const getAvailableJobsForProvider = async (req, res, next) => {
     const providerCountry = req.user.country || 'Cameroon';
     const providerLocation = req.user.location || '';
     
-    // Extract region/state from provider location if it exists
+    // Extract city (first part before comma) from provider location
     const parts = providerLocation.split(',');
-    const providerState = parts.length > 1 ? parts[1].trim() : providerLocation.trim();
+    const providerCity = parts[0] ? parts[0].trim() : '';
 
     whereClause.OR = [
       // 1. Remote jobs from any country
       { isRemote: true },
-      // 2. Local jobs in provider's country and region
+      // 2. Local jobs in provider's country and city
       {
         isRemote: false,
         country: providerCountry,
-        ...(providerState ? {
-          location: { contains: providerState, mode: 'insensitive' }
+        ...(providerCity ? {
+          location: { contains: providerCity, mode: 'insensitive' }
         } : {})
       }
     ];

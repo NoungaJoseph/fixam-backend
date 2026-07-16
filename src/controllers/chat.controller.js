@@ -641,6 +641,18 @@ const sendMessage = async (req, res, next) => {
 
     const outgoingMessage = clientMessageId ? { ...message, clientMessageId } : message;
 
+    // Generate user-friendly safeContent based on the message type
+    let safeContent = 'Sent an attachment';
+    if (!type || type === 'TEXT') {
+      safeContent = content ? (content.length > 100 ? content.substring(0, 97) + '...' : content) : '';
+    } else if (type === 'IMAGE') {
+      safeContent = '📷 Photo';
+    } else if (type === 'AUDIO') {
+      safeContent = '🎤 Voice message';
+    } else if (type === 'FILE') {
+      safeContent = '📁 File';
+    }
+
     // 4. Emit via Socket.io (Wrap in try-catch to prevent crashes)
     try {
       const io = getIO();
@@ -649,7 +661,7 @@ const sendMessage = async (req, res, next) => {
         io.to(actualConvId).to(receiverId).emit('message:new', outgoingMessage);
         io.to(receiverId).emit('notification:chat', { 
           title: 'New Message', 
-          body: content, 
+          body: safeContent, 
           conversationId: actualConvId,
           senderId: req.user.id
         });
@@ -674,7 +686,6 @@ const sendMessage = async (req, res, next) => {
 
       for (const participant of participants) {
         const senderName = req.user.fullName || req.user.phone || 'Someone';
-        const safeContent = content ? (content.length > 100 ? content.substring(0, 97) + '...' : content) : 'Sent an attachment';
         
         sendPushNotification(
           participant.userId,
