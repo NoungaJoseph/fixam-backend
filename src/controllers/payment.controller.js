@@ -94,12 +94,16 @@ const topup = async (req, res) => {
     })
 
     // Call Kora API
+    const baseUrl = process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
+    const redirectUrl = `${baseUrl}/api/payments/redirect`;
+    const notificationUrl = `${baseUrl}/api/payments/webhook/kora`;
+
     const koraResult = await requestToPayWithKora({
       amount: Number(amount),
       currency: currency,
       description: `Fixam - ${coins} coins purchase`,
-      redirectUrl: 'https://fixam-backend-production.up.railway.app/api/payments/redirect',
-      notificationUrl: 'https://fixam-backend-production.up.railway.app/api/payments/webhook/kora',
+      redirectUrl,
+      notificationUrl,
       name: user?.fullName || 'Fixam User',
       email: user?.email || 'user@fixam.net',
       phone: formattedPhone

@@ -497,6 +497,78 @@ const counterBooking = async (req, res, next) => {
   }
 };
 
+const requestReview = async (req, res, next) => {
+  try {
+    const { bookingId } = req.params;
+    const { topic, description } = req.body;
+
+    const booking = await prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: {
+        provider: true,
+        client: true,
+        reviews: true
+      }
+    });
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: 'Booking not found.' });
+    }
+
+    if (booking.providerId !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Only the provider of this booking can request a review.' });
+    }
+
+    if (booking.status !== 'COMPLETED') {
+      return res.status(400).json({ success: false, message: 'Reviews can only be requested for completed bookings.' });
+    }
+
+    const alreadyReviewed = booking.reviews.some(r => r.reviewerId === booking.clientId);
+    if (alreadyReviewed) {
+      return res.status(400).json({ success: false, message: 'Client has already left a review for this booking.' });
+    }
+
+    const notification = await prisma.notification.create({
+      data: {
+        userId: booking.clientId,
+        title: 'Review Requested ⭐',
+        body: `${booking.provider?.fullName || 'Your provider'} has requested a review for the booking: "${topic || booking.title || 'Service'}".`,
+        data: { 
+          type: 'REQUEST_REVIEW', 
+          bookingId: booking.id, 
+          topic: topic || '', 
+          description: description || '' 
+        }
+      }
+    });
+
+    try {
+      getIO().to(booking.clientId).emit('notification:new', notification);
+    } catch (_) {}
+
+    try {
+      await sendPushNotification(
+        booking.clientId,
+        'Review Requested ⭐',
+        `${booking.provider?.fullName || 'Your provider'} has requested a review for: "${topic || booking.title || 'Service'}".`,
+        {
+          type: 'REQUEST_REVIEW',
+          bookingId: booking.id,
+          topic: topic || '',
+          description: description || '',
+          screen: 'BookingDetails'
+        }
+      );
+    } catch (pushErr) {
+      console.error('[Booking] Push notification failed:', pushErr.message);
+    }
+
+    res.status(200).json({ success: true, message: 'Review requested successfully.' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createBooking,
   getMyBookings,
@@ -504,4 +576,5 @@ module.exports = {
   counterBooking,
   checkBooking,
   getBookingById,
+  requestReview,
 };

@@ -95,11 +95,17 @@ async function getPaymentStatusFromKora(transactionRef) {
     console.log('[Kora] Status check:', transactionRef,
       result.data?.status)
 
+    // Extract the most specific failure reason available
+    const failureReason = result.data?.message || 
+                          result.data?.failure_reason || 
+                          result.data?.status_message || 
+                          (result.message !== 'Charge retrieved successfully' ? result.message : null);
+
     return {
       data: {
         status: result.data.status,
         transId: result.data.reference,
-        reason: result.message
+        reason: failureReason || 'payments.paymentNotCompleted'
       }
     }
 
@@ -108,7 +114,7 @@ async function getPaymentStatusFromKora(transactionRef) {
       error.response?.data || error.message)
     return {
       data: {
-        status: 'failed',
+        status: 'error',
         transId: transactionRef,
         reason: error.response?.data?.message ||
           'Status check failed'

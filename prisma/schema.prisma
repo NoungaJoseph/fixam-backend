@@ -253,6 +253,11 @@ model Job {
   selectedAssignmentId String?
   isRemote             Boolean           @default(false)
   country              String?           @default("Cameroon")
+  importantDetails     String?
+  whatNeedsDone        String?
+  taskScope            String?
+  preferences          String[]
+  priority             String            @default("normal")
   createdAt            DateTime          @default(now())
   updatedAt            DateTime          @updatedAt
 

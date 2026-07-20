@@ -14,5 +14,6 @@ router.get('/check', bookingController.checkBooking);
 router.get('/:bookingId', bookingController.getBookingById);
 router.patch('/:bookingId/status', validate(updateBookingStatusSchema), bookingController.updateBookingStatus);
 router.post('/:bookingId/counter', validate(counterBookingSchema), bookingController.counterBooking);
+router.post('/:bookingId/request-review', bookingController.requestReview);
 
 module.exports = router;

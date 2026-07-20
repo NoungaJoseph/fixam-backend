@@ -294,8 +294,17 @@ const getAvailableJobsForProvider = async (req, res, next) => {
 
     // Build where clause for filtering
     const whereClause = {
+      clientId: { not: req.user.id }, // Exclude own tasks
       status: 'PENDING',
-      approvalStatus: 'APPROVED'  // Only show approved jobs
+      approvalStatus: 'APPROVED',  // Only show approved jobs
+      assignments: {
+        none: {
+          OR: [
+            { provider: { userId: req.user.id } },
+            { status: 'ACCEPTED' } // Exclude accepted tasks
+          ]
+        }
+      }
     };
 
     // Filter by provider's country and location for local jobs, or show remote jobs from any country

@@ -69,9 +69,17 @@ const getDashboardData = async (req, res, next) => {
 
       jobsQuery = prisma.job.findMany({
         where: {
+          clientId: { not: userId }, // Exclude own tasks
           status: 'PENDING',
           approvalStatus: 'APPROVED',
-          assignments: { none: { provider: { userId } } },
+          assignments: {
+            none: {
+              OR: [
+                { provider: { userId } },
+                { status: 'ACCEPTED' } // Exclude accepted tasks
+              ]
+            }
+          },
           OR: [
             { isRemote: true },
             {
