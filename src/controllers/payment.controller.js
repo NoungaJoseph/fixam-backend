@@ -94,7 +94,8 @@ const topup = async (req, res) => {
       })
       return res.status(400).json({
         success: false,
-        message: koraResult.error[0] || 'Payment failed'
+        message: koraResult.error[0] || 'Payment failed',
+        fullError: koraResult.koraError || koraResult.error
       })
     }
 
