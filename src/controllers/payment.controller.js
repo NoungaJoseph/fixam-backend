@@ -191,7 +191,7 @@ const checkPaymentStatus = async (req, res) => {
 
     console.log('[Payment] Kora status:', reference, koraStatus)
 
-    if (koraStatus === 'success') {
+    if (['success', 'successful', 'completed', 'paid'].includes(koraStatus)) {
       // Add coins to wallet
       await prisma.wallet.update({
         where: { id: transaction.walletId },
@@ -220,7 +220,7 @@ const checkPaymentStatus = async (req, res) => {
       })
     }
 
-    if (koraStatus === 'failed') {
+    if (['failed', 'cancelled', 'canceled', 'expired', 'rejected', 'declined', 'error'].includes(koraStatus)) {
       await prisma.transaction.update({
         where: { reference },
         data: { status: 'FAILED' }

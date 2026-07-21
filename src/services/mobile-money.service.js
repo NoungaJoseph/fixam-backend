@@ -297,18 +297,23 @@ async function getPaymentStatusFromKora(transactionRef) {
     })
 
     const result = response.data
-    console.log('[Kora] Status check:', transactionRef,
-      result.data?.status)
+    console.log('[Kora] Status check:', transactionRef, result.data?.status)
 
-    const failureReason = result.data?.message || 
-                          result.data?.failure_reason || 
-                          result.data?.status_message || 
-                          (result.message !== 'Charge retrieved successfully' ? result.message : null);
+    const rawStatus = String(result.data?.status || result.status || '').toLowerCase()
+
+    let failureReason = result.data?.failure_reason || 
+                        result.data?.message || 
+                        result.data?.status_message || 
+                        (result.message !== 'Charge retrieved successfully' ? result.message : null);
+
+    if (!failureReason && ['failed', 'cancelled', 'canceled', 'expired', 'rejected', 'declined'].includes(rawStatus)) {
+      failureReason = 'Mobile Money payment was declined or has insufficient balance.';
+    }
 
     return {
       data: {
-        status: result.data.status,
-        transId: result.data.reference,
+        status: rawStatus,
+        transId: result.data?.reference || transactionRef,
         reason: failureReason || 'payments.paymentNotCompleted'
       }
     }

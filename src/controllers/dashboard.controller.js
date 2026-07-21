@@ -1,6 +1,16 @@
 const prisma = require('../config/prisma');
 const { enrichProvidersWithStats } = require('../utils/providerStats');
-const { maskProvidersPhone } = require('./provider.controller');
+
+const maskProvidersPhone = (providers) => providers.map(p => {
+  if (!p) return p;
+  const user = p.user || p;
+  if (!user || !user.phone) return p;
+  const maskedPhone = user.phone.substring(0, 5) + '****' + user.phone.slice(-2);
+  if (p.user) {
+    return { ...p, user: { ...p.user, phone: maskedPhone } };
+  }
+  return { ...p, phone: maskedPhone };
+});
 
 const getDashboardData = async (req, res, next) => {
   try {
