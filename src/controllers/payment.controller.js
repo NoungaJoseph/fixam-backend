@@ -94,7 +94,7 @@ const topup = async (req, res) => {
     })
 
     // Call Kora API - Ensure HTTPS URLs
-    const rawBaseUrl = process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || `${req.protocol}://${req.get('host')}`;
+    const rawBaseUrl = process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
     const baseUrl = rawBaseUrl.startsWith('http://') ? rawBaseUrl.replace('http://', 'https://') : (rawBaseUrl.startsWith('https://') ? rawBaseUrl : `https://${rawBaseUrl}`);
     const redirectUrl = `${baseUrl}/api/payments/redirect`;
     const notificationUrl = `${baseUrl}/api/payments/webhook/kora`;

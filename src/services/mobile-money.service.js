@@ -218,12 +218,12 @@ async function requestToPayWithKora({
     amount: Number(amount),
     currency: currency,
     reference: transactionId,
-    description: description || 'coin purchase',
+    description: 'Fixam App - ' + (description || 'coin purchase'),
     notification_url: notificationUrl,
     redirect_url: redirectUrl,
     customer: {
-      name: name || 'Fixam User',
-      email: email || 'user@fixam.net'
+      name: 'Fixam - ' + (name || 'User'),
+      email: email || 'payments@fixam.net'
     },
     merchant_bears_cost: false,
     mobile_money: {
