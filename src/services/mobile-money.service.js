@@ -215,33 +215,26 @@ async function requestToPayWithKora({
     return { error: ['Notification and redirect URLs required'] }
   }
 
-  const transactionId = uuidv4()
+  const cleanDescription = (description && description.trim().length > 0) 
+    ? description.trim() 
+    : 'Fixam App coin purchase';
 
-  // Auto-detect carrier provider (MTN vs Orange) for Cameroon numbers
-  let provider = null;
-  const localDigits = phoneNumber.startsWith('237') ? phoneNumber.slice(3) : phoneNumber;
-  if (['67','68','650','651','652','653','654'].some(p => localDigits.startsWith(p))) {
-    provider = 'mtn';
-  } else if (['69','655','656','657','658','659'].some(p => localDigits.startsWith(p))) {
-    provider = 'orange';
-  }
+  const transactionId = uuidv4()
 
   const structuredPayload = {
     amount: Number(amount),
     currency: currency,
     reference: transactionId,
-    description: 'Fixam App - ' + (description || 'coin purchase'),
+    description: cleanDescription,
     notification_url: notificationUrl,
     redirect_url: redirectUrl,
     customer: {
-      name: 'Fixam - ' + (name || 'User'),
-      email: email || 'payments@fixam.net'
+      name: name || 'Fixam User',
+      email: (email && email.includes('@')) ? email : 'user@fixam.net'
     },
     merchant_bears_cost: false,
     mobile_money: {
-      number: phoneNumber,
-      phone: phoneNumber,
-      ...(provider ? { provider } : {})
+      number: phoneNumber
     }
   }
 
