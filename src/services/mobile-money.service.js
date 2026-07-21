@@ -217,6 +217,15 @@ async function requestToPayWithKora({
 
   const transactionId = uuidv4()
 
+  // Auto-detect carrier provider (MTN vs Orange) for Cameroon numbers
+  let provider = null;
+  const localDigits = phoneNumber.startsWith('237') ? phoneNumber.slice(3) : phoneNumber;
+  if (['67','68','650','651','652','653','654'].some(p => localDigits.startsWith(p))) {
+    provider = 'mtn';
+  } else if (['69','655','656','657','658','659'].some(p => localDigits.startsWith(p))) {
+    provider = 'orange';
+  }
+
   const structuredPayload = {
     amount: Number(amount),
     currency: currency,
@@ -230,7 +239,9 @@ async function requestToPayWithKora({
     },
     merchant_bears_cost: false,
     mobile_money: {
-      number: phoneNumber
+      number: phoneNumber,
+      phone: phoneNumber,
+      ...(provider ? { provider } : {})
     }
   }
 
@@ -307,7 +318,7 @@ async function getPaymentStatusFromKora(transactionRef) {
                         (result.message !== 'Charge retrieved successfully' ? result.message : null);
 
     if (!failureReason && ['failed', 'cancelled', 'canceled', 'expired', 'rejected', 'declined'].includes(rawStatus)) {
-      failureReason = 'Mobile Money payment was declined or has insufficient balance.';
+      failureReason = 'payments.insufficientFundsOrDeclined';
     }
 
     return {
