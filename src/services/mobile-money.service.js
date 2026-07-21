@@ -41,7 +41,7 @@ const normalizeProvider = (provider) => {
 const validatePhoneNumber = (phone) => {
   const formattedPhone = String(phone || '').replace(/\s+/g, '')
     .replace(/-/g, '').replace('+', '');
-  
+
   const prefixes = ['237', '254', '233', '225', '255', '20', '234'];
   const hasPrefix = prefixes.some(p => formattedPhone.startsWith(p));
   const phoneNumber = hasPrefix ? formattedPhone : '237' + formattedPhone;
@@ -191,56 +191,76 @@ async function requestToPayWithKora({
   redirectUrl,
   notificationUrl,
   name = 'Fixam User',
-  email = 'user@fixam.net',
+  email,
   phone
 }) {
-  const formattedPhone = String(phone || '').replace(/\s+/g, '')
-    .replace(/-/g, '').replace('+', '')
+  // Validate required fields manually
+  // (no Zod in backend JS — simpler validation)
   
-  const prefixes = ['237', '254', '233', '225', '255', '20', '234']
-  const hasPrefix = prefixes.some(p => formattedPhone.startsWith(p))
-  const phoneNumber = hasPrefix ? formattedPhone : '237' + formattedPhone
-
-  // Validate required fields
-  if (!amount || amount <= 0) {
+  if (!amount || Number(amount) <= 0) {
     return { error: ['Amount must be positive'] }
   }
-  if (!phoneNumber || !/^\d{8,15}$/.test(phoneNumber)) {
-    return { error: ['Phone must be 8-15 digits'] }
+  
+  if (!phone || !/^\d{8,15}$/.test(phone)) {
+    return { 
+      error: ['Phone must be 8-15 digits with country code. Example: 237682803006'] 
+    }
+  }
+  
+  if (!description || description.trim().length === 0) {
+    return { error: ['Description is required'] }
+  }
+  
+  if (!redirectUrl || !notificationUrl) {
+    return { error: ['Redirect and notification URLs are required'] }
   }
 
   const transactionId = uuidv4()
 
   const structuredPayload = {
     amount: Number(amount),
-    currency: currency,
+    currency: currency || 'XAF',
     reference: transactionId,
-    description: 'Fixam App - ' + (description || 'coin purchase'),
+    description: description,
+    notification_url: notificationUrl,
+    redirect_url: redirectUrl,
     customer: {
-      name: 'Fixam - ' + (name || 'User'),
-      email: email || 'payments@fixam.net'
+      name: name || 'Fixam User',
+      email: email || undefined
     },
     merchant_bears_cost: false,
     mobile_money: {
-      number: phoneNumber
+      number: phone
     }
   }
 
+  // Remove email from customer if undefined
+  if (!structuredPayload.customer.email) {
+    delete structuredPayload.customer.email
+  }
+
   try {
-    const koraUrl = process.env.KORA_MOBILE_MONEY_URL || 'https://api.korapay.com/merchant/api/v1/charges/mobile-money';
+    console.log('[Kora] Initiating payment:', {
+      reference: transactionId,
+      amount: Number(amount),
+      currency: currency || 'XAF',
+      phone: phone
+    })
+
     const koraRequest = await axios.post(
-      koraUrl,
+      process.env.KORA_MOBILE_MONEY_URL,
       structuredPayload,
       {
         headers: {
-          Authorization: `Bearer ${process.env.KORA_SECRET_KEY}`,
+          'Authorization': `Bearer ${process.env.KORA_SECRET_KEY}`,
           'Content-Type': 'application/json'
-        }
+        },
+        timeout: 30000
       }
     )
 
     const response = koraRequest.data
-    console.log('[Kora] Payment initiated:', transactionId)
+    console.log('[Kora] Payment initiated successfully:', transactionId)
 
     return {
       response: response.data,
@@ -250,57 +270,61 @@ async function requestToPayWithKora({
     }
 
   } catch (error) {
-    console.error('[Kora] Payment initiation failed:',
-      error.response?.data || error.message)
+    console.error('[Kora] Payment initiation failed:')
+    console.error('[Kora] Status:', error.response?.status)
+    console.error('[Kora] Error data:', 
+      JSON.stringify(error.response?.data, null, 2))
+    console.error('[Kora] Message:', error.message)
+    
     return {
-      error: [error.response?.data?.message ||
-        'Payment initiation failed']
+      error: [
+        error.response?.data?.message || 
+        error.message || 
+        'Payment initiation failed'
+      ],
+      koraError: error.response?.data
     }
   }
 }
 
 async function getPaymentStatusFromKora(transactionRef) {
   try {
-    const statusUrlBase = process.env.KORA_PAYMENT_STATUS_URL || 'https://api.korapay.com/merchant/api/v1/charges/:reference';
-    const url = statusUrlBase.replace(':reference', transactionRef);
+    const url = process.env.KORA_PAYMENT_STATUS_URL
+      ?.replace(':reference', transactionRef)
+
+    console.log('[Kora] Checking status for:', transactionRef)
 
     const response = await axios.get(url, {
       headers: {
-        Authorization: `Bearer ${process.env.KORA_SECRET_KEY}`
-      }
+        'Authorization': `Bearer ${process.env.KORA_SECRET_KEY}`
+      },
+      timeout: 15000
     })
 
     const result = response.data
-    console.log('[Kora] Status check:', transactionRef,
-      result.data?.status)
-
-    // Extract the most specific failure reason available
-    let failureReason = result.data?.message || 
-                          result.data?.failure_reason || 
-                          result.data?.status_message || 
-                          (result.message !== 'Charge retrieved successfully' ? result.message : null);
-
-    const koraStatus = String(result.data?.status || '').toLowerCase();
-    if (['failed', 'cancelled', 'canceled', 'expired', 'rejected', 'declined', 'error'].includes(koraStatus)) {
-      failureReason = 'payments.insufficientFundsOrDeclined';
-    }
+    console.log('[Kora] Status result:', {
+      reference: transactionRef,
+      status: result.data?.status
+    })
 
     return {
       data: {
-        status: result.data?.status || 'pending',
-        transId: result.data?.reference || transactionRef,
-        reason: failureReason || 'payments.paymentNotCompleted'
+        status: result.data.status,
+        transId: result.data.reference,
+        reason: result.message
       }
     }
 
   } catch (error) {
-    console.error('[Kora] Status check failed:',
-      error.response?.data || error.message)
+    console.error('[Kora] Status check failed:', error.message)
+    console.error('[Kora] Status error data:', 
+      error.response?.data)
+    
     return {
       data: {
-        status: 'error',
+        status: 'failed',
         transId: transactionRef,
-        reason: error.response?.data?.message ||
+        reason: error.response?.data?.message || 
           'Status check failed'
       }
     }
