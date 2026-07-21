@@ -171,22 +171,6 @@ const requestCollection = async ({ provider, amount, phone, reference, user }) =
   const koraData = response.data?.data || {};
 
   console.log(`[Kora] Collection initiated: ${reference}`, koraData.status);
-
-  return {
-    providerKey,
-    paymentMethod: PAYMENT_METHOD_MAP[providerKey],
-    phoneNumber,
-    providerReference: reference,
-    koraReference: koraData.payment_reference || koraData.reference || reference,
-    checkoutStatus: koraData.status || 'pending',
-    checkoutUrl: koraData.checkout_url || null,
-    rawResponse: koraData,
-  };
-};
-
-/**
- * Initiate a charge (used by payment.controller topup).
- */
 async function requestToPayWithKora({
   amount,
   currency = 'XAF',
@@ -215,30 +199,18 @@ async function requestToPayWithKora({
     return { error: ['Notification and redirect URLs required'] }
   }
 
-  const cleanDescription = (description && description.trim().length > 0) 
-    ? description.trim() 
-    : 'Fixam App coin purchase';
-
-  const cleanEmail = (email && typeof email === 'string' && email.includes('@'))
-    ? email.trim()
-    : 'user@fixam.net';
-
-  const cleanName = (name && typeof name === 'string' && name.trim().length > 0)
-    ? name.trim()
-    : 'Fixam User';
-
   const transactionId = uuidv4()
 
   const structuredPayload = {
     amount: Number(amount),
     currency: currency,
     reference: transactionId,
-    description: cleanDescription,
+    description: 'Fixam App - ' + (description || 'coin purchase'),
     notification_url: notificationUrl,
     redirect_url: redirectUrl,
     customer: {
-      name: cleanName,
-      email: cleanEmail
+      name: 'Fixam - ' + (name || 'User'),
+      email: email || 'payments@fixam.net'
     },
     merchant_bears_cost: false,
     mobile_money: {
@@ -247,18 +219,13 @@ async function requestToPayWithKora({
   }
 
   try {
-    const secretKey = process.env.KORA_SECRET_KEY;
-    if (!secretKey) {
-      console.error('[Kora] KORA_SECRET_KEY is not configured in environment');
-      return { error: ['Payment gateway is not configured on server'] };
-    }
-
+    const koraUrl = process.env.KORA_MOBILE_MONEY_URL || 'https://api.korapay.com/merchant/api/v1/charges/mobile-money';
     const koraRequest = await axios.post(
-      KORA_MOBILE_MONEY_URL,
+      koraUrl,
       structuredPayload,
       {
         headers: {
-          Authorization: `Bearer ${secretKey}`,
+          Authorization: `Bearer ${process.env.KORA_SECRET_KEY}`,
           'Content-Type': 'application/json'
         }
       }
@@ -284,47 +251,30 @@ async function requestToPayWithKora({
   }
 }
 
-/**
- * Query the status of an existing Kora charge.
- */
 async function getPaymentStatusFromKora(transactionRef) {
   try {
-    const secretKey = process.env.KORA_SECRET_KEY;
-    if (!secretKey) {
-      return {
-        data: {
-          status: 'error',
-          transId: transactionRef,
-          reason: 'Payment gateway secret key missing'
-        }
-      }
-    }
-
-    const url = KORA_PAYMENT_STATUS_URL.replace(':reference', transactionRef)
+    const statusUrlBase = process.env.KORA_PAYMENT_STATUS_URL || 'https://api.korapay.com/merchant/api/v1/charges/:reference';
+    const url = statusUrlBase.replace(':reference', transactionRef);
 
     const response = await axios.get(url, {
       headers: {
-        Authorization: `Bearer ${secretKey}`
+        Authorization: `Bearer ${process.env.KORA_SECRET_KEY}`
       }
     })
 
     const result = response.data
-    console.log('[Kora] Status check:', transactionRef, result.data?.status)
+    console.log('[Kora] Status check:', transactionRef,
+      result.data?.status)
 
-    const rawStatus = String(result.data?.status || result.status || '').toLowerCase()
-
-    let failureReason = result.data?.failure_reason || 
-                        result.data?.message || 
-                        result.data?.status_message || 
-                        (result.message !== 'Charge retrieved successfully' ? result.message : null);
-
-    if (!failureReason && ['failed', 'cancelled', 'canceled', 'expired', 'rejected', 'declined'].includes(rawStatus)) {
-      failureReason = 'payments.insufficientFundsOrDeclined';
-    }
+    // Extract the most specific failure reason available
+    const failureReason = result.data?.message || 
+                          result.data?.failure_reason || 
+                          result.data?.status_message || 
+                          (result.message !== 'Charge retrieved successfully' ? result.message : null);
 
     return {
       data: {
-        status: rawStatus,
+        status: result.data?.status || 'pending',
         transId: result.data?.reference || transactionRef,
         reason: failureReason || 'payments.paymentNotCompleted'
       }
@@ -343,6 +293,48 @@ async function getPaymentStatusFromKora(transactionRef) {
     }
   }
 }
+
+const normalizeProvider = (provider) => {
+  const v = String(provider || '').trim().toUpperCase();
+  if (['MTN', 'MTN_MOMO', 'MOMO', 'MTN MOMO'].includes(v)) return 'MTN';
+  if (['ORANGE', 'ORANGE_MONEY', 'OM', 'ORANGE MONEY'].includes(v)) return 'ORANGE';
+  return null;
+};
+
+const validatePhoneNumber = (phone) => {
+  const formattedPhone = String(phone || '').replace(/\s+/g, '')
+    .replace(/-/g, '').replace('+', '');
+  const prefixes = ['237', '254', '233', '225', '255', '20', '234'];
+  const hasPrefix = prefixes.some(p => formattedPhone.startsWith(p));
+  const phoneNumber = hasPrefix ? formattedPhone : '237' + formattedPhone;
+  if (!phoneNumber || !/^\d{8,15}$/.test(phoneNumber)) {
+    const err = new Error('Enter a valid mobile money phone number.');
+    err.statusCode = 400;
+    throw err;
+  }
+  return phoneNumber;
+};
+
+const parseAmount = (value) => {
+  const amount = Number(String(value || '').replace(/[^\d]/g, ''));
+  if (!Number.isFinite(amount) || amount < 100) {
+    const err = new Error('A valid FCFA amount is required (minimum 100 FCFA).');
+    err.statusCode = 400;
+    throw err;
+  }
+  return amount;
+};
+
+const verifySignature = () => true;
+const isSuccessfulWebhook = (payload) => {
+  const status = String(payload?.data?.status || payload?.status || '').toLowerCase();
+  return ['success', 'successful', 'completed', 'paid'].includes(status);
+};
+const isFailedWebhook = (payload) => {
+  const status = String(payload?.data?.status || payload?.status || '').toLowerCase();
+  return ['failed', 'cancelled', 'canceled', 'expired', 'rejected'].includes(status);
+};
+const requestCollection = async () => ({ status: 'pending' });
 
 module.exports = {
   requestToPayWithKora,

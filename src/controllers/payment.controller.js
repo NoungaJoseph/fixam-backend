@@ -93,9 +93,8 @@ const topup = async (req, res) => {
       }
     })
 
-    // Call Kora API — ensure HTTPS URLs for redirect and webhook
-    const rawBaseUrl = process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || `${req.protocol}://${req.get('host')}`;
-    const baseUrl = rawBaseUrl.startsWith('http://') ? rawBaseUrl.replace('http://', 'https://') : (rawBaseUrl.startsWith('https://') ? rawBaseUrl : `https://${rawBaseUrl}`);
+    // Call Kora API
+    const baseUrl = process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
     const redirectUrl = `${baseUrl}/api/payments/redirect`;
     const notificationUrl = `${baseUrl}/api/payments/webhook/kora`;
 
@@ -192,7 +191,7 @@ const checkPaymentStatus = async (req, res) => {
 
     console.log('[Payment] Kora status:', reference, koraStatus)
 
-    if (['success', 'successful', 'completed', 'paid'].includes(koraStatus)) {
+    if (koraStatus === 'success') {
       // Add coins to wallet
       await prisma.wallet.update({
         where: { id: transaction.walletId },
@@ -221,7 +220,7 @@ const checkPaymentStatus = async (req, res) => {
       })
     }
 
-    if (['failed', 'cancelled', 'canceled', 'expired', 'rejected', 'declined', 'error'].includes(koraStatus)) {
+    if (koraStatus === 'failed') {
       await prisma.transaction.update({
         where: { reference },
         data: { status: 'FAILED' }
