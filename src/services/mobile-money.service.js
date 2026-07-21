@@ -216,33 +216,17 @@ async function requestToPayWithKora({
 
   const transactionId = uuidv4()
 
-  const mobileMoneyConfig = {
-    number: phone
-  }
-
-  // Kora requires the operator/provider for Cameroon
-  if (provider) {
-    const p = provider.toLowerCase()
-    if (p.includes('mtn')) mobileMoneyConfig.operator = 'mtn'
-    if (p.includes('orange') || p.includes('om')) mobileMoneyConfig.operator = 'orange'
-  }
-
   const structuredPayload = {
+    reference: transactionId,
     amount: Number(amount),
     currency: currency || 'XAF',
-    reference: transactionId,
-    description: description,
     customer: {
       name: name || 'Fixam User',
-      email: email || undefined
+      email: email || `${transactionId.toLowerCase()}@fixam.app`
     },
-    merchant_bears_cost: false,
-    mobile_money: mobileMoneyConfig
-  }
-
-  // Remove email from customer if undefined
-  if (!structuredPayload.customer.email) {
-    delete structuredPayload.customer.email
+    mobile_money: {
+      number: phone
+    }
   }
 
   try {
@@ -250,8 +234,7 @@ async function requestToPayWithKora({
       reference: transactionId,
       amount: Number(amount),
       currency: currency || 'XAF',
-      phone: phone,
-      operator: mobileMoneyConfig.operator
+      phone: phone
     })
 
     const koraRequest = await axios.post(
