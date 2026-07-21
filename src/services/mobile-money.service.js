@@ -218,12 +218,12 @@ async function requestToPayWithKora({
     amount: Number(amount),
     currency: currency,
     reference: transactionId,
-    description: 'Fixam App - ' + (description || 'coin purchase'),
+    description: description || 'coin purchase',
     notification_url: notificationUrl,
     redirect_url: redirectUrl,
     customer: {
-      name: 'Fixam - ' + (name || 'User'),
-      email: email || 'payments@fixam.net'
+      name: name || 'Fixam User',
+      email: email || 'user@fixam.net'
     },
     merchant_bears_cost: false,
     mobile_money: {
@@ -280,10 +280,15 @@ async function getPaymentStatusFromKora(transactionRef) {
       result.data?.status)
 
     // Extract the most specific failure reason available
-    const failureReason = result.data?.message || 
+    let failureReason = result.data?.message || 
                           result.data?.failure_reason || 
                           result.data?.status_message || 
                           (result.message !== 'Charge retrieved successfully' ? result.message : null);
+
+    const koraStatus = String(result.data?.status || '').toLowerCase();
+    if (['failed', 'cancelled', 'canceled', 'expired', 'rejected', 'declined', 'error'].includes(koraStatus)) {
+      failureReason = 'payments.insufficientFundsOrDeclined';
+    }
 
     return {
       data: {
