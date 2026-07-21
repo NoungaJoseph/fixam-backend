@@ -219,16 +219,15 @@ async function requestToPayWithKora({
     ? description.trim() 
     : 'Fixam App coin purchase';
 
-  const transactionId = uuidv4()
+  const cleanEmail = (email && typeof email === 'string' && email.includes('@'))
+    ? email.trim()
+    : 'user@fixam.net';
 
-  // Auto-detect carrier provider for Cameroon numbers
-  let provider = null;
-  const localDigits = phoneNumber.startsWith('237') ? phoneNumber.slice(3) : phoneNumber;
-  if (['67','68','650','651','652','653','654'].some(p => localDigits.startsWith(p))) {
-    provider = 'mtn';
-  } else if (['69','655','656','657','658','659'].some(p => localDigits.startsWith(p))) {
-    provider = 'orange';
-  }
+  const cleanName = (name && typeof name === 'string' && name.trim().length > 0)
+    ? name.trim()
+    : 'Fixam User';
+
+  const transactionId = uuidv4()
 
   const structuredPayload = {
     amount: Number(amount),
@@ -238,13 +237,12 @@ async function requestToPayWithKora({
     notification_url: notificationUrl,
     redirect_url: redirectUrl,
     customer: {
-      name: name || 'Fixam User',
-      email: (email && email.includes('@')) ? email : 'user@fixam.net'
+      name: cleanName,
+      email: cleanEmail
     },
     merchant_bears_cost: false,
     mobile_money: {
-      number: phoneNumber,
-      ...(provider ? { provider } : {})
+      number: phoneNumber
     }
   }
 
