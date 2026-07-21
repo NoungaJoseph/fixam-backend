@@ -79,7 +79,8 @@ const topup = async (req, res) => {
       notificationUrl: 'https://api.usefixam.com/api/payments/webhook/kora',
       name: 'Fixam - ' + (user.fullName || 'User'),
       email: user.email || undefined,
-      phone: formattedPhone  // must be 237XXXXXXXXX
+      phone: formattedPhone,  // must be 237XXXXXXXXX
+      provider: provider
     })
 
     // Check for validation errors

@@ -192,11 +192,10 @@ async function requestToPayWithKora({
   notificationUrl,
   name = 'Fixam User',
   email,
-  phone
+  phone,
+  provider
 }) {
   // Validate required fields manually
-  // (no Zod in backend JS — simpler validation)
-  
   if (!amount || Number(amount) <= 0) {
     return { error: ['Amount must be positive'] }
   }
@@ -217,6 +216,17 @@ async function requestToPayWithKora({
 
   const transactionId = uuidv4()
 
+  const mobileMoneyConfig = {
+    number: phone
+  }
+
+  // Kora requires the operator/provider for Cameroon
+  if (provider) {
+    const p = provider.toLowerCase()
+    if (p.includes('mtn')) mobileMoneyConfig.operator = 'mtn'
+    if (p.includes('orange') || p.includes('om')) mobileMoneyConfig.operator = 'orange'
+  }
+
   const structuredPayload = {
     amount: Number(amount),
     currency: currency || 'XAF',
@@ -229,9 +239,7 @@ async function requestToPayWithKora({
       email: email || undefined
     },
     merchant_bears_cost: false,
-    mobile_money: {
-      number: phone
-    }
+    mobile_money: mobileMoneyConfig
   }
 
   // Remove email from customer if undefined
@@ -244,7 +252,8 @@ async function requestToPayWithKora({
       reference: transactionId,
       amount: Number(amount),
       currency: currency || 'XAF',
-      phone: phone
+      phone: phone,
+      operator: mobileMoneyConfig.operator
     })
 
     const koraRequest = await axios.post(
