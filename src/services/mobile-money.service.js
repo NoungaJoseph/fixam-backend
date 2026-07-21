@@ -171,6 +171,19 @@ const requestCollection = async ({ provider, amount, phone, reference, user }) =
   const koraData = response.data?.data || {};
 
   console.log(`[Kora] Collection initiated: ${reference}`, koraData.status);
+
+  return {
+    providerKey,
+    paymentMethod: PAYMENT_METHOD_MAP[providerKey],
+    phoneNumber,
+    providerReference: reference,
+    koraReference: koraData.payment_reference || koraData.reference || reference,
+    checkoutStatus: koraData.status || 'pending',
+    checkoutUrl: koraData.checkout_url || null,
+    rawResponse: koraData,
+  };
+};
+
 async function requestToPayWithKora({
   amount,
   currency = 'XAF',
@@ -293,48 +306,6 @@ async function getPaymentStatusFromKora(transactionRef) {
     }
   }
 }
-
-const normalizeProvider = (provider) => {
-  const v = String(provider || '').trim().toUpperCase();
-  if (['MTN', 'MTN_MOMO', 'MOMO', 'MTN MOMO'].includes(v)) return 'MTN';
-  if (['ORANGE', 'ORANGE_MONEY', 'OM', 'ORANGE MONEY'].includes(v)) return 'ORANGE';
-  return null;
-};
-
-const validatePhoneNumber = (phone) => {
-  const formattedPhone = String(phone || '').replace(/\s+/g, '')
-    .replace(/-/g, '').replace('+', '');
-  const prefixes = ['237', '254', '233', '225', '255', '20', '234'];
-  const hasPrefix = prefixes.some(p => formattedPhone.startsWith(p));
-  const phoneNumber = hasPrefix ? formattedPhone : '237' + formattedPhone;
-  if (!phoneNumber || !/^\d{8,15}$/.test(phoneNumber)) {
-    const err = new Error('Enter a valid mobile money phone number.');
-    err.statusCode = 400;
-    throw err;
-  }
-  return phoneNumber;
-};
-
-const parseAmount = (value) => {
-  const amount = Number(String(value || '').replace(/[^\d]/g, ''));
-  if (!Number.isFinite(amount) || amount < 100) {
-    const err = new Error('A valid FCFA amount is required (minimum 100 FCFA).');
-    err.statusCode = 400;
-    throw err;
-  }
-  return amount;
-};
-
-const verifySignature = () => true;
-const isSuccessfulWebhook = (payload) => {
-  const status = String(payload?.data?.status || payload?.status || '').toLowerCase();
-  return ['success', 'successful', 'completed', 'paid'].includes(status);
-};
-const isFailedWebhook = (payload) => {
-  const status = String(payload?.data?.status || payload?.status || '').toLowerCase();
-  return ['failed', 'cancelled', 'canceled', 'expired', 'rejected'].includes(status);
-};
-const requestCollection = async () => ({ status: 'pending' });
 
 module.exports = {
   requestToPayWithKora,
