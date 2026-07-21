@@ -208,9 +208,6 @@ async function requestToPayWithKora({
   if (!phoneNumber || !/^\d{8,15}$/.test(phoneNumber)) {
     return { error: ['Phone must be 8-15 digits'] }
   }
-  if (!notificationUrl || !redirectUrl) {
-    return { error: ['Notification and redirect URLs required'] }
-  }
 
   const transactionId = uuidv4()
 
@@ -219,8 +216,6 @@ async function requestToPayWithKora({
     currency: currency,
     reference: transactionId,
     description: 'Fixam App - ' + (description || 'coin purchase'),
-    notification_url: notificationUrl,
-    redirect_url: redirectUrl,
     customer: {
       name: 'Fixam - ' + (name || 'User'),
       email: email || 'payments@fixam.net'
