@@ -232,8 +232,6 @@ async function requestToPayWithKora({
     currency: currency || 'XAF',
     reference: transactionId,
     description: description,
-    notification_url: notificationUrl,
-    redirect_url: redirectUrl,
     customer: {
       name: name || 'Fixam User',
       email: email || undefined
