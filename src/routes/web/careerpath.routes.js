@@ -13,5 +13,6 @@ router.post('/onboard', requireAuth, careerpathController.onboardSkills);
 router.post('/enroll', requireAuth, careerpathController.enroll);
 router.post('/module/complete', requireAuth, careerpathController.completeModuleWithExam);
 router.post('/certificate', requireAuth, careerpathController.generateCertificate);
+router.get('/dashboard', requireAuth, careerpathController.getUserDashboard);
 
 module.exports = router;

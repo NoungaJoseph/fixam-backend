@@ -80,3 +80,28 @@ exports.generateCertificate = async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 };
+
+// Get Dashboard Data for user
+exports.getUserDashboard = async (req, res) => {
+  try {
+    const { userId } = req.user;
+    
+    const enrollments = await prisma.careerpathEnrollment.findMany({
+      where: { userId },
+    });
+
+    const certificates = await prisma.careerpathCertificate.findMany({
+      where: { userId }
+    });
+
+    res.status(200).json({ 
+      success: true, 
+      activePaths: enrollments,
+      achievements: certificates,
+      recommended: [] // In a real app, this would be computed based on profile skills
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
