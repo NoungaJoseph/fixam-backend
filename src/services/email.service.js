@@ -98,6 +98,23 @@ const sendMarketingBroadcast = async (emails, subject, content) => {
   await sendEmail({ email: emails, subject, html }); // Resend supports passing an array of up to 50 emails to \`to\`
 };
 
+const sendModuleCompletionEmail = async (email, fullName, moduleName, score) => {
+  const subject = `Congratulations! You've completed ${moduleName} 🎓`;
+  const html = `
+    <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 10px; max-width: 500px;">
+      <h2 style="color: #0D9488;">${subject}</h2>
+      <p>Hello ${fullName || 'there'},</p>
+      <p>Great job! We are thrilled to inform you that you have successfully completed the <strong>${moduleName}</strong> module.</p>
+      <div style="background: #F0FDF4; padding: 15px; border-radius: 8px; color: #166534; font-size: 18px; text-align: center; margin: 20px 0;">
+        <strong>Score: ${score}%</strong>
+      </div>
+      <p>Keep up the great momentum and continue progressing on your career path.</p>
+      <p>Best regards,<br>The Fixam Academy Team</p>
+    </div>
+  `;
+  await sendEmail({ email, subject, html });
+};
+
 const sendSecurityNotice = async (emails, issueDetails) => {
   const html = `
     <div style="font-family: Arial, sans-serif; padding: 20px; border: 2px solid #faad14; border-radius: 10px; max-width: 600px;">
@@ -112,10 +129,11 @@ const sendSecurityNotice = async (emails, issueDetails) => {
 };
 
 module.exports = {
-  sendOTP,
   sendEmail,
+  sendOTP,
   sendWelcomeEmail,
   sendSuspiciousLoginAlert,
   sendMarketingBroadcast,
-  sendSecurityNotice
+  sendSecurityNotice,
+  sendModuleCompletionEmail
 };

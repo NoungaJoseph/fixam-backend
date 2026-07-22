@@ -91,6 +91,10 @@ app.use('/uploads', express.static('uploads', {
   maxAge: process.env.NODE_ENV === 'production' ? '7d' : 0,
   fallthrough: false
 }));
+app.use('/public', express.static('public', {
+  maxAge: process.env.NODE_ENV === 'production' ? '7d' : 0,
+  fallthrough: false
+}));
 if (process.env.NODE_ENV !== 'production') {
   app.use(morgan('dev'));
 }
