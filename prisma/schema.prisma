@@ -150,6 +150,11 @@ model User {
   blockedBy            User[]                    @relation("BlockedUsers")
   favoriteProviders    ClientFavoriteProvider[]  @relation("ClientFavoriteProviders")
   unlockedProviders    UnlockedProvider[]        @relation("ClientUnlocks")
+  
+  // Web & Careerpath Relations
+  careerpathEnrollments   CareerpathEnrollment[]
+  careerpathProgress      CareerpathModuleProgress[]
+  careerpathCertificates  CareerpathCertificate[]
 
   @@index([role])
 }
@@ -610,4 +615,74 @@ model UnlockedProvider {
   @@unique([clientId, providerId])
   @@index([clientId])
   @@index([providerId])
+}
+
+// --- CAREERPATH MODELS ---
+
+model CareerpathEnrollment {
+  id           String    @id @default(uuid())
+  userId       String
+  categoryKey  String    
+  status       String    @default("ACTIVE") // ACTIVE, COMPLETED, DROPPED
+  progress     Float     @default(0.0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user         User      @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([categoryKey])
+}
+
+model CareerpathModuleProgress {
+  id           String    @id @default(uuid())
+  userId       String
+  categoryKey  String
+  moduleId     String
+  isCompleted  Boolean   @default(false)
+  score        Float?
+  completedAt  DateTime?
+  
+  user         User      @relation(fields: [userId], references: [id])
+
+  @@unique([userId, categoryKey, moduleId])
+}
+
+model CareerpathCertificate {
+  id             String    @id @default(uuid())
+  userId         String
+  categoryKey    String
+  issuedAt       DateTime  @default(now())
+  certificateUrl String?
+  
+  user           User      @relation(fields: [userId], references: [id])
+
+  @@unique([userId, categoryKey])
+}
+
+// --- ANALYTICS MODELS ---
+
+model PageView {
+  id           String    @id @default(uuid())
+  path         String
+  domain       String    
+  ipAddress    String?
+  userAgent    String?
+  userId       String?
+  duration     Int?      
+  createdAt    DateTime  @default(now())
+
+  @@index([domain, path])
+  @@index([createdAt])
+}
+
+model SecurityLog {
+  id           String    @id @default(uuid())
+  eventType    String    
+  ipAddress    String?
+  details      Json?
+  createdAt    DateTime  @default(now())
+
+  @@index([eventType])
+  @@index([createdAt])
 }
