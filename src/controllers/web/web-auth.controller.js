@@ -118,3 +118,23 @@ exports.signup = async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 };
+
+// Check if email exists
+exports.checkEmail = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ success: false, message: 'Email is required' });
+
+    const existingUser = await prisma.user.findFirst({
+      where: { email }
+    });
+
+    if (existingUser) {
+      return res.status(200).json({ success: true, exists: true });
+    }
+
+    res.status(200).json({ success: true, exists: false });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
