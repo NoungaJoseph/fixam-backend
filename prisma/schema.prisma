@@ -114,6 +114,7 @@ model User {
   referralCode           String?   @unique
   referredBy             String?
   dob                    DateTime?
+  careerStatus           String?
   lastNameChange         DateTime?
   lastPasswordChange     DateTime?
   twoFactorEnabled       Boolean   @default(false)
@@ -155,6 +156,7 @@ model User {
   careerpathEnrollments   CareerpathEnrollment[]
   careerpathProgress      CareerpathModuleProgress[]
   careerpathCertificates  CareerpathCertificate[]
+  careerpathBookmarks     CareerpathBookmark[]
 
   @@index([role])
 }
@@ -685,4 +687,15 @@ model SecurityLog {
 
   @@index([eventType])
   @@index([createdAt])
+}
+
+model CareerpathBookmark {
+  id          String   @id @default(uuid())
+  userId      String
+  categoryKey String
+  createdAt   DateTime @default(now())
+  
+  user        User     @relation(fields: [userId], references: [id])
+  
+  @@unique([userId, categoryKey])
 }

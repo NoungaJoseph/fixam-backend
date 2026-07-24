@@ -29,16 +29,19 @@ exports.login = async (req, res) => {
       domain: process.env.NODE_ENV === 'production' ? '.usefixam.com' : 'localhost'
     });
 
-    res.status(200).json({ success: true, user: { id: user.id, fullName: user.fullName, email: user.email, role: user.role }, token });
+    // Fetch raw fields not yet in prisma client generated schema
+    const rawData = await prisma.$queryRaw`SELECT dob, "careerStatus" FROM "User" WHERE id = ${user.id}`;
+    const rawUser = rawData && rawData[0] ? rawData[0] : {};
+
+    res.status(200).json({ success: true, user: { id: user.id, fullName: user.fullName, email: user.email, role: user.role, dob: rawUser.dob, careerStatus: rawUser.careerStatus }, token });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
 };
 
-// Signup for CareerPath (creates a PROVIDER user or updates existing)
 exports.signup = async (req, res) => {
   try {
-    const { firstName, lastName, email, password } = req.body;
+    const { firstName, lastName, email, password, dob, status } = req.body;
     
     // Check if user exists
     let user = await prisma.user.findFirst({
@@ -101,6 +104,18 @@ exports.signup = async (req, res) => {
       });
     }
 
+    // Save dob and status using executeRaw to avoid Prisma client cache issues
+    if (dob || status) {
+      const formattedDob = dob ? new Date(dob).toISOString() : null;
+      if (formattedDob && status) {
+        await prisma.$executeRaw`UPDATE "User" SET "dob" = ${formattedDob}::timestamp, "careerStatus" = ${status} WHERE id = ${user.id}`;
+      } else if (formattedDob) {
+        await prisma.$executeRaw`UPDATE "User" SET "dob" = ${formattedDob}::timestamp WHERE id = ${user.id}`;
+      } else if (status) {
+        await prisma.$executeRaw`UPDATE "User" SET "careerStatus" = ${status} WHERE id = ${user.id}`;
+      }
+    }
+
     // Generate token securely
     const token = jwt.sign({ userId: user.id, role: user.role }, process.env.JWT_SECRET || 'secret', { expiresIn: '7d' });
 
@@ -112,7 +127,11 @@ exports.signup = async (req, res) => {
       domain: process.env.NODE_ENV === 'production' ? '.usefixam.com' : 'localhost'
     });
 
-    res.status(200).json({ success: true, user: { id: user.id, fullName: user.fullName, email: user.email, role: user.role }, token });
+    // Fetch raw fields not yet in prisma client generated schema
+    const rawData = await prisma.$queryRaw`SELECT dob, "careerStatus" FROM "User" WHERE id = ${user.id}`;
+    const rawUser = rawData && rawData[0] ? rawData[0] : {};
+
+    res.status(200).json({ success: true, user: { id: user.id, fullName: user.fullName, email: user.email, role: user.role, dob: rawUser.dob, careerStatus: rawUser.careerStatus }, token });
   } catch (error) {
     console.error(error);
     res.status(500).json({ success: false, error: error.message });

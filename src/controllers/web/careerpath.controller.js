@@ -146,10 +146,15 @@ exports.getUserDashboard = async (req, res) => {
       where: { userId }
     });
 
+    // Fetch bookmarks using raw SQL to bypass prisma client cache
+    const rawBookmarks = await prisma.$queryRaw`SELECT "categoryKey" FROM "CareerpathBookmark" WHERE "userId" = ${userId}`;
+    const savedPrograms = rawBookmarks.map(b => ({ categoryKey: b.categoryKey }));
+
     res.status(200).json({ 
       success: true, 
       activePaths: enrollments,
       achievements: certificates,
+      savedPrograms,
       recommended: [] // In a real app, this would be computed based on profile skills
     });
   } catch (error) {
@@ -157,3 +162,25 @@ exports.getUserDashboard = async (req, res) => {
   }
 };
 
+// Toggle Bookmark
+exports.toggleBookmark = async (req, res) => {
+  try {
+    const { userId } = req.user;
+    const { categoryKey } = req.params;
+    
+    // Check if it exists
+    const existing = await prisma.$queryRaw`SELECT id FROM "CareerpathBookmark" WHERE "userId" = ${userId} AND "categoryKey" = ${categoryKey}`;
+    
+    if (existing && existing.length > 0) {
+      await prisma.$executeRaw`DELETE FROM "CareerpathBookmark" WHERE id = ${existing[0].id}`;
+      return res.status(200).json({ success: true, saved: false });
+    } else {
+      const crypto = require('crypto');
+      const uuid = crypto.randomUUID();
+      await prisma.$executeRaw`INSERT INTO "CareerpathBookmark" (id, "userId", "categoryKey", "createdAt") VALUES (${uuid}, ${userId}, ${categoryKey}, NOW())`;
+      return res.status(200).json({ success: true, saved: true });
+    }
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
