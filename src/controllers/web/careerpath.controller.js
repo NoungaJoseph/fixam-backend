@@ -4,7 +4,7 @@ const prisma = new PrismaClient();
 // Careerpath Onboarding: Select Skills
 exports.onboardSkills = async (req, res) => {
   try {
-    const { userId } = req.user;
+    const userId = req.user.id;
     const { selectedSkills } = req.body;
     
     // Save selected skills to user profile
@@ -23,7 +23,7 @@ exports.onboardSkills = async (req, res) => {
 // Enroll in a career path
 exports.enroll = async (req, res) => {
   try {
-    const { userId } = req.user;
+    const userId = req.user.id;
     const { categoryKey } = req.body;
     
     const enrollment = await prisma.careerpathEnrollment.create({
@@ -41,7 +41,7 @@ const { sendModuleCompletionEmail } = require('../../services/email.service');
 // Complete a module & handle smart exam
 exports.completeModuleWithExam = async (req, res) => {
   try {
-    const { userId } = req.user;
+    const userId = req.user.id;
     const { categoryKey, moduleId, examScore } = req.body;
     
     // Require minimum score to progress
@@ -79,7 +79,7 @@ exports.completeModuleWithExam = async (req, res) => {
 // Generate certificate upon completion
 exports.generateCertificate = async (req, res) => {
   try {
-    const { userId } = req.user;
+    const userId = req.user.id;
     const { categoryKey } = req.body;
     
     // Check if the certificate already exists
@@ -136,7 +136,7 @@ exports.generateCertificate = async (req, res) => {
 // Get Dashboard Data for user
 exports.getUserDashboard = async (req, res) => {
   try {
-    const { userId } = req.user;
+    const userId = req.user.id;
     
     const enrollments = await prisma.careerpathEnrollment.findMany({
       where: { userId },
@@ -165,7 +165,7 @@ exports.getUserDashboard = async (req, res) => {
 // Toggle Bookmark
 exports.toggleBookmark = async (req, res) => {
   try {
-    const { userId } = req.user;
+    const userId = req.user.id;
     const { categoryKey } = req.params;
     
     // Check if it exists
