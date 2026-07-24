@@ -71,8 +71,13 @@ const allowedOrigins = [
 app.use(cors({
   credentials: true,
   origin: function (origin, callback) {
-    const isLocalDev = process.env.NODE_ENV !== 'production'
-      && (origin?.startsWith('http://192.168.') || origin?.startsWith('http://localhost') || origin?.startsWith('http://10.') || origin?.startsWith('http://127.0.0.1'));
+    const isLocalDev = origin && (
+      origin.startsWith('http://localhost') ||
+      origin.startsWith('http://127.0.0.1') ||
+      origin.startsWith('http://192.168.') ||
+      origin.startsWith('http://10.') ||
+      /^http:\/\/172\.(1[6-9]|2[0-9]|3[0-1])\./.test(origin)
+    );
 
     if (!origin || allowedOrigins.includes(origin) || isLocalDev) {
       callback(null, true);
