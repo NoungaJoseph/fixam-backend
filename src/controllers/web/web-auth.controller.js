@@ -19,7 +19,7 @@ exports.login = async (req, res) => {
     if (!isValid) return res.status(401).json({ success: false, message: 'Invalid credentials' });
 
     // Generate token securely
-    const token = jwt.sign({ userId: user.id, role: user.role }, process.env.JWT_SECRET || 'secret', { expiresIn: '7d' });
+    const token = jwt.sign({ id: user.id, userId: user.id, role: user.role }, process.env.JWT_SECRET || 'secret', { expiresIn: '7d' });
 
     // Set secure HTTP-only cookie for Cross-Domain auth
     res.cookie('token', token, {
@@ -117,7 +117,7 @@ exports.signup = async (req, res) => {
     }
 
     // Generate token securely
-    const token = jwt.sign({ userId: user.id, role: user.role }, process.env.JWT_SECRET || 'secret', { expiresIn: '7d' });
+    const token = jwt.sign({ id: user.id, userId: user.id, role: user.role }, process.env.JWT_SECRET || 'secret', { expiresIn: '7d' });
 
     // Set secure HTTP-only cookie
     res.cookie('token', token, {

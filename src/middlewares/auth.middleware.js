@@ -13,40 +13,41 @@ const protect = async (req, res, next) => {
 
   if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
     token = req.headers.authorization.split(' ')[1];
-  } else if (req.cookies && req.cookies.jwt) {
-    token = req.cookies.jwt;
+  } else if (req.cookies) {
+    token = req.cookies.jwt || req.cookies.token;
   }
 
   if (token) {
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      debugLog('Token decoded:', decoded.id, decoded.role);
+      const userId = decoded.id || decoded.userId;
+      debugLog('Token decoded:', userId, decoded.role);
 
       try {
         const now = Date.now();
-        const cached = userCache.get(decoded.id);
+        const cached = userCache.get(userId);
 
         if (cached && (now - cached.timestamp < CACHE_TTL_MS)) {
           req.user = cached.user;
         } else {
           req.user = await prisma.user.findUnique({
-            where: { id: decoded.id },
+            where: { id: userId },
             include: { wallet: true, providerProfile: true }
           });
 
           if (req.user) {
-            userCache.set(decoded.id, { user: req.user, timestamp: now });
+            userCache.set(userId, { user: req.user, timestamp: now });
           }
         }
 
         if (!req.user) {
-          debugLog('User from token not found in DB:', decoded.id);
-          userCache.delete(decoded.id);
+          debugLog('User from token not found in DB:', userId);
+          userCache.delete(userId);
           return res.status(401).json({ success: false, message: 'User not found' });
         }
 
         if (req.user.isBlocked) {
-          userCache.delete(decoded.id);
+          userCache.delete(userId);
           return res.status(403).json({
             success: false,
             message: req.user.blockedReason || 'This account has been blocked. Please contact Fixam support.'
