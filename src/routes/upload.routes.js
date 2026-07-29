@@ -17,29 +17,36 @@ const allowedMimeTypes = new Set([
   'audio/caf',
   'audio/wav',
   'audio/ogg',
+  'video/mp4',
+  'video/quicktime',
+  'video/3gpp',
+  'video/webm',
+  'video/x-matroska',
+  'video/avi',
   'application/octet-stream'
 ]);
 
 const upload = multer({
   storage,
-  limits: { fileSize: 8 * 1024 * 1024 },
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB limit
   fileFilter: (req, file, cb) => {
-    if (!allowedMimeTypes.has(file.mimetype)) {
-      return cb(new Error('Only JPG, PNG, WEBP, and PDF files are allowed.'));
+    if (!allowedMimeTypes.has(file.mimetype) && !file.mimetype.startsWith('video/')) {
+      return cb(new Error('File format not supported.'));
     }
     cb(null, true);
   }
 });
 
 const acceptFile = upload.fields([
-  { name: 'file', maxCount: 1 },
-  { name: 'image', maxCount: 1 },
-  { name: 'document', maxCount: 1 },
-  { name: 'proof', maxCount: 1 },
+  { name: 'file', maxCount: 10 },
+  { name: 'image', maxCount: 10 },
+  { name: 'video', maxCount: 10 },
+  { name: 'document', maxCount: 5 },
+  { name: 'proof', maxCount: 5 },
 ]);
 
 const normalizeFile = (req, res, next) => {
-  req.file = req.file || req.files?.file?.[0] || req.files?.image?.[0] || req.files?.document?.[0] || req.files?.proof?.[0];
+  req.file = req.file || req.files?.file?.[0] || req.files?.image?.[0] || req.files?.video?.[0] || req.files?.document?.[0] || req.files?.proof?.[0];
   next();
 };
 

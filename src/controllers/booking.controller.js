@@ -85,11 +85,12 @@ const createBooking = async (req, res, next) => {
     let resolvedUrgency = urgencyLevel || 'NORMAL';
     if (resolvedUrgency === 'HIGH') resolvedUrgency = 'URGENT';
     if (resolvedUrgency === 'LOW') resolvedUrgency = 'NORMAL';
-    const coinCost = COIN_COSTS[resolvedUrgency] || 1;
+    const isProposal = Boolean(req.body.isProposal || req.body.isProjectProposal);
+    const coinCost = isProposal ? 0 : (COIN_COSTS[resolvedUrgency] || 1);
 
     const booking = await prisma.$transaction(async (tx) => {
       const wallet = await tx.wallet.findUnique({ where: { userId: req.user.id } });
-      if (!wallet || wallet.balance < coinCost) {
+      if (!isProposal && (!wallet || wallet.balance < coinCost)) {
         const error = new Error(`Insufficient coins. You need ${coinCost} coins for this booking.`);
         error.statusCode = 400;
         throw error;
@@ -100,8 +101,8 @@ const createBooking = async (req, res, next) => {
           clientId: req.user.id,
           providerId,
           taskId: taskId || null,
-          bookingDate: new Date(bookingDate),
-          bookingTime,
+          bookingDate: bookingDate ? new Date(bookingDate) : new Date(),
+          bookingTime: bookingTime || '09:00',
           bookingDuration: bookingDuration || 'DAY',
           urgencyLevel: resolvedUrgency,
           coinCost: coinCost,
@@ -112,21 +113,23 @@ const createBooking = async (req, res, next) => {
         include: includeBooking,
       });
 
-      await tx.wallet.update({
-        where: { userId: req.user.id },
-        data: { balance: { decrement: coinCost } },
-      });
+      if (coinCost > 0 && wallet) {
+        await tx.wallet.update({
+          where: { userId: req.user.id },
+          data: { balance: { decrement: coinCost } },
+        });
 
-      await tx.transaction.create({
-        data: {
-          walletId: wallet.id,
-          amount: coinCost,
-          type: 'DEDUCTION',
-          status: 'SUCCESS',
-          description: `Booking: ${resolvedUrgency} - ${provider.fullName || provider.phone || 'Provider'}`,
-          isSystemTransaction: false
-        },
-      });
+        await tx.transaction.create({
+          data: {
+            walletId: wallet.id,
+            amount: coinCost,
+            type: 'DEDUCTION',
+            status: 'SUCCESS',
+            reference: `BOOK-${newBooking.id.substring(0, 8)}`,
+            description: `Coins used for booking service: ${newBooking.id.substring(0, 8)}`
+          }
+        });
+      }
 
       return newBooking;
     });
