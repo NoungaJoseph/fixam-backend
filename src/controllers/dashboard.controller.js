@@ -73,10 +73,6 @@ const getDashboardData = async (req, res, next) => {
     // 2. Jobs Query
     let jobsQuery;
     if (role === 'PROVIDER') {
-      const providerLocation = req.user.location || '';
-      const parts = providerLocation.split(',');
-      const providerCity = parts[0] ? parts[0].trim() : '';
-
       jobsQuery = prisma.job.findMany({
         where: {
           clientId: { not: userId }, // Exclude own tasks
@@ -94,10 +90,7 @@ const getDashboardData = async (req, res, next) => {
             { isRemote: true },
             {
               isRemote: false,
-              country: userCountry,
-              ...(providerCity ? {
-                location: { contains: providerCity, mode: 'insensitive' }
-              } : {})
+              country: userCountry
             }
           ]
         },

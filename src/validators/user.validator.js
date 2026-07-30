@@ -17,7 +17,10 @@ const updateProfileSchema = z.object({
   portfolio: z.array(z.object({
     title: z.string().optional(),
     description: z.string().optional(),
-    imageUrl: z.string().optional()
+    imageUrl: z.string().optional(),
+    video: z.string().optional().nullable(),
+    videoUrl: z.string().optional().nullable(),
+    videos: z.array(z.string()).optional()
   })).optional(),
   certificates: z.array(z.object({
     title: z.string().optional(),
