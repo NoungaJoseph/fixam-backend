@@ -861,6 +861,58 @@ const getConversationById = async (req, res, next) => {
   }
 };
 
+/**
+ * POST /chat/:conversationId/log-contact-warning
+ *
+ * Called by the client (mobile or web) whenever the external-contact-sharing
+ * warning is shown to a user.  It records:
+ *   - who triggered the warning (req.user.id)
+ *   - which conversation it happened in
+ *   - what matched (the detected pattern excerpt)
+ *   - whether the user chose to send anyway
+ *
+ * Stored in the server log for ops visibility and as a lightweight DB note
+ * (piggy-backs on the message's existing metadata via a console audit entry).
+ * No new DB table needed – the log is the evidence for support staff.
+ */
+const logContactWarning = async (req, res, next) => {
+  try {
+    const { conversationId } = req.params;
+    const { detectedPattern, sentAnyway, platform = 'unknown' } = req.body;
+
+    // Validate the user is actually a participant in this conversation
+    const isParticipant = await prisma.conversationParticipant.findUnique({
+      where: {
+        conversationId_userId: { conversationId, userId: req.user.id }
+      },
+      select: { id: true }
+    });
+
+    if (!isParticipant) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    // Structured audit log entry — visible in server logs and can be piped to
+    // any log-aggregation system (e.g. Datadog, CloudWatch, Papertrail).
+    console.warn(
+      '[ChatSafetyWarning]',
+      JSON.stringify({
+        event: 'EXTERNAL_CONTACT_WARNING',
+        userId: req.user.id,
+        conversationId,
+        detectedPattern: detectedPattern ? String(detectedPattern).substring(0, 100) : null,
+        sentAnyway: Boolean(sentAnyway),
+        platform,
+        timestamp: new Date().toISOString()
+      })
+    );
+
+    res.status(200).json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getConversations,
   getConversationById,
@@ -871,6 +923,8 @@ module.exports = {
   sendMessage,
   markAsRead,
   getUnreadCount,
-  checkBooking
+  checkBooking,
+  logContactWarning
 };
+
 

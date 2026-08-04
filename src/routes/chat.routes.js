@@ -16,4 +16,8 @@ router.get('/:conversationId/messages', chatController.getMessages);
 router.post('/send', chatController.sendMessage);
 router.put('/:conversationId/read', chatController.markAsRead);
 
+// Audit: logs when a user is shown the external-contact-sharing warning
+// and whether they chose to send anyway (used for dispute resolution evidence)
+router.post('/:conversationId/log-contact-warning', chatController.logContactWarning);
+
 module.exports = router;
