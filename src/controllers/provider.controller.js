@@ -435,6 +435,18 @@ const uploadVerificationDocs = async (req, res, next) => {
       });
     }
 
+    // Delete any existing document of the same type for this provider to prevent unique constraint failures
+    try {
+      await prisma.verificationDocument.deleteMany({
+        where: {
+          providerId: profile.id,
+          type: type
+        }
+      });
+    } catch (err) {
+      console.warn('Failed to delete old verification doc:', err);
+    }
+
     const doc = await prisma.verificationDocument.create({
       data: {
         providerId: profile.id,
@@ -452,7 +464,12 @@ const uploadVerificationDocs = async (req, res, next) => {
 
     res.status(201).json({ success: true, data: doc });
   } catch (error) {
-    next(error);
+    console.error('Verification upload error:', error);
+    // Return a clean, user-friendly error message instead of database error details
+    res.status(400).json({ 
+      success: false, 
+      message: 'Failed to submit verification document. Please try again.' 
+    });
   }
 };
 
