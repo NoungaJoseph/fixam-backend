@@ -387,7 +387,7 @@ const getAvailableJobsForProvider = async (req, res, next) => {
               select: {
                 id: true,
                 user: {
-                  select: { id: true, fullName: true, firstName: true, lastName: true, avatar: true }
+                  select: { id: true, fullName: true, avatar: true }
                 }
               }
             }
