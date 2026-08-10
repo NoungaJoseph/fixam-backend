@@ -7,6 +7,7 @@ const validate = require('../middlewares/validate.middleware');
 const { updateProviderProfileSchema } = require('../validations/provider.validation');
 
 // Report routes
+router.get('/stats/summary', protect, providerController.getProviderStatsSummary);
 router.get('/reports/all', protect, authorize('PROVIDER'), providerController.getProviderReports);
 router.post('/reports/generate', protect, authorize('PROVIDER'), providerController.generateProviderReport);
 

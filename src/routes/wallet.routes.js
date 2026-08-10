@@ -28,6 +28,7 @@ router.post('/mobile-money/initiate', protect, walletController.initiateMobileMo
 router.get('/mobile-money/:paymentId/status', protect, walletController.getPaymentStatus);
 router.post('/mobile-money/webhook/:provider', walletController.mobileMoneyWebhook);
 router.post('/request-coins', protect, uploadReceipt.single('receipt'), walletController.requestCoinsWithReceipt);
+router.post('/payment-request', protect, walletController.submitPaymentRequest);
 router.get('/transactions', protect, walletController.getCoinTransactions);
 
 module.exports = router;

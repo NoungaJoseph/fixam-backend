@@ -19,7 +19,7 @@ const getDashboardData = async (req, res, next) => {
     const userCountry = req.user.country || 'Cameroon';
 
     // Fast ETag check
-    const [latestJob, latestBooking, latestTx, latestConv] = await Promise.all([
+    const [latestJob, latestBooking, latestTx, latestConv, latestProviderProfile] = await Promise.all([
       prisma.job.findFirst({
         where: role === 'PROVIDER' 
           ? { OR: [
@@ -44,6 +44,11 @@ const getDashboardData = async (req, res, next) => {
         where: { participants: { some: { userId } } },
         orderBy: { updatedAt: 'desc' },
         select: { updatedAt: true }
+      }),
+      prisma.providerProfile.findFirst({
+        where: { profileMode: 'WORK' },
+        orderBy: { updatedAt: 'desc' },
+        select: { updatedAt: true }
       })
     ]);
 
@@ -51,7 +56,8 @@ const getDashboardData = async (req, res, next) => {
       latestJob?.updatedAt?.getTime() || 0,
       latestBooking?.updatedAt?.getTime() || 0,
       latestTx?.createdAt?.getTime() || 0,
-      latestConv?.updatedAt?.getTime() || 0
+      latestConv?.updatedAt?.getTime() || 0,
+      latestProviderProfile?.updatedAt?.getTime() || 0
     );
 
     const etag = `W/"${lastUpdated}-${role}"`;
@@ -64,7 +70,7 @@ const getDashboardData = async (req, res, next) => {
     const providersQuery = prisma.providerProfile.findMany({
       where: { profileMode: 'WORK' },
       include: {
-        user: { select: { id: true, fullName: true, avatar: true, isOnline: true, phone: true } }
+        user: { select: { id: true, fullName: true, avatar: true, isOnline: true, phone: true, country: true } }
       },
       orderBy: { rating: 'desc' },
       take: 20

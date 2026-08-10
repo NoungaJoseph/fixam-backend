@@ -63,6 +63,9 @@ const generateToken = (id, role) => {
   return jwt.sign({ id, role }, process.env.JWT_SECRET, { expiresIn: '30d' });
 };
 
+// Returns bilingual message based on the language parameter sent by the client
+const getMsg = (lang, en, fr) => (lang === 'fr' ? fr : en);
+
 const setTokenCookie = (res, token) => {
   res.cookie('jwt', token, {
     httpOnly: true,
@@ -531,35 +534,53 @@ const resendLoginOTP = async (req, res, next) => {
 const forgotPassword = async (req, res, next) => {
   try {
     const { email, language } = req.body;
+    const lang = language || 'en';
+
     if (!email) {
-      return res.status(400).json({ success: false, message: 'Email is required' });
+      return res.status(400).json({
+        success: false,
+        message: getMsg(lang, 'Email is required', "L'adresse e-mail est requise"),
+        errorCode: 'EMAIL_REQUIRED'
+      });
     }
     
     const user = await prisma.user.findFirst({ where: { email: email.trim().toLowerCase() } });
     if (!user) {
-      return res.status(404).json({ success: false, message: 'User not found' });
+      return res.status(404).json({
+        success: false,
+        message: getMsg(lang, 'No account found with this email address.', 'Aucun compte trouvé avec cette adresse e-mail.'),
+        errorCode: 'USER_NOT_FOUND'
+      });
     }
 
     if (user.isBlocked) {
-      return res.status(403).json({ success: false, message: user.blockedReason || 'This account has been blocked.' });
+      return res.status(403).json({
+        success: false,
+        message: user.blockedReason || getMsg(lang, 'This account has been suspended.', 'Ce compte a été suspendu.'),
+        errorCode: 'ACCOUNT_BLOCKED'
+      });
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    otpCache.set(email, { otp, expires: Date.now() + 600000 });
+    otpCache.set(email.trim().toLowerCase(), { otp, expires: Date.now() + 600000 });
 
-    sendOTP(email, otp, language || user.preferredLanguage || 'en').catch(err => {
+    sendOTP(email, otp, lang || user.preferredLanguage || 'en').catch(err => {
       console.error('[ForgotPassword] Email failed:', err.message);
     });
 
     return res.json({
       success: true,
-      message: 'If an account exists with this information, you will receive a reset code shortly.'
+      message: getMsg(lang,
+        'A verification code has been sent to your email.',
+        'Un code de vérification a été envoyé à votre adresse e-mail.'
+      )
     });
   } catch (error) {
     console.error('[ForgotPassword] Error:', error.message);
     return res.status(500).json({
       success: false,
-      message: 'Something went wrong. Please try again.'
+      message: getMsg(req.body?.language, 'Something went wrong. Please try again.', "Une erreur est survenue. Veuillez réessayer."),
+      errorCode: 'SERVER_ERROR'
     });
   }
 };

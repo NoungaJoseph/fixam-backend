@@ -8,13 +8,18 @@ const setupProviderSchema = z.object({
   serviceArea: z.string().optional(),
   experienceLevel: z.string().optional(),
   portfolio: z.array(z.object({
+    id: z.string().optional(),
     title: z.string().optional(),
     description: z.string().optional(),
     imageUrl: z.string().optional(),
+    images: z.array(z.string()).optional(),
     video: z.string().optional().nullable(),
     videoUrl: z.string().optional().nullable(),
-    videos: z.array(z.string()).optional()
-  })).optional(),
+    videos: z.array(z.string()).optional(),
+    category: z.string().optional(),
+    price: z.any().optional(),
+    packages: z.any().optional()
+  }).passthrough()).optional(),
   certificates: z.array(z.object({
     title: z.string().optional(),
     issuer: z.string().optional(),

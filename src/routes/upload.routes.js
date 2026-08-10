@@ -7,8 +7,15 @@ const { protect } = require('../middlewares/auth.middleware');
 const storage = multer.memoryStorage();
 const allowedMimeTypes = new Set([
   'image/jpeg',
+  'image/jpg',
   'image/png',
   'image/webp',
+  'image/gif',
+  'image/heic',
+  'image/heif',
+  'image/svg+xml',
+  'image/bmp',
+  'image/x-icon',
   'application/pdf',
   'audio/mpeg',
   'audio/mp4',
@@ -53,6 +60,7 @@ const normalizeFile = (req, res, next) => {
 router.post('/profile', protect, acceptFile, normalizeFile, uploadController.uploadProfileImage);
 router.post('/verification', protect, acceptFile, normalizeFile, uploadController.uploadVerificationDoc);
 router.post('/payment', protect, acceptFile, normalizeFile, uploadController.uploadPaymentProof);
+router.post('/portfolio', protect, acceptFile, normalizeFile, uploadController.uploadPortfolioMedia);
 router.post('/', protect, acceptFile, normalizeFile, uploadController.uploadGeneric);
 
 module.exports = router;

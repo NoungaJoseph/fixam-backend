@@ -80,4 +80,9 @@ const authorize = (...roles) => {
   };
 };
 
-module.exports = { protect, authorize };
+const clearUserCache = (userId) => {
+  userCache.delete(userId);
+  debugLog('Cleared session cache for user:', userId);
+};
+
+module.exports = { protect, authorize, clearUserCache };

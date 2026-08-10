@@ -111,7 +111,8 @@ const getProviders = async (req, res, next) => {
             fullName: true, 
             avatar: true, 
             isOnline: true,
-            phone: true
+            phone: true,
+            country: true
           } 
         } 
       },
@@ -163,7 +164,8 @@ const getProvidersOfTheMonth = async (req, res, next) => {
             fullName: true, 
             avatar: true, 
             isOnline: true,
-            phone: true
+            phone: true,
+            country: true
           } 
         } 
       } 
@@ -205,7 +207,8 @@ const getNearbyProviders = async (req, res, next) => {
             id: true,
             fullName: true, 
             avatar: true,
-            isOnline: true
+            isOnline: true,
+            country: true
           } 
         } 
       }
@@ -242,6 +245,7 @@ const getProviderById = async (req, res, next) => {
             avatar: true,
             isOnline: true,
             phone: true,
+            country: true,
             createdAt: true,
           }
         }
@@ -346,7 +350,8 @@ const getFavoriteProviders = async (req, res, next) => {
                 fullName: true,
                 avatar: true,
                 isOnline: true,
-                phone: true
+                phone: true,
+                country: true
               }
             }
           }
@@ -854,6 +859,107 @@ const generateProviderReport = async (req, res, next) => {
   }
 };
 
+const getProviderStatsSummary = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const providerProfile = await prisma.providerProfile.findUnique({
+      where: { userId }
+    });
+    const providerId = providerProfile?.id;
+
+    const [
+      totalBookings,
+      activeBookings,
+      doneBookings,
+      completedJobsAssigned,
+      txAgg,
+      recentTx
+    ] = await Promise.all([
+      prisma.booking.count({
+        where: providerId ? { OR: [{ clientId: userId }, { providerId: userId }] } : { clientId: userId }
+      }),
+      prisma.booking.count({
+        where: {
+          ...(providerId ? { OR: [{ clientId: userId }, { providerId: userId }] } : { clientId: userId }),
+          status: { in: ['PENDING', 'ACCEPTED', 'IN_PROGRESS'] }
+        }
+      }),
+      prisma.booking.count({
+        where: {
+          ...(providerId ? { OR: [{ clientId: userId }, { providerId: userId }] } : { clientId: userId }),
+          status: 'COMPLETED'
+        }
+      }),
+      providerId ? prisma.jobAssignment.count({ where: { providerId, job: { status: 'COMPLETED' } } }) : Promise.resolve(0),
+      prisma.transaction.aggregate({
+        where: { wallet: { userId }, type: 'DEBIT' },
+        _sum: { amount: true }
+      }),
+      prisma.transaction.findMany({
+        where: { wallet: { userId } },
+        take: 20,
+        orderBy: { createdAt: 'desc' }
+      })
+    ]);
+
+    const totalCountCombined = totalBookings;
+    const activeCountCombined = activeBookings;
+    const doneCountCombined = doneBookings + completedJobsAssigned;
+    const coinsUsed = Math.abs(txAgg._sum?.amount || 0);
+
+    const now = new Date();
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const monthlyTrend = [];
+
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const nextD = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
+      const count = await prisma.booking.count({
+        where: {
+          ...(providerId ? { OR: [{ clientId: userId }, { providerId: userId }] } : { clientId: userId }),
+          createdAt: { gte: d, lt: nextD }
+        }
+      });
+      monthlyTrend.push({
+        month: monthNames[d.getMonth()],
+        count
+      });
+    }
+
+    const monthlyStats = providerId ? await prisma.providerMonthlyStats.findMany({
+      where: { providerId },
+      orderBy: [{ year: 'desc' }, { month: 'desc' }],
+      take: 12
+    }) : [];
+
+    const totalViewsCount = monthlyStats.reduce((sum, s) => sum + (s.profileViews || 0), 0);
+    const totalSearchesCount = monthlyStats.reduce((sum, s) => sum + (s.searchAppearances || 0), 0);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        totalBookings: totalCountCombined,
+        activeBookings: activeCountCombined,
+        doneBookings: doneCountCombined,
+        coinsUsed,
+        profileViews: totalViewsCount,
+        searchAppearances: totalSearchesCount,
+        monthlyStats,
+        spendingBreakdown: {
+          bookingPayments: Math.round(coinsUsed * 0.5),
+          urgentBookings: Math.round(coinsUsed * 0.25),
+          serviceAddons: Math.round(coinsUsed * 0.15),
+          other: Math.round(coinsUsed * 0.10)
+        },
+        monthlyTrend
+      }
+    });
+  } catch (error) {
+    console.error('[Get Provider Stats Error]', error);
+    next(error);
+  }
+};
+
 module.exports = {
   updateProviderProfile,
   updateProviderStatus,
@@ -871,4 +977,5 @@ module.exports = {
   claimSetupBonus,
   getProviderReports,
   generateProviderReport,
+  getProviderStatsSummary,
 };

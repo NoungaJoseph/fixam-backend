@@ -289,7 +289,7 @@ const getJobById = async (req, res, next) => {
 
 const getAvailableJobsForProvider = async (req, res, next) => {
   try {
-    const { page = 1, limit = 10, search = '', location = '', sortBy = 'newest', budgetMin, budgetMax } = req.query;
+    const { page = 1, limit = 10, search = '', location = '', sortBy = 'newest', budgetMin, budgetMax, jobType = '' } = req.query;
     const skip = (page - 1) * limit;
 
     // Build where clause for filtering
@@ -310,15 +310,22 @@ const getAvailableJobsForProvider = async (req, res, next) => {
     // Filter by provider's country and location for local jobs, or show remote jobs from any country
     const providerCountry = req.user.country || 'Cameroon';
 
-    whereClause.OR = [
-      // 1. Remote jobs from any country
-      { isRemote: true },
-      // 2. Local jobs in provider's country (nationwide)
-      {
-        isRemote: false,
-        country: providerCountry
-      }
-    ];
+    if (jobType === 'remote') {
+      // Only remote jobs
+      whereClause.isRemote = true;
+    } else if (jobType === 'physical') {
+      // Only local/physical jobs in provider's country
+      whereClause.OR = [
+        { isRemote: false, country: providerCountry },
+        { isRemote: false }
+      ];
+    } else {
+      // Default: show both remote and local jobs
+      whereClause.OR = [
+        { isRemote: true },
+        { isRemote: false, country: providerCountry }
+      ];
+    }
 
     // Add search filter (nested inside AND to work with OR)
     if (search) {
@@ -369,7 +376,23 @@ const getAvailableJobsForProvider = async (req, res, next) => {
             providerProfile: { select: { verification: true } }
           }
         },
-        assignments: { select: { id: true, providerId: true, status: true } }
+        assignments: { 
+          select: { 
+            id: true, 
+            providerId: true, 
+            status: true, 
+            boostCoins: true, 
+            assignedAt: true,
+            provider: {
+              select: {
+                id: true,
+                user: {
+                  select: { id: true, fullName: true, firstName: true, lastName: true, avatar: true }
+                }
+              }
+            }
+          } 
+        }
       },
       orderBy,
       skip,
@@ -459,10 +482,48 @@ const applyForJob = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Job not available' });
     }
 
+    const wallet = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
+    const boostCoinsAmount = Math.max(0, Number(req.body.boostCoins || 0));
+
     const existing = await prisma.jobAssignment.findUnique({
       where: { jobId_providerId: { jobId, providerId } }
     });
     if (existing) {
+      if (boostCoinsAmount > (existing.boostCoins || 0)) {
+        const extraBoostCoins = boostCoinsAmount - (existing.boostCoins || 0);
+        if (!wallet || wallet.balance < extraBoostCoins) {
+          return res.status(403).json({ 
+            success: false, 
+            message: `You need at least ${extraBoostCoins} coin${extraBoostCoins > 1 ? 's' : ''} in your balance to boost this proposal.`, 
+            code: 'INSUFFICIENT_COINS' 
+          });
+        }
+        await prisma.$transaction([
+          prisma.wallet.update({
+            where: { id: wallet.id },
+            data: { balance: { decrement: extraBoostCoins } }
+          }),
+          prisma.transaction.create({
+            data: {
+              walletId: wallet.id,
+              amount: -extraBoostCoins,
+              type: 'DEDUCTION',
+              status: 'SUCCESS',
+              reference: `BID_BOOST-${Date.now()}`,
+              description: `Bid boost for task: ${job.title}`
+            }
+          })
+        ]);
+        const updatedAssignment = await prisma.jobAssignment.update({
+          where: { id: existing.id },
+          data: { boostCoins: boostCoinsAmount }
+        });
+        return res.status(200).json({
+          success: true,
+          data: updatedAssignment,
+          message: `Proposal boosted successfully to ${boostCoinsAmount} coins! If not selected, boost coins will be refunded.`
+        });
+      }
       return res.status(409).json({ success: false, data: existing, message: 'You have already applied for this task.', code: 'ALREADY_APPLIED' });
     }
 
@@ -470,20 +531,14 @@ const applyForJob = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'You must be available for work to apply for tasks.', code: 'PROVIDER_OFFLINE' });
     }
 
-    // Providers can apply for free, but must have enough coins for the task before applying.
-    // The coins are deducted only if the client selects this provider.
-    const wallet = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
-    const boostCoinsAmount = Math.max(0, Number(req.body.boostCoins || 0));
-
-    if (!wallet || wallet.balance < (job.coinCost + boostCoinsAmount)) {
-      return res.status(403).json({ 
-        success: false, 
-        message: `You need at least ${job.coinCost + boostCoinsAmount} coin${(job.coinCost + boostCoinsAmount) > 1 ? 's' : ''} in your balance to apply and boost this task.`, 
-        code: 'INSUFFICIENT_COINS' 
-      });
-    }
-
     if (boostCoinsAmount > 0) {
+      if (!wallet || wallet.balance < boostCoinsAmount) {
+        return res.status(403).json({ 
+          success: false, 
+          message: `You need at least ${boostCoinsAmount} coin${boostCoinsAmount > 1 ? 's' : ''} in your balance to boost this task.`, 
+          code: 'INSUFFICIENT_COINS' 
+        });
+      }
       await prisma.$transaction([
         prisma.wallet.update({
           where: { id: wallet.id },
@@ -492,7 +547,7 @@ const applyForJob = async (req, res, next) => {
         prisma.transaction.create({
           data: {
             walletId: wallet.id,
-            amount: boostCoinsAmount,
+            amount: -boostCoinsAmount,
             type: 'DEDUCTION',
             status: 'SUCCESS',
             reference: `BID_BOOST-${Date.now()}`,
@@ -584,6 +639,7 @@ const selectProviderForJob = async (req, res, next) => {
         throw error;
       }
 
+      // Deduct base task coin cost from selected provider
       await tx.wallet.update({
         where: { id: providerWallet.id },
         data: { balance: { decrement: job.coinCost } }
@@ -606,12 +662,47 @@ const selectProviderForJob = async (req, res, next) => {
         include: { provider: { include: { user: true } } }
       });
 
+      // Find all unselected pending assignments for this task that spent boost coins
+      const unselectedAssignments = await tx.jobAssignment.findMany({
+        where: { jobId, status: 'PENDING', id: { not: assignmentId } },
+        include: { provider: true }
+      });
+
+      const refundedProviders: Array<{ userId: string; coins: number }> = [];
+
       const newAcceptedCount = acceptedCount + 1;
       if (newAcceptedCount >= (job.providersNeeded || 1)) {
         await tx.job.update({
           where: { id: jobId },
           data: { status: 'IN_PROGRESS', selectedAssignmentId: assignmentId }
         });
+
+        // Refund boost coins to all unselected providers
+        for (const unselected of unselectedAssignments) {
+          const unselectedBoost = Number(unselected.boostCoins || 0);
+          const unselectedUserId = unselected.provider?.userId;
+          if (unselectedBoost > 0 && unselectedUserId) {
+            const uWallet = await tx.wallet.findUnique({ where: { userId: unselectedUserId } });
+            if (uWallet) {
+              await tx.wallet.update({
+                where: { id: uWallet.id },
+                data: { balance: { increment: unselectedBoost } }
+              });
+              await tx.transaction.create({
+                data: {
+                  walletId: uWallet.id,
+                  amount: unselectedBoost,
+                  type: 'REFUND',
+                  status: 'SUCCESS',
+                  jobId,
+                  reference: `BID_BOOST_REFUND-${Date.now()}`,
+                  description: `Refund for unselected boost bid: ${job.title}`
+                }
+              });
+              refundedProviders.push({ userId: unselectedUserId, coins: unselectedBoost });
+            }
+          }
+        }
 
         await tx.jobAssignment.updateMany({
           where: { jobId, status: 'PENDING' },
@@ -632,7 +723,7 @@ const selectProviderForJob = async (req, res, next) => {
         }
       });
 
-      return { assignment, job: selectedJob };
+      return { assignment, job: selectedJob, refundedProviders };
     }, { maxWait: 10000, timeout: 20000 });
 
     const notification = await prisma.notification.create({
@@ -666,6 +757,37 @@ const selectProviderForJob = async (req, res, next) => {
       );
     } catch (pushErr) {
       console.error('[Push Error] Selection push failed:', pushErr.message);
+    }
+
+    // Send notifications & update wallet balance for refunded unselected providers
+    if (Array.isArray(updated.refundedProviders) && updated.refundedProviders.length > 0) {
+      for (const item of updated.refundedProviders) {
+        try {
+          const refundNotif = await prisma.notification.create({
+            data: {
+              userId: item.userId,
+              title: 'Boost Coins Refunded 🪙',
+              body: `Your ${item.coins} boost coins have been refunded because another provider was selected for "${job.title}".`,
+              data: { type: 'BOOST_REFUND', jobId, coins: item.coins }
+            }
+          });
+          const { getIO } = require('../services/socket.service');
+          const io = getIO();
+          io.to(item.userId).emit('notification:new', refundNotif);
+          const rWallet = await prisma.wallet.findUnique({ where: { userId: item.userId } });
+          if (rWallet) io.to(item.userId).emit('wallet:update', { balance: rWallet.balance });
+
+          const { sendPushNotification } = require('../services/notification.service');
+          await sendPushNotification(
+            item.userId,
+            'Boost Coins Refunded 🪙',
+            `Your ${item.coins} boost coins have been refunded because another provider was selected for "${job.title}".`,
+            { type: 'BOOST_REFUND', jobId, coins: item.coins }
+          );
+        } catch (rErr) {
+          console.error('[Refund Notification Error]:', rErr.message);
+        }
+      }
     }
 
     res.status(200).json({ success: true, data: updated.job, message: 'Provider selected successfully. Provider coins were deducted.' });
