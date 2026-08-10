@@ -296,6 +296,7 @@ const getAvailableJobsForProvider = async (req, res, next) => {
     const whereClause = {
       clientId: { not: req.user.id }, // Exclude own tasks
       status: 'PENDING',
+      approvalStatus: 'APPROVED',  // Only show approved jobs
       assignments: {
         none: {
           OR: [
@@ -306,11 +307,23 @@ const getAvailableJobsForProvider = async (req, res, next) => {
       }
     };
 
-    // Filter by job type (remote vs physical)
+    // Filter by provider's country and location for local jobs, or show remote jobs from any country
+    const providerCountry = req.user.country || 'Cameroon';
+
     if (jobType === 'remote') {
       whereClause.isRemote = true;
     } else if (jobType === 'physical') {
-      whereClause.isRemote = false;
+      whereClause.OR = [
+        { isRemote: false, country: providerCountry },
+        { isRemote: false }
+      ];
+    } else {
+      whereClause.OR = [
+        { isRemote: true },
+        { isRemote: false, country: providerCountry },
+        { isRemote: false, country: null },
+        { isRemote: false, country: '' }
+      ];
     }
 
     // Add search filter (nested inside AND to work with OR)
@@ -335,6 +348,7 @@ const getAvailableJobsForProvider = async (req, res, next) => {
     }
     if (budgetMin || budgetMax) {
       whereClause.AND = [
+        ...(whereClause.AND || []),
         ...(budgetMin ? [{ budgetMax: { gte: Number(budgetMin) } }] : []),
         ...(budgetMax ? [{ budgetMin: { lte: Number(budgetMax) } }] : []),
       ];
@@ -384,6 +398,19 @@ const getAvailableJobsForProvider = async (req, res, next) => {
       skip,
       take: parseInt(limit)
     });
+
+    if (!jobs || jobs.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: [],
+        pagination: {
+          total: 0,
+          page: parseInt(page),
+          limit: parseInt(limit),
+          pages: 0
+        }
+      });
+    }
 
     // Enrich each job with client spending totals
     const clientIds = [...new Set(jobs.map(j => j.clientId))];
