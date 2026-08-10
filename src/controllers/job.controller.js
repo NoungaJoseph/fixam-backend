@@ -296,7 +296,6 @@ const getAvailableJobsForProvider = async (req, res, next) => {
     const whereClause = {
       clientId: { not: req.user.id }, // Exclude own tasks
       status: 'PENDING',
-      approvalStatus: 'APPROVED',  // Only show approved jobs
       assignments: {
         none: {
           OR: [
@@ -307,24 +306,11 @@ const getAvailableJobsForProvider = async (req, res, next) => {
       }
     };
 
-    // Filter by provider's country and location for local jobs, or show remote jobs from any country
-    const providerCountry = req.user.country || 'Cameroon';
-
+    // Filter by job type (remote vs physical)
     if (jobType === 'remote') {
-      // Only remote jobs
       whereClause.isRemote = true;
     } else if (jobType === 'physical') {
-      // Only local/physical jobs in provider's country
-      whereClause.OR = [
-        { isRemote: false, country: providerCountry },
-        { isRemote: false }
-      ];
-    } else {
-      // Default: show both remote and local jobs
-      whereClause.OR = [
-        { isRemote: true },
-        { isRemote: false, country: providerCountry }
-      ];
+      whereClause.isRemote = false;
     }
 
     // Add search filter (nested inside AND to work with OR)
