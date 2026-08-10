@@ -668,7 +668,7 @@ const selectProviderForJob = async (req, res, next) => {
         include: { provider: true }
       });
 
-      const refundedProviders: Array<{ userId: string; coins: number }> = [];
+      const refundedProviders = [];
 
       const newAcceptedCount = acceptedCount + 1;
       if (newAcceptedCount >= (job.providersNeeded || 1)) {
