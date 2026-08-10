@@ -418,32 +418,32 @@ const getDashboardStats = async (req, res, next) => {
       recentBroadcasts,
       revenueRows,
       monthlyCoinSales
-    ] = await prisma.$transaction([
-      prisma.user.count({ where: { role: 'CLIENT' } }),
-      prisma.user.count({ where: { role: 'PROVIDER' } }),
-      prisma.job.count(),
-      prisma.job.count({ where: { status: 'IN_PROGRESS' } }),
-      prisma.job.count({ where: { status: 'COMPLETED' } }),
-      prisma.job.count({ where: { approvalStatus: 'PENDING_APPROVAL' } }),
-      prisma.report.count(),
-      prisma.report.count({ where: { status: 'PENDING' } }),
-      prisma.feedback.count(),
-      prisma.feedback.count({ where: { status: 'NEW' } }),
+    ] = await Promise.all([
+      prisma.user.count({ where: { role: 'CLIENT' } }).catch(() => 0),
+      prisma.user.count({ where: { role: 'PROVIDER' } }).catch(() => 0),
+      prisma.job.count().catch(() => 0),
+      prisma.job.count({ where: { status: 'IN_PROGRESS' } }).catch(() => 0),
+      prisma.job.count({ where: { status: 'COMPLETED' } }).catch(() => 0),
+      prisma.job.count({ where: { approvalStatus: 'PENDING_APPROVAL' } }).catch(() => 0),
+      prisma.report.count().catch(() => 0),
+      prisma.report.count({ where: { status: 'PENDING' } }).catch(() => 0),
+      prisma.feedback.count().catch(() => 0),
+      prisma.feedback.count({ where: { status: 'NEW' } }).catch(() => 0),
       prisma.user.findMany({
         orderBy: { createdAt: 'desc' },
         take: 5,
         select: { id: true, fullName: true, phone: true, role: true, avatar: true, createdAt: true }
-      }),
+      }).catch(() => []),
       prisma.adminMessage.findMany({
         orderBy: { createdAt: 'desc' },
         take: 5,
         select: { id: true, subject: true, content: true, recipientRole: true, createdAt: true }
-      }),
+      }).catch(() => []),
       prisma.$queryRaw`
         SELECT COALESCE(SUM(NULLIF(regexp_replace("paidPrice", '[^0-9.]', '', 'g'), '')::float), 0) AS revenue
         FROM "Transaction"
         WHERE type = 'PURCHASE' AND status = 'SUCCESS'
-      `,
+      `.catch(() => [{ revenue: 0 }]),
       prisma.$queryRaw`
         SELECT
           date_trunc('month', "createdAt")::date AS month,
@@ -455,7 +455,7 @@ const getDashboardStats = async (req, res, next) => {
           AND "createdAt" >= date_trunc('month', CURRENT_DATE) - interval '5 months'
         GROUP BY date_trunc('month', "createdAt")::date
         ORDER BY month ASC
-      `
+      `.catch(() => [])
     ]);
 
     const revenue = toNumber(revenueRows[0]?.revenue);

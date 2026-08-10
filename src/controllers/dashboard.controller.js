@@ -314,45 +314,45 @@ const getDashboardData = async (req, res, next) => {
     // Enrich provider jobs with client spending tier + review count
     let finalJobs = jobsRaw;
     if (role === 'PROVIDER' && jobsRaw.length > 0) {
-      const clientIds = [...new Set(jobsRaw.map(j => j.clientId))];
+      if (clientIds.length > 0) {
+        const [wallets, spendingData, reviewCounts] = await Promise.all([
+          prisma.wallet.findMany({ where: { userId: { in: clientIds } }, select: { id: true, userId: true } }),
+          prisma.transaction.groupBy({
+            by: ['walletId'],
+            where: { type: 'DEDUCTION', status: 'SUCCESS', wallet: { userId: { in: clientIds } } },
+            _sum: { amount: true }
+          }),
+          prisma.review.groupBy({
+            by: ['targetUserId'],
+            where: { targetUserId: { in: clientIds } },
+            _count: { id: true }
+          })
+        ]);
 
-      const [wallets, spendingData, reviewCounts] = await Promise.all([
-        prisma.wallet.findMany({ where: { userId: { in: clientIds } }, select: { id: true, userId: true } }),
-        prisma.transaction.groupBy({
-          by: ['walletId'],
-          where: { type: 'DEDUCTION', status: 'SUCCESS', wallet: { userId: { in: clientIds } } },
-          _sum: { amount: true }
-        }),
-        prisma.review.groupBy({
-          by: ['targetUserId'],
-          where: { targetUserId: { in: clientIds } },
-          _count: { id: true }
-        })
-      ]);
+        const walletToUser = new Map(wallets.map(w => [w.id, w.userId]));
+        const userSpending = new Map();
+        spendingData.forEach(s => {
+          const uid = walletToUser.get(s.walletId);
+          if (uid) userSpending.set(uid, Math.abs(s._sum.amount || 0));
+        });
+        const userReviews = new Map(reviewCounts.map(r => [r.targetUserId, r._count.id]));
 
-      const walletToUser = new Map(wallets.map(w => [w.id, w.userId]));
-      const userSpending = new Map();
-      spendingData.forEach(s => {
-        const uid = walletToUser.get(s.walletId);
-        if (uid) userSpending.set(uid, Math.abs(s._sum.amount || 0));
-      });
-      const userReviews = new Map(reviewCounts.map(r => [r.targetUserId, r._count.id]));
+        const getSpendingTier = (amount) => {
+          if (amount >= 100000) return '100k+ spent';
+          if (amount >= 50000) return '50k+ spent';
+          if (amount >= 10000) return '10k+ spent';
+          if (amount >= 2000) return '2k+ spent';
+          return 'New client';
+        };
 
-      const getSpendingTier = (amount) => {
-        if (amount >= 100000) return '100k+ spent';
-        if (amount >= 50000) return '50k+ spent';
-        if (amount >= 10000) return '10k+ spent';
-        if (amount >= 2000) return '2k+ spent';
-        return 'New client';
-      };
-
-      finalJobs = jobsRaw.map(job => ({
-        ...job,
-        clientVerified: job.client?.providerProfile?.verification === 'VERIFIED',
-        clientSpending: userSpending.get(job.clientId) || 0,
-        clientSpendingTier: getSpendingTier(userSpending.get(job.clientId) || 0),
-        clientReviewCount: userReviews.get(job.clientId) || 0,
-      }));
+        finalJobs = jobsRaw.map(job => ({
+          ...job,
+          clientVerified: job.client?.providerProfile?.verification === 'VERIFIED',
+          clientSpending: userSpending.get(job.clientId) || 0,
+          clientSpendingTier: getSpendingTier(userSpending.get(job.clientId) || 0),
+          clientReviewCount: userReviews.get(job.clientId) || 0,
+        }));
+      }
     }
 
     res.status(200).json({
