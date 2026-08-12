@@ -73,7 +73,7 @@ const getDashboardData = async (req, res, next) => {
         user: { select: { id: true, fullName: true, avatar: true, isOnline: true, phone: true, country: true } }
       },
       orderBy: { rating: 'desc' },
-      take: 20
+      take: 50
     });
 
     // 2. Jobs Query

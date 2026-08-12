@@ -99,10 +99,7 @@ const getProviders = async (req, res, next) => {
     const providers = await prisma.providerProfile.findMany({
       where: { 
         profileMode: 'WORK',
-        user: { 
-          isOnline: true,
-          country: isRemote ? undefined : clientCountry
-        }
+        ...(isRemote ? {} : { user: { country: clientCountry } })
       },
       include: { 
         user: { 
