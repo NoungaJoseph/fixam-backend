@@ -284,14 +284,15 @@ model Job {
 }
 
 model JobAssignment {
-  id         String           @id @default(uuid())
-  jobId      String
-  providerId String
-  status     AssignmentStatus @default(PENDING)
-  assignedAt DateTime         @default(now())
-  selectedAt DateTime?
-  refundedAt DateTime?
-  boostCoins Int              @default(0)
+  id          String           @id @default(uuid())
+  jobId       String
+  providerId  String
+  status      AssignmentStatus @default(PENDING)
+  assignedAt  DateTime         @default(now())
+  selectedAt  DateTime?
+  refundedAt  DateTime?
+  boostCoins  Int              @default(0)
+  coverLetter String?
 
   job      Job             @relation(fields: [jobId], references: [id])
   provider ProviderProfile @relation(fields: [providerId], references: [id])

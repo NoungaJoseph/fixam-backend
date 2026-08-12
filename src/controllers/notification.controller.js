@@ -144,11 +144,24 @@ const testPush = async (req, res) => {
   }
 };
 
+const readAllNotifications = async (req, res, next) => {
+  try {
+    await prisma.notification.updateMany({
+      where: { userId: req.user.id, isRead: false },
+      data: { isRead: true }
+    });
+    res.status(200).json({ success: true, message: 'All notifications marked as read' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getNotifications,
   markAsRead,
   archiveNotification,
   clearNotifications,
+  readAllNotifications,
   testPush
 };
 

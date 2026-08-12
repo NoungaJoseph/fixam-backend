@@ -45,8 +45,8 @@ const getDashboardData = async (req, res, next) => {
         orderBy: { updatedAt: 'desc' },
         select: { updatedAt: true }
       }),
-      prisma.providerProfile.findFirst({
-        where: { profileMode: 'WORK' },
+      prisma.user.findFirst({
+        where: { role: 'PROVIDER' },
         orderBy: { updatedAt: 'desc' },
         select: { updatedAt: true }
       })
@@ -101,7 +101,14 @@ const getDashboardData = async (req, res, next) => {
           ]
         },
         include: {
-          client: { select: { id: true, fullName: true, avatar: true } },
+          client: { 
+            select: { 
+              id: true, 
+              fullName: true, 
+              avatar: true,
+              providerProfile: { select: { verification: true } }
+            } 
+          },
           assignments: { include: { provider: { include: { user: { select: { id: true, fullName: true, avatar: true } } } } } },
         },
         orderBy: { createdAt: 'desc' },
@@ -314,6 +321,7 @@ const getDashboardData = async (req, res, next) => {
     // Enrich provider jobs with client spending tier + review count
     let finalJobs = jobsRaw;
     if (role === 'PROVIDER' && jobsRaw.length > 0) {
+      const clientIds = [...new Set(jobsRaw.map(job => job.clientId))].filter(Boolean);
       if (clientIds.length > 0) {
         const [wallets, spendingData, reviewCounts] = await Promise.all([
           prisma.wallet.findMany({ where: { userId: { in: clientIds } }, select: { id: true, userId: true } }),

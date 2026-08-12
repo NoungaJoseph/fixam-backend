@@ -519,6 +519,32 @@ async function submitPaymentRequest(req, res, next) {
     });
     const userName = user?.fullName || `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'User';
 
+    // Ensure wallet exists & create pending transaction
+    let wallet = await prisma.wallet.findUnique({ where: { userId } });
+    if (!wallet) {
+      wallet = await prisma.wallet.create({
+        data: { userId, balance: 0 }
+      });
+    }
+
+    const coinAmount = Number(coins) || 1;
+    const reqRef = `REQ-${Date.now()}`;
+
+    const transaction = await prisma.transaction.create({
+      data: {
+        walletId: wallet.id,
+        amount: coinAmount,
+        type: 'PURCHASE',
+        status: 'PENDING',
+        reference: reqRef,
+        paidPrice: String(price || ''),
+        payerName: userName,
+        payerPhone: String(phone || user?.phone || ''),
+        payerEmail: String(user?.email || ''),
+        description: `Manual coin purchase: ${coinAmount} coins (${price || 'XAF'}) via ${method || 'Mobile Money'} (${phone || 'N/A'})`
+      }
+    });
+
     // Find the Fixam admin user (first admin)
     const adminUser = await prisma.user.findFirst({
       where: { role: { in: ['ADMIN', 'SUPER_ADMIN'] } },
@@ -534,13 +560,14 @@ async function submitPaymentRequest(req, res, next) {
           body: isFr
             ? `Votre demande d'achat de ${coins} pièces (${price}) via ${method} a été enregistrée. Un administrateur vous contactera bientôt.`
             : `Your request to buy ${coins} coins (${price}) via ${method} has been logged. An admin will contact you shortly.`,
-          data: { type: 'PAYMENT_REQUEST' }
+          data: { type: 'PAYMENT_REQUEST', transactionId: transaction.id }
         }
       });
       return res.status(200).json({
         success: true,
         message: isFr ? 'Demande enregistrée' : 'Request logged',
-        requestId: `REQ-${Date.now()}`
+        transactionId: transaction.id,
+        requestId: reqRef
       });
     }
 
@@ -580,8 +607,8 @@ async function submitPaymentRequest(req, res, next) {
     });
 
     const adminMessage = isFr
-      ? `🪙 *NOUVELLE DEMANDE DE PAIEMENT MANUEL*\n\n👤 Utilisateur: ${userName}\n📧 Email: ${user?.email || 'N/A'}\n📞 Numéro de paiement: ${phone}\n💳 Opérateur: ${method}\n📦 Forfait: ${packageName}\n🪙 Pièces à créditer: ${coins}\n💰 Montant: ${price}\n\nVeuillez envoyer votre numéro Fixam au client afin qu'il effectue le paiement. Une fois le paiement confirmé, ajoutez les pièces à son portefeuille manuellement.\n\n⏰ Date: ${new Date().toLocaleString('fr-FR')}`
-      : `🪙 *NEW MANUAL PAYMENT REQUEST*\n\n👤 User: ${userName}\n📧 Email: ${user?.email || 'N/A'}\n📞 Payment Phone: ${phone}\n💳 Operator: ${method}\n📦 Package: ${packageName}\n🪙 Coins to credit: ${coins}\n💰 Amount: ${price}\n\nPlease send the Fixam payment number to this user so they can complete the transfer. Once confirmed, manually add the coins to their wallet.\n\n⏰ Date: ${new Date().toLocaleString('en-US')}`;
+      ? `🪙 *NOUVELLE DEMANDE DE PAIEMENT MANUEL*\n\n👤 Utilisateur: ${userName}\n📧 Email: ${user?.email || 'N/A'}\n📞 Numéro de paiement: ${phone}\n💳 Opérateur: ${method}\n📦 Forfait: ${packageName}\n🪙 Pièces à créditer: ${coins}\n💰 Montant: ${price}\n🆔 Réf Transaction: ${reqRef}\n\nVeuillez envoyer votre numéro Fixam au client afin qu'il effectue le paiement. Une fois le paiement confirmé, vous pouvez valider cette demande d'un clic dans le panneau d'administration.\n\n⏰ Date: ${new Date().toLocaleString('fr-FR')}`
+      : `🪙 *NEW MANUAL PAYMENT REQUEST*\n\n👤 User: ${userName}\n📧 Email: ${user?.email || 'N/A'}\n📞 Payment Phone: ${phone}\n💳 Operator: ${method}\n📦 Package: ${packageName}\n🪙 Coins to credit: ${coins}\n💰 Amount: ${price}\n🆔 Transaction Ref: ${reqRef}\n\nPlease send the Fixam payment number to this user so they can complete the transfer. Once confirmed, you can approve this request with 1 click in the Admin Panel.\n\n⏰ Date: ${new Date().toLocaleString('en-US')}`;
 
     // Send the payment request as a message in the conversation
     await prisma.message.create({
@@ -605,7 +632,7 @@ async function submitPaymentRequest(req, res, next) {
         userId: adminUser.id,
         title: `💳 Payment Request from ${userName}`,
         body: `${userName} wants to buy ${coins} coins for ${price} via ${method} (${phone})`,
-        data: { type: 'PAYMENT_REQUEST', conversationId, requestUserId: userId }
+        data: { type: 'PAYMENT_REQUEST', conversationId, requestUserId: userId, transactionId: transaction.id }
       }
     });
 
@@ -613,11 +640,11 @@ async function submitPaymentRequest(req, res, next) {
     await prisma.notification.create({
       data: {
         userId,
-        title: isFr ? '📩 Demande de paiement reçue' : '📩 Payment Request Received',
+        title: isFr ? 'Demande de paiement reçue' : 'Payment Request Received',
         body: isFr
           ? 'Votre demande a été reçue. Un administrateur vous contactera dans les messages pour vous guider.'
           : 'Your request was received. An admin will contact you in messages to guide you through payment.',
-        data: { type: 'PAYMENT_REQUEST', conversationId }
+        data: { type: 'PAYMENT_REQUEST', conversationId, transactionId: transaction.id }
       }
     });
 
@@ -625,7 +652,8 @@ async function submitPaymentRequest(req, res, next) {
       success: true,
       message: isFr ? "Demande envoyée à l'administrateur" : 'Request sent to admin',
       conversationId,
-      requestId: `REQ-${Date.now()}`
+      transactionId: transaction.id,
+      requestId: reqRef
     });
   } catch (error) {
     next(error);

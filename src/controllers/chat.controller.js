@@ -566,7 +566,7 @@ const getMessages = async (req, res, next) => {
 
 const sendMessage = async (req, res, next) => {
   try {
-    const { conversationId, content, type, receiverId, clientMessageId } = req.body;
+    const { conversationId, content, type, receiverId, clientMessageId, mediaUrl: reqMediaUrl } = req.body;
     debugLog('[Chat] sendMessage:', { userId: req.user.id, conversationId, receiverId, contentLength: content?.length, type });
     let actualConvId = conversationId;
 
@@ -601,8 +601,8 @@ const sendMessage = async (req, res, next) => {
       data: {
         conversationId: actualConvId,
         senderId: req.user.id,
-        content,
-        mediaUrl: type && type !== 'TEXT' ? content : null,
+        content: type && type !== 'TEXT' ? (content || 'Sent media') : content,
+        mediaUrl: type && type !== 'TEXT' ? (reqMediaUrl || content) : null,
         type: type || 'TEXT',
         deliveredAt: new Date()
       },

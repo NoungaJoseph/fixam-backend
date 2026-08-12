@@ -7,6 +7,7 @@ const adminOnly = authorize('ADMIN');
 router.use(protect);
 
 router.get('/', notificationController.getNotifications);
+router.put('/read-all', notificationController.readAllNotifications);
 router.put('/:id/read', notificationController.markAsRead);
 router.patch('/:id/read', notificationController.markAsRead);
 router.put('/:id/archive', notificationController.archiveNotification);

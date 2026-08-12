@@ -497,6 +497,7 @@ const applyForJob = async (req, res, next) => {
 
     const wallet = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
     const boostCoinsAmount = Math.max(0, Number(req.body.boostCoins || 0));
+    const coverLetter = typeof req.body.coverLetter === 'string' ? req.body.coverLetter.trim() : null;
 
     const existing = await prisma.jobAssignment.findUnique({
       where: { jobId_providerId: { jobId, providerId } }
@@ -571,7 +572,13 @@ const applyForJob = async (req, res, next) => {
     }
 
     const assignment = await prisma.jobAssignment.create({
-      data: { jobId, providerId, status: 'PENDING', boostCoins: boostCoinsAmount }
+      data: { 
+        jobId, 
+        providerId, 
+        status: 'PENDING', 
+        boostCoins: boostCoinsAmount,
+        coverLetter: coverLetter || null
+      }
     });
 
     const applicationCount = await prisma.jobAssignment.count({ where: { jobId } });
