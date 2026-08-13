@@ -54,13 +54,62 @@ const sendSMSOTP = async (phoneNumber, otp, country = 'Cameroon') => {
   }
 };
 
-const otpCache = new Map();
+const otpCache = new Map(); // Legacy fallback — see otpDb helpers below
 const debugLog = (...args) => {
   if (process.env.NODE_ENV !== 'production') console.log(...args);
 };
 
-const generateToken = (id, role) => {
-  return jwt.sign({ id, role }, process.env.JWT_SECRET, { expiresIn: '30d' });
+// ─── DB-backed OTP helpers (replaces in-memory otpCache) ────────────────────
+// OTPs are hashed with bcrypt before storage so plaintext is never persisted.
+
+const otpDb = {
+  /** Store a new OTP (hashed). Replaces any existing record for this identifier+type */
+  async set(identifier, otp, type, payload = null) {
+    const otpHash = await bcrypt.hash(otp, 10);
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    // Upsert: delete existing then create fresh so we don't accumulate stale rows
+    await prisma.pendingVerification.deleteMany({ where: { identifier, type } });
+    return prisma.pendingVerification.create({
+      data: { identifier, otpHash, type, payload, expiresAt, attempts: 0 }
+    });
+  },
+
+  /** Verify an OTP. Returns the record if valid, null if invalid/expired/locked. */
+  async verify(identifier, otp, type) {
+    const record = await prisma.pendingVerification.findFirst({
+      where: { identifier, type, expiresAt: { gt: new Date() } }
+    });
+    if (!record) return null;
+    // Lock after 5 failed attempts
+    if (record.attempts >= 5) return null;
+    const isMatch = await bcrypt.compare(otp, record.otpHash);
+    if (!isMatch) {
+      await prisma.pendingVerification.update({
+        where: { id: record.id },
+        data: { attempts: { increment: 1 } }
+      });
+      return null;
+    }
+    return record;
+  },
+
+  /** Delete all OTP records for this identifier+type after successful use */
+  async delete(identifier, type) {
+    return prisma.pendingVerification.deleteMany({ where: { identifier, type } });
+  },
+
+  /** Purge all expired records (call periodically) */
+  async purgeExpired() {
+    return prisma.pendingVerification.deleteMany({ where: { expiresAt: { lt: new Date() } } });
+  }
+};
+
+// Run cleanup every hour to avoid stale rows accumulating
+setInterval(() => otpDb.purgeExpired().catch(() => {}), 60 * 60 * 1000);
+// ─────────────────────────────────────────────────────────────────────────────
+
+const generateToken = (id, role, tokenVersion = 0) => {
+  return jwt.sign({ id, role, tokenVersion }, process.env.JWT_SECRET, { expiresIn: '7d' });
 };
 
 // Returns bilingual message based on the language parameter sent by the client
@@ -117,16 +166,7 @@ const register = async (req, res, next) => {
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    
-    // Cache the entire registration payload
-    const payload = {
-      fullName, email, phone, password: hashedPassword, dob, role: role || 'CLIENT', location: location || '',
-      country: selectedCountry,
-      referralCode: generatedReferralCode, language: language || 'en', providerProfile,
-      originalReferral: referralCode
-    };
-
-    otpCache.set(email, { otp, expires: Date.now() + 600000, type: 'registration', payload });
+    await otpDb.set(email, otp, 'registration', payload);
     await sendOTP(email, otp, language || 'en');
 
     debugLog('User registration payload cached, pending email verification for:', email);
@@ -182,7 +222,7 @@ const login = async (req, res, next) => {
 
     if (!user.isEmailVerified && user.email) {
       const otp = Math.floor(100000 + Math.random() * 900000).toString();
-      otpCache.set(user.email, { otp, expires: Date.now() + 600000, type: 'registration' });
+      await otpDb.set(user.email, otp, 'registration');
       await sendOTP(user.email, otp, user.preferredLanguage);
       return res.status(403).json({ success: false, requiresEmailVerification: true, email: user.email, message: 'Please verify your email to continue.' });
     }
@@ -209,7 +249,7 @@ const login = async (req, res, next) => {
       return res.status(200).json({ success: true, requiresTwoFactor: true, tempToken });
     }
 
-    const token = generateToken(user.id, user.role);
+    const token = generateToken(user.id, user.role, user.tokenVersion ?? 0);
 
     // IP Tracking & Alert Logic
     const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
@@ -263,24 +303,22 @@ const requestOTP = async (req, res, next) => {
   try {
     const { email, phone, language, country } = req.body;
     
-    let identifier;
     let formattedEmail = email ? email.trim().toLowerCase() : null;
     let formattedPhone = phone ? normalizePhoneWithCountry(phone, country || 'Cameroon') : null;
-    identifier = formattedEmail || formattedPhone;
+    const identifier = formattedEmail || formattedPhone;
     
     if (!identifier) {
       return res.status(400).json({ success: false, message: 'Email or phone is required' });
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const existingCache = otpCache.get(identifier);
-    
-    let cachePayload = { otp, expires: Date.now() + 600000, language: language || 'en' };
-    if (existingCache && existingCache.type === 'registration') {
-      cachePayload = { ...existingCache, otp, expires: Date.now() + 600000 };
-    }
 
-    otpCache.set(identifier, cachePayload);
+    // Preserve registration payload if this is a resend for pending registration
+    const existingRecord = await prisma.pendingVerification.findFirst({
+      where: { identifier, type: 'registration' }
+    });
+    const payload = existingRecord?.payload ?? null;
+    await otpDb.set(identifier, otp, 'registration', payload);
 
     if (formattedEmail) {
       await sendOTP(formattedEmail, otp, language || 'en');
@@ -299,23 +337,23 @@ const verifyOTP = async (req, res, next) => {
     const { email, phone, otp, country } = req.body;
     const normalizedPhone = phone ? normalizePhoneWithCountry(phone, country || 'Cameroon') : null;
     const identifier = email || normalizedPhone;
-    
+
     const isTestOTP = process.env.NODE_ENV !== 'production' &&
       otp === '123456' &&
       (email?.startsWith('test') || normalizedPhone?.startsWith('+23760000'));
-    
+
+    let record = null;
     if (!isTestOTP) {
-      const cached = otpCache.get(identifier);
-      if (!cached || cached.otp !== otp || Date.now() > cached.expires) {
-        return res.status(401).json({ success: false, message: 'Invalid or expired OTP' });
+      record = await otpDb.verify(identifier, otp, 'registration');
+      if (!record) {
+        return res.status(401).json({ success: false, message: 'Invalid or expired OTP. Too many wrong attempts will lock your account.' });
       }
-      otpCache.delete(identifier);
+      await otpDb.delete(identifier, 'registration');
     }
 
-    const cleaned = normalizedPhone ? normalizedPhone.replace(/\D/g, '') : '';
     let user = await prisma.user.findFirst({
-      where: email 
-        ? { email } 
+      where: email
+        ? { email }
         : {
             OR: [
               { phone: normalizedPhone },
@@ -325,6 +363,9 @@ const verifyOTP = async (req, res, next) => {
           },
       include: { wallet: true, providerProfile: true }
     });
+
+    // Use DB payload if found (DB-backed OTP path)
+    const registrationPayload = record?.payload ?? null;
 
     if (!user && isTestOTP) {
       const testRole = (email?.includes('provider') || normalizedPhone?.endsWith('2')) ? 'PROVIDER' : 'CLIENT';
@@ -367,7 +408,7 @@ const verifyOTP = async (req, res, next) => {
       return res.status(403).json({ success: false, message: user.blockedReason || 'This account has been blocked.' });
     }
 
-    const token = generateToken(user.id, user.role);
+    const token = generateToken(user.id, user.role, user.tokenVersion ?? 0);
     setTokenCookie(res, token);
     // Strip sensitive internal fields before sending to client
     const { password: _pw2, twoFactorCode: _tfc2, twoFactorExpiry: _tfe2, lastIpAddress: _lip2, ...safeUser2 } = user;
@@ -574,7 +615,7 @@ const forgotPassword = async (req, res, next) => {
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    otpCache.set(email.trim().toLowerCase(), { otp, expires: Date.now() + 600000 });
+    await otpDb.set(email.trim().toLowerCase(), otp, 'reset');
 
     sendOTP(email, otp, lang || user.preferredLanguage || 'en').catch(err => {
       console.error('[ForgotPassword] Email failed:', err.message);
@@ -604,13 +645,11 @@ const verifyResetOtp = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Email and OTP are required' });
     }
 
-    const cached = otpCache.get(email);
-    if (!cached || cached.otp !== otp || Date.now() > cached.expires) {
-      return res.status(401).json({ success: false, message: 'Invalid or expired OTP' });
+    const record = await otpDb.verify(email.trim().toLowerCase(), otp, 'reset');
+    if (!record) {
+      return res.status(401).json({ success: false, message: 'Invalid or expired OTP. Max 5 attempts allowed.' });
     }
-
-    // Delete OTP after successful verification
-    otpCache.delete(email);
+    await otpDb.delete(email.trim().toLowerCase(), 'reset');
 
     const user = await prisma.user.findFirst({ where: { email: email.trim().toLowerCase() } });
     if (!user) {
@@ -670,11 +709,12 @@ const verifyEmailOTP = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Email and OTP are required' });
     }
 
-    const cached = otpCache.get(email.trim().toLowerCase());
-    if (!cached || cached.otp !== otp.trim() || Date.now() > cached.expires) {
+    const record = await otpDb.verify(email.trim().toLowerCase(), otp.trim(), 'registration');
+    if (!record) {
       return res.status(401).json({ success: false, message: 'Invalid or expired OTP' });
     }
 
+    const cached = record; // alias for readability below
     if (cached.type === 'registration' && cached.payload) {
       // Execute the database creation since OTP is valid
       const { fullName, email: plEmail, phone, password, dob, role, referralCode, language, providerProfile, originalReferral, location, country } = cached.payload;
@@ -727,7 +767,7 @@ const verifyEmailOTP = async (req, res, next) => {
         return { newUser: user, referrerReward: null };
       });
 
-      otpCache.delete(email.trim().toLowerCase());
+      await otpDb.delete(email.trim().toLowerCase(), 'registration');
       
       sendWelcomeEmail(newUser.email, newUser.fullName, newUser.preferredLanguage).catch(e => console.error('[WelcomeEmail] error:', e.message));
 
@@ -744,7 +784,7 @@ const verifyEmailOTP = async (req, res, next) => {
     }
 
     // Handle standard verification
-    otpCache.delete(email.trim().toLowerCase());
+    await otpDb.delete(email.trim().toLowerCase(), 'registration');
     const user = await prisma.user.findUnique({
       where: { email: email.trim().toLowerCase() },
       include: { wallet: true, providerProfile: true }
@@ -767,7 +807,18 @@ const verifyEmailOTP = async (req, res, next) => {
   }
 };
 
-const logout = (req, res) => {
+const logout = async (req, res) => {
+  // Increment tokenVersion to revoke all existing JWT tokens for this user
+  if (req.user?.id) {
+    try {
+      await prisma.user.update({
+        where: { id: req.user.id },
+        data: { tokenVersion: { increment: 1 } }
+      });
+    } catch (e) {
+      console.error('[Logout] Failed to revoke token version:', e.message);
+    }
+  }
   res.cookie('jwt', '', {
     httpOnly: true,
     expires: new Date(0),

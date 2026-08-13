@@ -131,6 +131,7 @@ model User {
   verificationCoinsGiven Boolean   @default(false)
   preferredLanguage      String    @default("en")
   country                String?   @default("Cameroon")
+  tokenVersion           Int       @default(0)  // Incremented on logout/password change to revoke old JWTs
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
 
@@ -699,4 +700,20 @@ model CareerpathBookmark {
   user        User     @relation(fields: [userId], references: [id])
   
   @@unique([userId, categoryKey])
+}
+
+// Persistent OTP storage replacing in-memory Map
+// Crash-safe and horizontally-scalable across multiple server instances
+model PendingVerification {
+  id         String   @id @default(uuid())
+  identifier String               // email or phone
+  otpHash    String               // bcrypt hash of the OTP
+  type       String               // 'registration' | 'login' | 'reset' | '2fa'
+  payload    Json?                // registration payload (for deferred user creation)
+  attempts   Int      @default(0) // Track failed attempts for per-record lockout
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  @@index([identifier])
+  @@index([expiresAt])
 }

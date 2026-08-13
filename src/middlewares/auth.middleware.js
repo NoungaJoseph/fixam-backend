@@ -46,6 +46,13 @@ const protect = async (req, res, next) => {
           return res.status(401).json({ success: false, message: 'User not found' });
         }
 
+        // JWT revocation check: tokenVersion in token must match DB
+        const tokenVersion = decoded.tokenVersion ?? 0;
+        if ((req.user.tokenVersion ?? 0) !== tokenVersion) {
+          userCache.delete(userId);
+          return res.status(401).json({ success: false, message: 'Session expired. Please log in again.' });
+        }
+
         if (req.user.isBlocked) {
           userCache.delete(userId);
           return res.status(403).json({
