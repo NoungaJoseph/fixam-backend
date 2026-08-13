@@ -30,12 +30,19 @@ const createBooking = async (req, res, next) => {
     }
 
     const provider = await prisma.user.findFirst({
-      where: { id: providerId, role: 'PROVIDER' },
+      where: {
+        OR: [
+          { id: providerId },
+          { providerProfile: { id: providerId } }
+        ],
+        role: 'PROVIDER'
+      },
       include: { providerProfile: true },
     });
     if (!provider) return res.status(404).json({ success: false, message: 'Provider not found.' });
 
-    const providerProfile = await prisma.providerProfile.findUnique({ where: { userId: providerId } });
+    const targetProviderId = provider.id;
+    const providerProfile = provider.providerProfile || await prisma.providerProfile.findUnique({ where: { userId: targetProviderId } });
     if (!providerProfile) {
       return res.status(404).json({ success: false, message: 'Provider profile not found.' });
     }
@@ -54,15 +61,18 @@ const createBooking = async (req, res, next) => {
       });
     }
 
-    const isVerified = clientUser?.providerProfile?.verification === 'VERIFIED';
-    
-    if (!isVerified) {
-      return res.status(403).json({
-        success: false,
-        message: 'Please verify your identity before booking',
-        requiresVerification: true,
-        code: clientUser?.providerProfile?.verification === 'PENDING' ? 'VERIFICATION_PENDING' : 'VERIFICATION_REQUIRED'
-      });
+    // Only provider accounts making a booking must be verified; pure Client accounts do not require provider verification
+    const requiresVerificationCheck = clientUser?.role === 'PROVIDER';
+    if (requiresVerificationCheck) {
+      const isVerified = clientUser?.providerProfile?.verification === 'VERIFIED';
+      if (!isVerified) {
+        return res.status(403).json({
+          success: false,
+          message: 'Please verify your identity before booking',
+          requiresVerification: true,
+          code: clientUser?.providerProfile?.verification === 'PENDING' ? 'VERIFICATION_PENDING' : 'VERIFICATION_REQUIRED'
+        });
+      }
     }
 
     if (taskId) {
@@ -99,7 +109,7 @@ const createBooking = async (req, res, next) => {
       const newBooking = await tx.booking.create({
         data: {
           clientId: req.user.id,
-          providerId,
+          providerId: targetProviderId,
           taskId: taskId || null,
           bookingDate: bookingDate ? new Date(bookingDate) : new Date(),
           bookingTime: bookingTime || '09:00',
