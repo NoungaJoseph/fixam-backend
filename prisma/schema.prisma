@@ -621,6 +621,20 @@ model UnlockedProvider {
   @@index([providerId])
 }
 
+model ClientFavoriteProvider {
+  id         String   @id @default(uuid())
+  clientId   String
+  providerId String
+  createdAt  DateTime @default(now())
+
+  client   User            @relation("ClientFavoriteProviders", fields: [clientId], references: [id], onDelete: Cascade)
+  provider ProviderProfile @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, providerId])
+  @@index([clientId])
+  @@index([providerId])
+}
+
 // --- CAREERPATH MODELS ---
 
 model CareerpathEnrollment {
