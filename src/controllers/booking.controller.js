@@ -99,8 +99,17 @@ const createBooking = async (req, res, next) => {
     const coinCost = isProposal ? 0 : (COIN_COSTS[resolvedUrgency] || 1);
 
     const booking = await prisma.$transaction(async (tx) => {
-      const wallet = await tx.wallet.findUnique({ where: { userId: req.user.id } });
-      if (!isProposal && (!wallet || wallet.balance < coinCost)) {
+      let wallet = await tx.wallet.findUnique({ where: { userId: req.user.id } });
+      if (!wallet) {
+        wallet = await tx.wallet.create({
+          data: {
+            userId: req.user.id,
+            balance: 5
+          }
+        });
+      }
+
+      if (!isProposal && wallet.balance < coinCost) {
         const error = new Error(`Insufficient coins. You need ${coinCost} coins for this booking.`);
         error.statusCode = 400;
         throw error;
@@ -146,7 +155,7 @@ const createBooking = async (req, res, next) => {
 
     const notification = await prisma.notification.create({
       data: {
-        userId: providerId,
+        userId: targetProviderId,
         title: 'New booking request',
         body: `${req.user.fullName || 'A client'} requested a service booking.`,
         data: { type: 'BOOKING', bookingId: booking.id, status: booking.status }
@@ -154,12 +163,12 @@ const createBooking = async (req, res, next) => {
     });
 
     emitBooking(booking);
-    try { getIO().to(providerId).emit('notification:new', notification); } catch (_) {}
+    try { getIO().to(targetProviderId).emit('notification:new', notification); } catch (_) {}
 
     // Send FCM Push Notification
     try {
       await sendPushNotification(
-        providerId,
+        targetProviderId,
         'New Booking Request 📅',
         `${req.user.fullName || 'A client'} wants to book your service`,
         {
