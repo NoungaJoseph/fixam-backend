@@ -99,19 +99,13 @@ const createBooking = async (req, res, next) => {
     const coinCost = isProposal ? 0 : (COIN_COSTS[resolvedUrgency] || 1);
 
     const booking = await prisma.$transaction(async (tx) => {
-      let wallet = await tx.wallet.findUnique({ where: { userId: req.user.id } });
-      if (!wallet) {
-        wallet = await tx.wallet.create({
-          data: {
-            userId: req.user.id,
-            balance: 5
-          }
-        });
-      }
+      const wallet = await tx.wallet.findUnique({ where: { userId: req.user.id } });
+      const currentBalance = wallet ? wallet.balance : 0;
 
-      if (!isProposal && wallet.balance < coinCost) {
-        const error = new Error(`Insufficient coins. You need ${coinCost} coins for this booking.`);
+      if (!isProposal && currentBalance < coinCost) {
+        const error = new Error(`Insufficient coins to make this request. You need ${coinCost} coin${coinCost > 1 ? 's' : ''} to book this provider.`);
         error.statusCode = 400;
+        error.code = 'INSUFFICIENT_COINS';
         throw error;
       }
 
@@ -188,7 +182,8 @@ const createBooking = async (req, res, next) => {
     console.error('[Booking] Full error:', error);
     return res.status(error.statusCode || 500).json({
       success: false,
-      message: error.message,
+      message: error.message || 'Failed to create booking',
+      code: error.code || 'BOOKING_FAILED'
     });
   }
 };
