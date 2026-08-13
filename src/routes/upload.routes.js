@@ -13,7 +13,7 @@ const allowedMimeTypes = new Set([
   'image/gif',
   'image/heic',
   'image/heif',
-  'image/svg+xml',
+  // NOTE: image/svg+xml removed — SVGs can contain embedded JS (Stored XSS)
   'image/bmp',
   'image/x-icon',
   'application/pdf',
@@ -30,7 +30,7 @@ const allowedMimeTypes = new Set([
   'video/webm',
   'video/x-matroska',
   'video/avi',
-  'application/octet-stream'
+  // NOTE: application/octet-stream removed — clients can spoof MIME type to bypass file checks
 ]);
 
 const upload = multer({

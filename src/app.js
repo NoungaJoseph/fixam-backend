@@ -71,7 +71,8 @@ const allowedOrigins = [
 app.use(cors({
   credentials: true,
   origin: function (origin, callback) {
-    const isLocalDev = origin && (
+    // Only allow localhost in non-production environments
+    const isLocalDev = process.env.NODE_ENV !== 'production' && origin && (
       origin.startsWith('http://localhost') ||
       origin.startsWith('http://127.0.0.1') ||
       origin.startsWith('http://192.168.') ||
@@ -92,10 +93,24 @@ app.use('/api/payments/webhook/kora', express.raw({ type: 'application/json' }))
 
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
-app.use('/uploads', express.static('uploads', {
+// Public static assets — only non-sensitive buckets
+app.use('/uploads/profile-images', express.static('uploads/profile-images', {
   maxAge: process.env.NODE_ENV === 'production' ? '7d' : 0,
   fallthrough: false
 }));
+app.use('/uploads/portfolio-images', express.static('uploads/portfolio-images', {
+  maxAge: process.env.NODE_ENV === 'production' ? '7d' : 0,
+  fallthrough: false
+}));
+app.use('/uploads/portfolio-videos', express.static('uploads/portfolio-videos', {
+  maxAge: process.env.NODE_ENV === 'production' ? '7d' : 0,
+  fallthrough: false
+}));
+app.use('/uploads/chat-media', express.static('uploads/chat-media', {
+  maxAge: process.env.NODE_ENV === 'production' ? '7d' : 0,
+  fallthrough: false
+}));
+// NOTE: verification-documents and payment-proofs are served via authenticated routes only (not static)
 app.use('/public', express.static('public', {
   maxAge: process.env.NODE_ENV === 'production' ? '7d' : 0,
   fallthrough: false
@@ -149,6 +164,30 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/system', systemRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/sports', sportsRoutes);
+
+// Authenticated route for sensitive private file buckets
+// Prevents public access to verification docs and payment proofs
+const { protect: secureFileProtect } = require('./middlewares/auth.middleware');
+const path = require('path');
+const fs = require('fs');
+const SENSITIVE_BUCKETS = ['verification-documents', 'payment-proofs'];
+app.get('/uploads/:bucket/:filename', secureFileProtect, (req, res) => {
+  const { bucket, filename } = req.params;
+  if (!SENSITIVE_BUCKETS.includes(bucket)) {
+    return res.status(404).json({ success: false, message: 'File not found' });
+  }
+  if (!/^[\w.\-]+$/.test(filename)) {
+    return res.status(400).json({ success: false, message: 'Invalid filename' });
+  }
+  if (req.user.role !== 'ADMIN') {
+    return res.status(403).json({ success: false, message: 'Access denied' });
+  }
+  const filePath = path.join(process.cwd(), 'uploads', bucket, filename);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ success: false, message: 'File not found' });
+  }
+  res.sendFile(filePath);
+});
 
 // --- WEB / CAREERPATH EXCLUSIVE ROUTES ---
 const webAuthRoutes = require('./routes/web/web-auth.routes');

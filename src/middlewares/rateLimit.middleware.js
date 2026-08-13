@@ -1,16 +1,16 @@
 const rateLimit = require('express-rate-limit');
 
 // General API Rate Limiter
-// 1000 requests per 15 minutes per IP
+// 300 requests per 15 minutes per IP (reduced from 2000 to limit data scraping)
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 2000,
+  max: 300,
   message: {
     success: false,
     message: 'Too many requests from this IP, please try again after 15 minutes.'
   },
-  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
-  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 
 // Strict Auth Rate Limiter
@@ -26,11 +26,24 @@ const authLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// OTP-Specific Strict Limiter
+// 5 requests per 15 minutes per IP to prevent OTP brute-force
+const otpLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: {
+    success: false,
+    message: 'Too many OTP attempts, please try again after 15 minutes.'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // Broadcast/System Level Limiter
-// 1000 requests per 15 minutes (for internal/trusted paths)
+// 500 requests per 15 minutes (for internal/trusted paths)
 const lenientLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 1000,
+  max: 500,
   message: {
     success: false,
     message: 'Too many requests, please slow down.'
@@ -42,5 +55,6 @@ const lenientLimiter = rateLimit({
 module.exports = {
   apiLimiter,
   authLimiter,
+  otpLimiter,
   lenientLimiter
 };

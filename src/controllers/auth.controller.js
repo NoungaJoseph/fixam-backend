@@ -218,8 +218,14 @@ const login = async (req, res, next) => {
         try {
           const axios = require('axios');
           const ipToCheck = clientIp.split(',')[0].trim();
-          // We can fetch IP location if valid. Avoid local IPs or IPv6 if the free API doesn't support them well.
-          const geoRes = await axios.get(`http://ip-api.com/json/${ipToCheck}?fields=city,country,status`);
+          // Only call geo-API for valid public IPv4 addresses (SSRF prevention)
+          const isPublicIPv4 = /^(\d{1,3}\.){3}\d{1,3}$/.test(ipToCheck) &&
+            !ipToCheck.startsWith('10.') &&
+            !ipToCheck.startsWith('127.') &&
+            !ipToCheck.startsWith('192.168.') &&
+            !(/^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(ipToCheck));
+          if (!isPublicIPv4) throw new Error('Private IP, skipping geo lookup');
+          const geoRes = await axios.get(`https://ip-api.com/json/${ipToCheck}?fields=city,country,status`);
           const location = geoRes.data.status === 'success' ? `${geoRes.data.city}, ${geoRes.data.country}` : clientIp;
           
           await sendSuspiciousLoginAlert(user.email, {
@@ -244,7 +250,9 @@ const login = async (req, res, next) => {
     }
 
     setTokenCookie(res, token);
-    res.status(200).json({ success: true, token, user });
+    // Strip sensitive internal fields before sending to client
+    const { password: _pw, twoFactorCode: _tfc, twoFactorExpiry: _tfe, lastIpAddress: _lip, ...safeUser } = user;
+    res.status(200).json({ success: true, token, user: safeUser });
   } catch (error) {
     console.error('Login error details:', error);
     next(error);
@@ -292,7 +300,9 @@ const verifyOTP = async (req, res, next) => {
     const normalizedPhone = phone ? normalizePhoneWithCountry(phone, country || 'Cameroon') : null;
     const identifier = email || normalizedPhone;
     
-    const isTestOTP = otp === '123456' && (email?.startsWith('test') || normalizedPhone?.startsWith('+23760000'));
+    const isTestOTP = process.env.NODE_ENV !== 'production' &&
+      otp === '123456' &&
+      (email?.startsWith('test') || normalizedPhone?.startsWith('+23760000'));
     
     if (!isTestOTP) {
       const cached = otpCache.get(identifier);
@@ -359,7 +369,9 @@ const verifyOTP = async (req, res, next) => {
 
     const token = generateToken(user.id, user.role);
     setTokenCookie(res, token);
-    res.status(200).json({ success: true, token, user });
+    // Strip sensitive internal fields before sending to client
+    const { password: _pw2, twoFactorCode: _tfc2, twoFactorExpiry: _tfe2, lastIpAddress: _lip2, ...safeUser2 } = user;
+    res.status(200).json({ success: true, token, user: safeUser2 });
   } catch (error) {
     next(error);
   }
