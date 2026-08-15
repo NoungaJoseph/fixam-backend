@@ -391,15 +391,29 @@ const addFavoriteProvider = async (req, res, next) => {
   try {
     const { providerId } = req.params;
 
-    const provider = await prisma.providerProfile.findUnique({ where: { id: providerId } });
+    const provider = await prisma.providerProfile.findFirst({
+      where: {
+        OR: [
+          { id: providerId },
+          { userId: providerId }
+        ]
+      }
+    });
+
     if (!provider) {
-      return res.status(404).json({ success: false, message: 'Provider not found' });
+      return res.status(404).json({ success: false, message: 'Provider profile not found' });
     }
 
+    if (provider.userId === req.user.id) {
+      return res.status(400).json({ success: false, message: 'You cannot favorite your own profile' });
+    }
+
+    const targetId = provider.id;
+
     await prisma.clientFavoriteProvider.upsert({
-      where: { clientId_providerId: { clientId: req.user.id, providerId } },
+      where: { clientId_providerId: { clientId: req.user.id, providerId: targetId } },
       update: {},
-      create: { clientId: req.user.id, providerId }
+      create: { clientId: req.user.id, providerId: targetId }
     });
 
     res.status(200).json({ success: true, message: 'Provider added to favorites' });
@@ -412,8 +426,19 @@ const removeFavoriteProvider = async (req, res, next) => {
   try {
     const { providerId } = req.params;
 
+    const provider = await prisma.providerProfile.findFirst({
+      where: {
+        OR: [
+          { id: providerId },
+          { userId: providerId }
+        ]
+      }
+    });
+
+    const targetId = provider ? provider.id : providerId;
+
     await prisma.clientFavoriteProvider.deleteMany({
-      where: { clientId: req.user.id, providerId }
+      where: { clientId: req.user.id, providerId: targetId }
     });
 
     res.status(200).json({ success: true, message: 'Provider removed from favorites' });
@@ -957,117 +982,6 @@ const getProviderStatsSummary = async (req, res, next) => {
   }
 };
 
-const getFavoriteProviders = async (req, res, next) => {
-  try {
-    const favorites = await prisma.clientFavoriteProvider.findMany({
-      where: { clientId: req.user.id },
-      include: {
-        provider: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                fullName: true,
-                avatar: true,
-                phone: true,
-                country: true,
-                isOnline: true
-              }
-            }
-          }
-        }
-      },
-      orderBy: { createdAt: 'desc' }
-    });
-
-    const formatted = favorites.map(f => {
-      const p = f.provider;
-      return {
-        ...p,
-        id: p.id,
-        user: p.user,
-        favoriteId: f.id,
-        savedAt: f.createdAt
-      };
-    });
-
-    res.status(200).json({ success: true, data: formatted });
-  } catch (error) {
-    console.error('[Get Favorite Providers Error]', error);
-    next(error);
-  }
-};
-
-const addFavoriteProvider = async (req, res, next) => {
-  try {
-    const { providerId } = req.params;
-
-    const provider = await prisma.providerProfile.findFirst({
-      where: {
-        OR: [
-          { id: providerId },
-          { userId: providerId }
-        ]
-      }
-    });
-
-    if (!provider) {
-      return res.status(404).json({ success: false, message: 'Provider profile not found' });
-    }
-
-    if (provider.userId === req.user.id) {
-      return res.status(400).json({ success: false, message: 'You cannot favorite your own profile' });
-    }
-
-    const favorite = await prisma.clientFavoriteProvider.upsert({
-      where: {
-        clientId_providerId: {
-          clientId: req.user.id,
-          providerId: provider.id
-        }
-      },
-      update: {},
-      create: {
-        clientId: req.user.id,
-        providerId: provider.id
-      }
-    });
-
-    res.status(200).json({ success: true, message: 'Provider added to favorites', data: favorite });
-  } catch (error) {
-    console.error('[Add Favorite Provider Error]', error);
-    next(error);
-  }
-};
-
-const removeFavoriteProvider = async (req, res, next) => {
-  try {
-    const { providerId } = req.params;
-
-    const provider = await prisma.providerProfile.findFirst({
-      where: {
-        OR: [
-          { id: providerId },
-          { userId: providerId }
-        ]
-      }
-    });
-
-    const targetId = provider ? provider.id : providerId;
-
-    await prisma.clientFavoriteProvider.deleteMany({
-      where: {
-        clientId: req.user.id,
-        providerId: targetId
-      }
-    });
-
-    res.status(200).json({ success: true, message: 'Provider removed from favorites' });
-  } catch (error) {
-    console.error('[Remove Favorite Provider Error]', error);
-    next(error);
-  }
-};
 
 module.exports = {
   updateProviderProfile,
