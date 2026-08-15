@@ -41,4 +41,9 @@ const cacheMiddleware = (durationInSeconds = 300) => {
   };
 };
 
+cacheMiddleware.clearCache = () => {
+  apiCache.flushAll();
+  console.log('[Cache] Cache flushed successfully.');
+};
+
 module.exports = cacheMiddleware;

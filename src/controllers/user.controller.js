@@ -3,6 +3,7 @@ const { updateProfileSchema } = require('../validators/user.validator');
 const bcrypt = require('bcrypt');
 const { calculateProviderStats } = require('../utils/providerStats');
 const { clearUserCache } = require('../middlewares/auth.middleware');
+const cacheMiddleware = require('../middlewares/cache.middleware');
 
 const getMe = async (req, res, next) => {
   try {
@@ -136,6 +137,7 @@ const updateProfile = async (req, res, next) => {
     });
 
     clearUserCache(req.user.id);
+    cacheMiddleware.clearCache();
     res.status(200).json({ success: true, data: user });
   } catch (error) {
     next(error);

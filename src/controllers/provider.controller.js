@@ -2,6 +2,7 @@ const prisma = require('../config/prisma');
 const { setupProviderSchema } = require('../validators/provider.validator');
 const { calculateProviderStats, enrichProvidersWithStats } = require('../utils/providerStats');
 const { isRemoteSkill } = require('../utils/skillClassifier');
+const cacheMiddleware = require('../middlewares/cache.middleware');
 
 const maskProvidersPhone = (providers) => providers.map(p => {
   if (!p.user || !p.user.phone) return p;
@@ -84,6 +85,7 @@ const updateProviderProfile = async (req, res, next) => {
       data: { ...validatedData, profileScore: score },
     });
 
+    cacheMiddleware.clearCache();
     res.status(200).json({ success: true, data: profile });
   } catch (error) {
     next(error);
