@@ -36,7 +36,7 @@ const uploadPaymentProof = async (req, res, next) => {
 const uploadPortfolioMedia = async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
-    const bucket = req.file?.mimetype?.startsWith('video/') ? 'portfolio-videos' : 'portfolio-images';
+    const bucket = `portfolio-user-${req.user.id}`;
     const url = await uploadFile(req.file, bucket, { requireCloud: false, req });
     res.status(200).json({ success: true, url, data: { url } });
   } catch (error) {

@@ -548,8 +548,8 @@ model ClientFavoriteProvider {
   providerId String
   createdAt  DateTime @default(now())
 
-  client   User            @relation("ClientFavoriteProviders", fields: [clientId], references: [id])
-  provider ProviderProfile @relation(fields: [providerId], references: [id])
+  client   User            @relation("ClientFavoriteProviders", fields: [clientId], references: [id], onDelete: Cascade)
+  provider ProviderProfile @relation(fields: [providerId], references: [id], onDelete: Cascade)
 
   @@unique([clientId, providerId])
   @@index([clientId])
@@ -615,20 +615,6 @@ model UnlockedProvider {
 
   client   User            @relation("ClientUnlocks", fields: [clientId], references: [id])
   provider ProviderProfile @relation("ProviderUnlocks", fields: [providerId], references: [id])
-
-  @@unique([clientId, providerId])
-  @@index([clientId])
-  @@index([providerId])
-}
-
-model ClientFavoriteProvider {
-  id         String   @id @default(uuid())
-  clientId   String
-  providerId String
-  createdAt  DateTime @default(now())
-
-  client   User            @relation("ClientFavoriteProviders", fields: [clientId], references: [id], onDelete: Cascade)
-  provider ProviderProfile @relation(fields: [providerId], references: [id], onDelete: Cascade)
 
   @@unique([clientId, providerId])
   @@index([clientId])
