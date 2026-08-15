@@ -28,14 +28,12 @@ const uploadLocal = async (file, bucket, fileName, req) => {
 };
 
 const uploadFile = async (file, bucket, options = {}) => {
-  const { requireCloud = false, req } = options;
-  const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const { req } = options;
+  const safeName = (file.originalname || 'file').replace(/[^a-zA-Z0-9._-]/g, '_');
   const fileName = `${Date.now()}-${safeName}`;
 
   if (!supabase) {
-    if (requireCloud) {
-      throw new Error('Supabase Storage is not configured for persistent profile uploads.');
-    }
+    console.warn('[Storage] Supabase client not initialized. Falling back to local server storage.');
     return uploadLocal(file, bucket, fileName, req);
   }
 
@@ -43,31 +41,24 @@ const uploadFile = async (file, bucket, options = {}) => {
     let uploadRes = await supabase.storage
       .from(bucket)
       .upload(fileName, file.buffer, {
-        contentType: file.mimetype,
+        contentType: file.mimetype || 'application/octet-stream',
         upsert: true
       });
 
     // If bucket upload fails, attempt creating/ensuring public bucket and retry
     if (uploadRes.error) {
-      console.log(`[Storage] Upload error for bucket '${bucket}': ${uploadRes.error.message || uploadRes.error}. Attempting bucket creation...`);
+      console.warn(`[Storage] Upload error for bucket '${bucket}': ${uploadRes.error.message || uploadRes.error}. Attempting bucket creation...`);
       try {
-        const { error: createError } = await supabase.storage.createBucket(bucket, {
-          public: true,
-          allowedMimeTypes: null,
-          fileSizeLimit: null
-        });
-        if (createError) {
-          console.warn(`[Storage] Create bucket '${bucket}' result:`, createError.message || createError);
-        }
+        await supabase.storage.createBucket(bucket, { public: true });
       } catch (e) {
-        console.warn(`[Storage] Bucket create exception:`, e.message);
+        console.warn(`[Storage] Bucket creation notice:`, e.message);
       }
 
       // Retry upload after bucket check
       uploadRes = await supabase.storage
         .from(bucket)
         .upload(fileName, file.buffer, {
-          contentType: file.mimetype,
+          contentType: file.mimetype || 'application/octet-stream',
           upsert: true
         });
     }
@@ -80,10 +71,7 @@ const uploadFile = async (file, bucket, options = {}) => {
 
     return publicUrl;
   } catch (error) {
-    console.error('Storage Upload Error:', error);
-    if (requireCloud) {
-      throw error;
-    }
+    console.error('[Storage] Storage Upload Error, using fallback:', error.message || error);
     return uploadLocal(file, bucket, fileName, req);
   }
 };

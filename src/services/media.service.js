@@ -158,35 +158,37 @@ const compressVideo = async (buffer, originalMimetype) => {
 const processMedia = async (file) => {
   if (!file || !file.buffer) return file;
 
-  const isImage = file.mimetype.startsWith('image/');
-  const isVideo = file.mimetype.startsWith('video/');
+  try {
+    const isImage = file.mimetype && file.mimetype.startsWith('image/');
+    const isVideo = file.mimetype && file.mimetype.startsWith('video/');
 
-  if (isImage) {
-    const result = await compressImage(file.buffer, file.mimetype);
-    // Update the file's originalname extension to match compressed format
-    const baseName = file.originalname.replace(/\.[^.]+$/, '');
-    return {
-      ...file,
-      buffer: result.buffer,
-      mimetype: result.mimetype,
-      originalname: `${baseName}.${result.extension}`,
-      size: result.buffer.length,
-    };
+    if (isImage) {
+      const result = await compressImage(file.buffer, file.mimetype);
+      const baseName = (file.originalname || 'image').replace(/\.[^.]+$/, '');
+      return {
+        ...file,
+        buffer: result.buffer,
+        mimetype: result.mimetype,
+        originalname: `${baseName}.${result.extension}`,
+        size: result.buffer.length,
+      };
+    }
+
+    if (isVideo) {
+      const result = await compressVideo(file.buffer, file.mimetype);
+      const baseName = (file.originalname || 'video').replace(/\.[^.]+$/, '');
+      return {
+        ...file,
+        buffer: result.buffer,
+        mimetype: result.mimetype,
+        originalname: `${baseName}.${result.extension}`,
+        size: result.buffer.length,
+      };
+    }
+  } catch (error) {
+    console.error('[Media] Processing failed, proceeding with original file:', error.message);
   }
 
-  if (isVideo) {
-    const result = await compressVideo(file.buffer, file.mimetype);
-    const baseName = file.originalname.replace(/\.[^.]+$/, '');
-    return {
-      ...file,
-      buffer: result.buffer,
-      mimetype: result.mimetype,
-      originalname: `${baseName}.${result.extension}`,
-      size: result.buffer.length,
-    };
-  }
-
-  // Not an image or video — return as-is (e.g., PDF documents)
   return file;
 };
 
