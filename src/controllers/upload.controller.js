@@ -45,7 +45,7 @@ const uploadPortfolioMedia = async (req, res, next) => {
     
     // Compress portfolio images and videos before uploading
     const processedFile = await processMedia(req.file);
-    const bucket = `portfolio-user-${req.user.id}`;
+    const bucket = 'portfolio-media';
     const url = await uploadFile(processedFile, bucket, { requireCloud: false, req });
     res.status(200).json({ success: true, url, data: { url } });
   } catch (error) {
