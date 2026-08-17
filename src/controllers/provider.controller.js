@@ -504,10 +504,23 @@ const uploadVerificationDocs = async (req, res, next) => {
 
 const updateProviderStatus = async (req, res, next) => {
   try {
-    const { isOnline } = req.body;
-    const user = await prisma.user.update({
+    const { isOnline, isAvailable } = req.body;
+    const statusVal = isAvailable !== undefined ? Boolean(isAvailable) : (isOnline !== undefined ? Boolean(isOnline) : true);
+
+    await prisma.user.update({
       where: { id: req.user.id },
-      data: { isOnline: Boolean(isOnline) },
+      data: { isOnline: statusVal }
+    });
+
+    if (req.user.providerProfile) {
+      await prisma.providerProfile.update({
+        where: { id: req.user.providerProfile.id },
+        data: { isAvailable: statusVal }
+      });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
       include: { providerProfile: true, wallet: true }
     });
 
