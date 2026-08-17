@@ -582,7 +582,8 @@ const applyForJob = async (req, res, next) => {
       ]);
     }
 
-    const { coverLetter, boostCoins, materialsList } = req.body;
+
+    const materialsList = req.body.materialsList;
 
     const assignment = await prisma.jobAssignment.create({
       data: { 
@@ -755,6 +756,7 @@ const selectProviderForJob = async (req, res, next) => {
         materialsList: finalMaterials
       }).catch(err => console.error('[Agreement Service Task] Error:', err.message));
 
+      if (updatedJobStatus === 'IN_PROGRESS') {
         // Refund boost coins to all unselected providers
         for (const unselected of unselectedAssignments) {
           const unselectedBoost = Number(unselected.boostCoins || 0);
@@ -785,11 +787,6 @@ const selectProviderForJob = async (req, res, next) => {
         await tx.jobAssignment.updateMany({
           where: { jobId, status: 'PENDING' },
           data: { status: 'REJECTED' }
-        });
-      } else {
-        await tx.job.update({
-          where: { id: jobId },
-          data: { selectedAssignmentId: assignmentId }
         });
       }
 

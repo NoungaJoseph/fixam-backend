@@ -100,7 +100,7 @@ const createBooking = async (req, res, next) => {
     const isProposal = Boolean(req.body.isProposal || req.body.isProjectProposal);
     const coinCost = isProposal ? 0 : (COIN_COSTS[resolvedUrgency] || 1);
 
-    const { providerId, taskId, bookingDate, bookingTime, budget, location, notes, bookingDuration, urgencyLevel, requiresDiagnosis, materialsList } = req.body;
+    const { requiresDiagnosis, materialsList } = req.body;
     const isDiagnosisReq = Boolean(requiresDiagnosis);
     const formattedMaterials = isDiagnosisReq ? null : (Array.isArray(materialsList) ? materialsList : []);
     const materialsStatus = isDiagnosisReq ? 'DIAGNOSIS_REQUIRED' : (formattedMaterials && formattedMaterials.length > 0 ? 'PENDING_AGREEMENT' : 'AGREED');
