@@ -115,6 +115,12 @@ const getConversationStatus = async (userId, otherUserId) => {
     { clientId: userId, providerId: otherUserId },
     { clientId: otherUserId, providerId: userId }
   ];
+  if (user2ProviderId) {
+    bookingOrConditions.push({ clientId: userId, providerId: user2ProviderId });
+  }
+  if (user1ProviderId) {
+    bookingOrConditions.push({ clientId: otherUserId, providerId: user1ProviderId });
+  }
 
   const activeBooking = await prisma.booking.findFirst({
     where: {
@@ -123,6 +129,17 @@ const getConversationStatus = async (userId, otherUserId) => {
     }
   });
   if (activeBooking) return { active: true, reason: 'ACTIVE_BOOKING' };
+
+  // Find existing conversation between the two users
+  const existingConv = await prisma.conversation.findFirst({
+    where: {
+      AND: [
+        { participants: { some: { userId } } },
+        { participants: { some: { userId: otherUserId } } }
+      ]
+    }
+  });
+  if (existingConv) return { active: true, reason: 'EXISTING_CONVERSATION' };
 
   // Find completed/cancelled jobs/bookings within the last 12 hours
   const cutoffDate = new Date(Date.now() - 12 * 60 * 60 * 1000);
