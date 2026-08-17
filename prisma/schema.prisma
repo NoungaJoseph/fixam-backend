@@ -159,6 +159,13 @@ model User {
   careerpathCertificates  CareerpathCertificate[]
   careerpathBookmarks     CareerpathBookmark[]
 
+  clientDisputes          Dispute[]                 @relation("ClientDisputes")
+  providerDisputes        Dispute[]                 @relation("ProviderDisputes")
+  assignedDisputes        Dispute[]                 @relation("AdminDisputes")
+
+  clientAgreements        ServiceAgreement[]        @relation("ClientAgreements")
+  providerAgreements      ServiceAgreement[]        @relation("ProviderAgreements")
+
   @@index([role])
 }
 
@@ -266,13 +273,20 @@ model Job {
   taskScope            String?
   preferences          String[]
   priority             String            @default("normal")
+  requiresDiagnosis    Boolean           @default(false)
+  diagnosisStatus      String?
+  materialsList        Json?
+  materialsStatus      String?
+  materialsVersion     Int               @default(1)
   createdAt            DateTime          @default(now())
   updatedAt            DateTime          @updatedAt
 
-  client      User            @relation("ClientJobs", fields: [clientId], references: [id])
+  client      User                 @relation("ClientJobs", fields: [clientId], references: [id])
   assignments JobAssignment[]
   reviews     Review[]
   bookings    Booking[]
+  agreements  AgreementAmendment[]
+  serviceAgreements ServiceAgreement[]
 
   @@index([clientId, status])
   @@index([status, approvalStatus])
@@ -294,6 +308,7 @@ model JobAssignment {
   refundedAt  DateTime?
   boostCoins  Int              @default(0)
   coverLetter String?
+  materialsList Json?
 
   job      Job             @relation(fields: [jobId], references: [id])
   provider ProviderProfile @relation(fields: [providerId], references: [id])
@@ -469,13 +484,21 @@ model Booking {
   location        String
   notes           String?
   paymentStatus   PaymentStatus @default(PENDING)
+  requiresDiagnosis Boolean     @default(false)
+  diagnosisStatus  String?
+  materialsList    Json?
+  materialsStatus  String?
+  materialsVersion Int          @default(1)
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  client   User @relation("ClientBookings", fields: [clientId], references: [id])
-  provider User @relation("ProviderBookings", fields: [providerId], references: [id])
-  task     Job? @relation(fields: [taskId], references: [id])
-  reviews  Review[]
+  client     User                 @relation("ClientBookings", fields: [clientId], references: [id])
+  provider   User                 @relation("ProviderBookings", fields: [providerId], references: [id])
+  task       Job?                 @relation(fields: [taskId], references: [id])
+  reviews    Review[]
+  agreements AgreementAmendment[]
+  disputes   Dispute[]
+  serviceAgreements ServiceAgreement[]
 
   @@index([clientId, createdAt])
   @@index([providerId, createdAt])
@@ -717,3 +740,109 @@ model PendingVerification {
   @@index([identifier])
   @@index([expiresAt])
 }
+
+model AgreementAmendment {
+  id               String   @id @default(uuid())
+  bookingId        String?
+  jobId            String?
+  type             String   @default("MATERIALS") // "MATERIALS", "PRICE", "SCOPE"
+  version          Int      @default(1)
+  status           String   @default("AGREED") // "PENDING", "AGREED", "REJECTED"
+  proposedByUserId String
+  acceptedByUserId String?
+  materials        Json?
+  price            Float?
+  notes            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  booking Booking? @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  job     Job?     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId, version])
+  @@index([jobId, version])
+}
+
+model Dispute {
+  id                String         @id @default(uuid())
+  bookingId         String
+  clientId          String
+  providerId        String
+  category          String
+  description       String
+  status            String         @default("OPEN") // OPEN, AWAITING_PROVIDER_RESPONSE, AWAITING_CLIENT_RESPONSE, CORRECTION_REQUESTED, CORRECTION_COMPLETED, UNDER_REVIEW, AWAITING_MORE_EVIDENCE, RESOLVED, CLOSED
+  clientEvidence    Json?
+  providerEvidence  Json?
+  clientResponse    String?
+  providerResponse  String?
+  correctionDetails String?
+  resolution        String?
+  resolutionReason  String?
+  assignedAdminId   String?
+  resolvedAt        DateTime?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  booking       Booking        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  client        User           @relation("ClientDisputes", fields: [clientId], references: [id])
+  provider      User           @relation("ProviderDisputes", fields: [providerId], references: [id])
+  assignedAdmin User?          @relation("AdminDisputes", fields: [assignedAdminId], references: [id])
+  events        DisputeEvent[]
+
+  @@index([bookingId])
+  @@index([clientId])
+  @@index([providerId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model DisputeEvent {
+  id          String   @id @default(uuid())
+  disputeId   String
+  actorId     String
+  actorType   String   // CLIENT, PROVIDER, ADMIN, SYSTEM
+  eventType   String   // DISPUTE_CREATED, CLIENT_EVIDENCE_ADDED, PROVIDER_NOTIFIED, PROVIDER_RESPONDED, PROVIDER_EVIDENCE_ADDED, CLIENT_RESPONDED, ADMIN_ASSIGNED, ADMIN_REQUESTED_EVIDENCE, CORRECTION_REQUESTED, CORRECTION_COMPLETED, DISPUTE_ESCALATED, DISPUTE_RESOLVED, DISPUTE_CLOSED
+  description String
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  dispute Dispute @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+
+  @@index([disputeId])
+  @@index([createdAt])
+}
+
+model ServiceAgreement {
+  id                    String    @id @default(uuid())
+  publicAgreementNumber String    @unique
+  sourceType            String    @default("BOOKING") // BOOKING or TASK
+  bookingId             String?
+  taskId                String?
+  clientId              String
+  providerId            String
+  version               Int       @default(1)
+  status                String    @default("PENDING_ACCEPTANCE") // DRAFT, PENDING_ACCEPTANCE, PARTIALLY_ACCEPTED, ACTIVE, AMENDMENT_PENDING, COMPLETED, CANCELLED, SUPERSEDED
+  terms                 Json
+  clientAcceptance      Json?
+  providerAcceptance    Json?
+  pdfReference          String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  activatedAt           DateTime?
+  completedAt           DateTime?
+  supersededAt          DateTime?
+
+  booking  Booking? @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  task     Job?     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  client   User     @relation("ClientAgreements", fields: [clientId], references: [id])
+  provider User     @relation("ProviderAgreements", fields: [providerId], references: [id])
+
+  @@index([bookingId, version])
+  @@index([taskId, version])
+  @@index([clientId, status])
+  @@index([providerId, status])
+  @@index([publicAgreementNumber])
+  @@index([createdAt])
+}
+
+

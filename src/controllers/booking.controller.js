@@ -1,6 +1,7 @@
 const prisma = require('../config/prisma');
 const { getIO } = require('../services/socket.service');
 const { sendPushNotification } = require('../services/notification.service');
+const agreementService = require('../services/agreement.service');
 
 const emitBooking = (booking) => {
   try {
@@ -17,6 +18,7 @@ const includeBooking = {
   provider: { select: { id: true, fullName: true, avatar: true, phone: true, email: true } },
   task: true,
   reviews: { select: { id: true, reviewerId: true, targetUserId: true, rating: true, createdAt: true } },
+  agreements: { orderBy: { version: 'asc' } },
 };
 
 const createBooking = async (req, res, next) => {
@@ -98,6 +100,11 @@ const createBooking = async (req, res, next) => {
     const isProposal = Boolean(req.body.isProposal || req.body.isProjectProposal);
     const coinCost = isProposal ? 0 : (COIN_COSTS[resolvedUrgency] || 1);
 
+    const { providerId, taskId, bookingDate, bookingTime, budget, location, notes, bookingDuration, urgencyLevel, requiresDiagnosis, materialsList } = req.body;
+    const isDiagnosisReq = Boolean(requiresDiagnosis);
+    const formattedMaterials = isDiagnosisReq ? null : (Array.isArray(materialsList) ? materialsList : []);
+    const materialsStatus = isDiagnosisReq ? 'DIAGNOSIS_REQUIRED' : (formattedMaterials && formattedMaterials.length > 0 ? 'PENDING_AGREEMENT' : 'AGREED');
+
     const booking = await prisma.$transaction(async (tx) => {
       const wallet = await tx.wallet.findUnique({ where: { userId: req.user.id } });
       const currentBalance = wallet ? wallet.balance : 0;
@@ -122,6 +129,11 @@ const createBooking = async (req, res, next) => {
           budget: bookingBudget,
           location: location || '',
           notes: notes || '',
+          requiresDiagnosis: isDiagnosisReq,
+          diagnosisStatus: isDiagnosisReq ? 'PENDING_DIAGNOSIS' : null,
+          materialsList: formattedMaterials,
+          materialsStatus: materialsStatus,
+          materialsVersion: 1,
         },
         include: includeBooking,
       });
@@ -313,6 +325,29 @@ const updateBookingStatus = async (req, res, next) => {
       updateData.budget = existing.counterBudget;
     }
 
+    if (status === 'ACCEPTED') {
+      updateData.materialsStatus = 'AGREED';
+
+      // Record initial or updated agreement amendment snapshot
+      const existingAgreements = await prisma.agreementAmendment.count({ where: { bookingId } });
+      const nextVersion = existingAgreements + 1;
+      const materialsToCommit = existing.materialsList || [];
+      await prisma.agreementAmendment.create({
+        data: {
+          bookingId,
+          type: 'MATERIALS',
+          version: nextVersion,
+          status: 'AGREED',
+          proposedByUserId: existing.clientId,
+          acceptedByUserId: req.user.id,
+          materials: materialsToCommit,
+          price: updateData.budget || existing.budget,
+          notes: existing.counterNotes || existing.notes || 'Materials list agreed on booking confirmation.'
+        }
+      });
+      updateData.materialsVersion = nextVersion;
+    }
+
     const booking = await prisma.booking.update({
       where: { id: bookingId },
       data: updateData,
@@ -321,6 +356,24 @@ const updateBookingStatus = async (req, res, next) => {
 
     if (status === 'ACCEPTED') {
       try {
+        agreementService.createOrUpdateAgreement({
+          sourceType: 'BOOKING',
+          bookingId: booking.id,
+          clientId: booking.clientId,
+          providerId: booking.providerId,
+          title: 'Fixam Direct Booking',
+          category: 'General Service',
+          location: booking.location,
+          schedule: {
+            date: booking.bookingDate ? new Date(booking.bookingDate).toLocaleDateString() : 'Scheduled Date',
+            time: booking.bookingTime || 'Scheduled Time',
+            duration: booking.bookingDuration || '1 Day',
+            urgency: booking.urgencyLevel || 'Normal'
+          },
+          price: booking.budget,
+          materialsList: booking.materialsList || []
+        }).catch(err => console.error('[Agreement Service] Trigger failed:', err.message));
+
         const notif = await prisma.notification.create({
           data: {
             userId: booking.clientId,
@@ -438,7 +491,7 @@ const getBookingById = async (req, res, next) => {
 const counterBooking = async (req, res, next) => {
   try {
     const { bookingId } = req.params;
-    const { counterBudget, counterNotes } = req.body;
+    const { counterBudget, counterNotes, materialsList } = req.body;
 
     const booking = await prisma.booking.findUnique({
       where: { id: bookingId },
@@ -462,13 +515,20 @@ const counterBooking = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Counter-offers can only be proposed on pending bookings.' });
     }
 
+    const updateFields = {
+      status: 'COUNTER_PROPOSED',
+      ...(counterBudget !== undefined && counterBudget !== null && { counterBudget: Number(counterBudget) }),
+      ...(counterNotes !== undefined && { counterNotes }),
+    };
+
+    if (materialsList && Array.isArray(materialsList)) {
+      updateFields.materialsList = materialsList;
+      updateFields.materialsStatus = 'COUNTER_PROPOSED';
+    }
+
     const updated = await prisma.booking.update({
       where: { id: bookingId },
-      data: {
-        status: 'COUNTER_PROPOSED',
-        counterBudget,
-        counterNotes
-      },
+      data: updateFields,
       include: includeBooking
     });
 
@@ -586,6 +646,166 @@ const requestReview = async (req, res, next) => {
   }
 };
 
+const proposeDiagnosisMaterials = async (req, res, next) => {
+  try {
+    const { bookingId } = req.params;
+    const { materialsList, notes } = req.body;
+
+    if (!Array.isArray(materialsList) || materialsList.length === 0) {
+      return res.status(400).json({ success: false, message: 'Please provide at least one item in the materials list.' });
+    }
+
+    const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
+    if (!booking) {
+      return res.status(404).json({ success: false, message: 'Booking not found.' });
+    }
+
+    if (booking.providerId !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Only the assigned provider can propose materials.' });
+    }
+
+    const updated = await prisma.booking.update({
+      where: { id: bookingId },
+      data: {
+        materialsList: materialsList,
+        materialsStatus: 'COUNTER_PROPOSED',
+        diagnosisStatus: 'DIAGNOSED',
+        ...(notes && { counterNotes: notes })
+      },
+      include: includeBooking
+    });
+
+    const notif = await prisma.notification.create({
+      data: {
+        userId: booking.clientId,
+        title: 'Post-Diagnosis Materials Proposed 🧰',
+        body: 'The provider has physical inspected the job site and proposed a required materials list.',
+        data: { type: 'MATERIALS_PROPOSED', bookingId: booking.id }
+      }
+    });
+
+    emitBooking(updated);
+    try { getIO().to(booking.clientId).emit('notification:new', notif); } catch (_) {}
+    try {
+      await sendPushNotification(
+        booking.clientId,
+        'Post-Diagnosis Materials Proposed 🧰',
+        'The provider has physically inspected the job site and proposed a required materials list.',
+        { type: 'MATERIALS_PROPOSED', bookingId: booking.id, screen: 'BookingDetails' }
+      );
+    } catch (_) {}
+
+    res.status(200).json({ success: true, data: updated, message: 'Materials list proposed successfully.' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const respondToMaterialsProposal = async (req, res, next) => {
+  try {
+    const { bookingId } = req.params;
+    const { action, notes } = req.body; // action: 'ACCEPT' | 'REJECT'
+
+    if (!['ACCEPT', 'REJECT'].includes(action)) {
+      return res.status(400).json({ success: false, message: 'Action must be ACCEPT or REJECT.' });
+    }
+
+    const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
+    if (!booking) {
+      return res.status(404).json({ success: false, message: 'Booking not found.' });
+    }
+
+    if (booking.clientId !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Only the client can respond to a materials proposal.' });
+    }
+
+    if (action === 'REJECT') {
+      const updated = await prisma.booking.update({
+        where: { id: bookingId },
+        data: { materialsStatus: 'REJECTED' },
+        include: includeBooking
+      });
+      emitBooking(updated);
+      return res.status(200).json({ success: true, data: updated, message: 'Materials proposal rejected.' });
+    }
+
+    // Action === ACCEPT
+    const existingAgreements = await prisma.agreementAmendment.count({ where: { bookingId } });
+    const nextVersion = existingAgreements + 1;
+
+    await prisma.agreementAmendment.create({
+      data: {
+        bookingId,
+        type: 'MATERIALS',
+        version: nextVersion,
+        status: 'AGREED',
+        proposedByUserId: booking.providerId,
+        acceptedByUserId: req.user.id,
+        materials: booking.materialsList || [],
+        price: booking.budget,
+        notes: notes || 'Materials proposal accepted by client after diagnosis review.'
+      }
+    });
+
+    const updated = await prisma.booking.update({
+      where: { id: bookingId },
+      data: {
+        materialsStatus: 'AGREED',
+        materialsVersion: nextVersion,
+        ...(booking.status === 'COUNTER_PROPOSED' ? { status: 'ACCEPTED' } : {})
+      },
+      include: includeBooking
+    });
+
+    const notif = await prisma.notification.create({
+      data: {
+        userId: booking.providerId,
+        title: 'Materials List Accepted ✅',
+        body: 'The client accepted your proposed materials list.',
+        data: { type: 'MATERIALS_ACCEPTED', bookingId: booking.id }
+      }
+    });
+
+    emitBooking(updated);
+    try { getIO().to(booking.providerId).emit('notification:new', notif); } catch (_) {}
+
+    res.status(200).json({ success: true, data: updated, message: 'Materials list accepted and committed to agreement history.' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const getAgreementHistory = async (req, res, next) => {
+  try {
+    const { bookingId } = req.params;
+    const booking = await prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: { agreements: { orderBy: { version: 'asc' } } }
+    });
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: 'Booking not found.' });
+    }
+
+    if (booking.clientId !== req.user.id && booking.providerId !== req.user.id && req.user.role !== 'ADMIN') {
+      return res.status(403).json({ success: false, message: 'Not authorized to view agreements.' });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        activeMaterialsList: booking.materialsList,
+        materialsStatus: booking.materialsStatus,
+        materialsVersion: booking.materialsVersion,
+        requiresDiagnosis: booking.requiresDiagnosis,
+        agreements: booking.agreements
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createBooking,
   getMyBookings,
@@ -594,4 +814,8 @@ module.exports = {
   checkBooking,
   getBookingById,
   requestReview,
+  proposeDiagnosisMaterials,
+  respondToMaterialsProposal,
+  getAgreementHistory,
 };
+

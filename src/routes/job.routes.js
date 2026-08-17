@@ -17,5 +17,8 @@ router.post('/:jobId/applications/:assignmentId/select', protect, authorize('CLI
 router.put('/:jobId/status', protect, jobController.updateJobStatus);
 router.patch('/:jobId/status', protect, jobController.updateJobStatus);
 router.put('/:jobId', protect, authorize('CLIENT', 'PROVIDER', 'ADMIN'), jobController.updateJob);
+router.post('/:jobId/materials/propose', protect, authorize('PROVIDER', 'CLIENT'), jobController.proposeDiagnosisMaterials);
+router.post('/:jobId/materials/respond', protect, authorize('CLIENT', 'PROVIDER'), jobController.respondToMaterialsProposal);
+router.get('/:jobId/agreements', protect, jobController.getAgreementHistory);
 
 module.exports = router;

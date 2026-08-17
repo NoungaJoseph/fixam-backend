@@ -261,10 +261,39 @@ async function sendCallNotification(fcmToken, callerName, callType, callId) {
   }
 }
 
+async function sendDisputeNotification(userId, title, body, disputeId, bookingId) {
+  try {
+    // 1. Create in-app notification DB record
+    await prisma.notification.create({
+      data: {
+        userId,
+        title,
+        body,
+        data: {
+          type: 'DISPUTE',
+          disputeId: String(disputeId || ''),
+          bookingId: String(bookingId || '')
+        }
+      }
+    }).catch(err => console.error('[Dispute Notif DB Error]:', err.message));
+
+    // 2. Send push notification if user has FCM token
+    return await sendPushNotification(userId, title, body, {
+      type: 'DISPUTE',
+      disputeId: String(disputeId || ''),
+      bookingId: String(bookingId || '')
+    });
+  } catch (error) {
+    console.error(`[Push Dispute] Error sending to user ${userId}:`, error.message);
+    return { success: false, reason: error.message };
+  }
+}
+
 module.exports = { 
   sendPushNotification, 
   sendPushToMultiple,
   sendMulticastNotification,
   sendBookingNotification,
-  sendCallNotification
+  sendCallNotification,
+  sendDisputeNotification
 }

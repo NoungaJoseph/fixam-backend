@@ -38,6 +38,8 @@ const reviewRoutes = require('./routes/review.routes');
 const paymentRoutes = require('./routes/payment.routes');
 const systemRoutes = require('./routes/system.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
+const disputeRoutes = require('./routes/dispute.routes');
+const agreementRoutes = require('./routes/agreement.routes');
 const sportsRoutes = require('./routes/sports.routes');
 const { errorHandler } = require('./middlewares/error.middleware');
 
@@ -164,6 +166,8 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/system', systemRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/sports', sportsRoutes);
+app.use('/api/disputes', disputeRoutes);
+app.use('/api/agreements', agreementRoutes);
 
 // Authenticated route for sensitive private file buckets
 // Prevents public access to verification docs and payment proofs

@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/admin.controller');
+const disputeController = require('../controllers/dispute.controller');
+const agreementController = require('../controllers/agreement.controller');
 const { protect, authorize } = require('../middlewares/auth.middleware');
 
 router.use(protect, authorize('ADMIN'));
@@ -24,6 +26,16 @@ router.get('/bookings', adminController.getAllBookings);
 router.get('/settings', adminController.getSettings);
 router.get('/wallet/wire-history', adminController.getWireHistory);
 router.get('/conversations/between/:user1Id/:user2Id', adminController.getConversationBetweenUsers);
+
+// Admin Disputes
+router.get('/disputes', disputeController.getAdminDisputes);
+router.get('/disputes/:id', disputeController.getDisputeDetails);
+router.post('/disputes/:id/request-evidence', disputeController.adminRequestEvidence);
+router.post('/disputes/:id/resolve', disputeController.adminResolveDispute);
+
+// Admin Agreements
+router.get('/agreements', agreementController.getAdminAgreements);
+router.get('/agreements/:id', agreementController.getAgreementById);
 
 router.post('/verify-provider', adminController.verifyProvider);
 router.post('/approve-transaction', adminController.approveTransaction);

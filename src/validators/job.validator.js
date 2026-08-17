@@ -18,6 +18,15 @@ const createJobSchema = z.object({
   taskScope: z.string().optional().nullable(),
   preferences: z.array(z.string()).optional(),
   priority: z.string().optional(),
+  requiresDiagnosis: z.boolean().optional(),
+  materialsList: z.array(
+    z.object({
+      id: z.string().optional(),
+      name: z.string(),
+      quantity: z.string().optional().nullable(),
+      suppliedBy: z.enum(["CLIENT", "PROVIDER"])
+    })
+  ).optional().nullable(),
 }).superRefine((data, ctx) => {
   const min = data.budgetMin ?? data.budget;
   const max = data.budgetMax ?? data.budget;
