@@ -420,6 +420,7 @@ const getDashboardStats = async (req, res, next) => {
       openReports,
       totalFeedback,
       newFeedback,
+      pendingTransactions,
       recentSignups,
       recentBroadcasts,
       revenueRows,
@@ -435,6 +436,7 @@ const getDashboardStats = async (req, res, next) => {
       prisma.report.count({ where: { status: 'PENDING' } }).catch(() => 0),
       prisma.feedback.count().catch(() => 0),
       prisma.feedback.count({ where: { status: 'NEW' } }).catch(() => 0),
+      prisma.transaction.count({ where: { status: 'PENDING' } }).catch(() => 0),
       prisma.user.findMany({
         orderBy: { createdAt: 'desc' },
         take: 5,
@@ -477,6 +479,7 @@ const getDashboardStats = async (req, res, next) => {
         totalRevenue: revenue,
         pendingApprovals,
         pendingTaskApprovals: pendingApprovals,
+        pendingTransactions,
         totalReports,
         openReports,
         pendingDisputes: openReports,
