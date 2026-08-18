@@ -1,6 +1,6 @@
 const { uploadFile } = require('../services/storage.service');
 const { processMedia } = require('../services/media.service');
-const { prisma } = require('../config/database');
+const prisma = require('../config/prisma');
 
 const uploadProfileImage = async (req, res, next) => {
   try {
