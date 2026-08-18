@@ -203,9 +203,10 @@ const createBooking = async (req, res, next) => {
 const getMyBookings = async (req, res, next) => {
   try {
     const role = String(req.query.role || req.user.role || '').toUpperCase();
-    const where = role === 'PROVIDER'
-      ? { providerId: req.user.id }
-      : { clientId: req.user.id };
+    const where = {
+      ...(role === 'PROVIDER' ? { providerId: req.user.id } : { clientId: req.user.id }),
+      status: { not: 'CANCELLED' }
+    };
 
     const page = parseInt(req.query.page) || 1;
     const limit = Math.min(parseInt(req.query.limit) || 20, 100);
@@ -296,7 +297,8 @@ const updateBookingStatus = async (req, res, next) => {
       data: { isRead: true }
     }).catch(() => {});
 
-    if (status === 'CANCELLED' && existing.status === 'PENDING') {
+    if (status === 'CANCELLED') {
+      // 1. If coins were deducted, refund client
       const wallet = await prisma.wallet.findUnique({ where: { userId: existing.clientId } });
       if (wallet) {
         await prisma.wallet.update({
@@ -314,6 +316,24 @@ const updateBookingStatus = async (req, res, next) => {
           }
         });
       }
+
+      // 2. Delete related records & booking completely
+      await prisma.serviceAgreement.deleteMany({ where: { bookingId } }).catch(() => {});
+      await prisma.agreementAmendment.deleteMany({ where: { bookingId } }).catch(() => {});
+      await prisma.dispute.deleteMany({ where: { bookingId } }).catch(() => {});
+      await prisma.review.deleteMany({ where: { bookingId } }).catch(() => {});
+
+      await prisma.booking.delete({ where: { id: bookingId } });
+
+      // 3. Emit deletion event via socket to both client and provider
+      emitBooking({ id: bookingId, clientId: existing.clientId, providerId: existing.providerId, status: 'CANCELLED', isDeleted: true });
+
+      return res.status(200).json({
+        success: true,
+        message: 'Booking cancelled and removed completely.',
+        deleted: true,
+        data: { id: bookingId, status: 'CANCELLED' }
+      });
     }
 
     const updateData = {

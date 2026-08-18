@@ -898,6 +898,34 @@ const updateJobStatus = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Invalid job status' });
     }
 
+    if (status === 'CANCELLED') {
+      await prisma.serviceAgreement.deleteMany({ where: { taskId: jobId } }).catch(() => {});
+      await prisma.agreementAmendment.deleteMany({ where: { taskId: jobId } }).catch(() => {});
+      await prisma.dispute.deleteMany({ where: { jobId } }).catch(() => {});
+      await prisma.review.deleteMany({ where: { jobId } }).catch(() => {});
+      await prisma.assignment.deleteMany({ where: { jobId } }).catch(() => {});
+      await prisma.booking.deleteMany({ where: { taskId: jobId } }).catch(() => {});
+      await prisma.job.delete({ where: { id: jobId } });
+
+      try {
+        const { getIO } = require('../services/socket.service');
+        const io = getIO();
+        io.to(existing.clientId).emit('job:deleted', { id: jobId, deleted: true });
+        existing.assignments?.forEach((assignment) => {
+          if (assignment.provider?.userId) {
+            io.to(assignment.provider.userId).emit('job:deleted', { id: jobId, deleted: true });
+          }
+        });
+      } catch (_) {}
+
+      return res.status(200).json({
+        success: true,
+        message: 'Task cancelled and deleted completely.',
+        deleted: true,
+        data: { id: jobId, status: 'CANCELLED' }
+      });
+    }
+
     const job = await prisma.job.update({
       where: { id: jobId },
       data: { status }
