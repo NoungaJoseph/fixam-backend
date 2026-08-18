@@ -7,7 +7,7 @@ const createBookingSchema = z.object({
       message: "Invalid date format"
     }),
     bookingTime: z.string().min(4, "Time is required"),
-    bookingDuration: z.enum(["DAY", "HALF_DAY", "HOURLY", "FIXED"]),
+    bookingDuration: z.string().min(1, "Duration is required").default("1-2 Hours"),
     urgencyLevel: z.enum(["LOW", "NORMAL", "HIGH", "URGENT", "EMERGENCY"]).default("NORMAL"),
     budget: z.number().nonnegative("Budget must be 0 or greater"),
     location: z.string().min(5, "Location must be at least 5 characters long"),

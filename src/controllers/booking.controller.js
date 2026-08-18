@@ -813,8 +813,17 @@ const downloadContractPdf = async (req, res, next) => {
       where: { id: bookingId },
       include: {
         client: { select: { id: true, fullName: true, phone: true, email: true } },
-        provider: { select: { id: true, fullName: true, phone: true, email: true } },
-        agreements: { orderBy: { version: 'desc' } }
+        provider: { 
+          select: { 
+            id: true, 
+            fullName: true, 
+            phone: true, 
+            email: true,
+            providerProfile: { select: { id: true, skills: true, bio: true } }
+          } 
+        },
+        task: true,
+        serviceAgreements: { orderBy: { version: 'desc' } }
       }
     });
 
@@ -826,29 +835,80 @@ const downloadContractPdf = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Not authorized to download contract.' });
     }
 
-    let agreement = booking.agreements?.[0];
+    let agreement = booking.serviceAgreements?.[0];
+    
+    // Skill/Category extraction
+    const providerSkills = booking.provider?.providerProfile?.skills || [];
+    const derivedCategory = booking.task?.category || (providerSkills.length > 0 ? providerSkills[0] : 'Professional Service');
+    const derivedTitle = booking.task?.title || (providerSkills.length > 0 ? `${providerSkills.join(', ')} Service` : 'Fixam Home & Technical Service');
+    const derivedScope = booking.notes || booking.task?.description || 'Execution of requested professional service in compliance with Fixam quality and safety standards.';
+    const formattedDate = booking.bookingDate ? new Date(booking.bookingDate).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : 'Scheduled per agreement';
+    const agreedCompensation = Number(booking.counterBudget || booking.budget || 0);
+
     if (!agreement) {
       agreement = await agreementService.createOrUpdateAgreement({
         sourceType: 'BOOKING',
         bookingId: booking.id,
         clientId: booking.clientId,
         providerId: booking.providerId,
-        title: booking.service || 'Service Booking',
-        category: booking.category || 'General Service',
-        scopeOfWork: booking.notes || booking.description || 'Service booking placed on Fixam.',
-        location: booking.location || 'Client location',
-        schedule: { date: booking.bookingDate, time: booking.bookingTime },
-        price: booking.budget,
+        title: derivedTitle,
+        category: derivedCategory,
+        scopeOfWork: derivedScope,
+        location: booking.location || 'Client Designated Address',
+        schedule: { 
+          date: formattedDate, 
+          time: booking.bookingTime || 'Agreed Time',
+          duration: booking.bookingDuration || '1-2 Hours',
+          urgency: booking.urgencyLevel || 'NORMAL'
+        },
+        price: agreedCompensation,
         materialsList: booking.materialsList || []
       });
     }
 
+    // Attach real runtime data to agreement for PDF generation guarantee
     const lang = req.query.lang === 'fr' ? 'fr' : (req.user?.preferredLanguage === 'fr' ? 'fr' : 'en');
     const { generateAgreementPdf } = require('../services/agreementPdf.service');
-    const pdfResult = await generateAgreementPdf(agreement, lang);
+    
+    const enrichedAgreement = {
+      ...agreement,
+      publicAgreementNumber: agreement.publicAgreementNumber || `FSA-${new Date().getFullYear()}-${booking.id.substring(0, 8).toUpperCase()}-v1`,
+      client: booking.client,
+      provider: booking.provider,
+      booking: booking,
+      terms: typeof agreement.terms === 'string' ? JSON.parse(agreement.terms) : {
+        ...agreement.terms,
+        title: derivedTitle,
+        category: derivedCategory,
+        scopeOfWork: derivedScope,
+        location: booking.location || 'Client Designated Address',
+        price: agreedCompensation,
+        schedule: {
+          date: formattedDate,
+          time: booking.bookingTime || 'Agreed Time',
+          duration: booking.bookingDuration || '1-2 Hours',
+          urgency: booking.urgencyLevel || 'NORMAL'
+        },
+        client: {
+          id: booking.client?.id,
+          name: booking.client?.fullName || 'Client',
+          phone: booking.client?.phone,
+          email: booking.client?.email
+        },
+        provider: {
+          id: booking.provider?.id,
+          name: booking.provider?.fullName || 'Provider',
+          phone: booking.provider?.phone,
+          email: booking.provider?.email
+        },
+        materialsList: booking.materialsList || []
+      }
+    };
+
+    const pdfResult = await generateAgreementPdf(enrichedAgreement, lang);
 
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="Fixam-Service-Contract-${agreement.publicAgreementNumber || booking.id}.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="Fixam-Service-Contract-${enrichedAgreement.publicAgreementNumber}.pdf"`);
     res.sendFile(pdfResult.filePath);
   } catch (error) {
     next(error);
