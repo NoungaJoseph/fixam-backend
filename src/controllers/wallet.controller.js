@@ -507,9 +507,12 @@ module.exports = {
  */
 async function submitPaymentRequest(req, res, next) {
   try {
-    const userId = req.user.id;
-    const { coins, price, phone, method, packageName, lang } = req.body;
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Authentication required' });
+    }
 
+    const { coins, price, phone, method, packageName, lang } = req.body;
     const isFr = lang === 'fr';
 
     // Fetch user info
@@ -517,9 +520,9 @@ async function submitPaymentRequest(req, res, next) {
       where: { id: userId },
       select: { id: true, fullName: true, firstName: true, lastName: true, email: true, phone: true }
     });
-    const userName = user?.fullName || `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'User';
+    const userName = user?.fullName || [user?.firstName, user?.lastName].filter(Boolean).join(' ') || 'User';
 
-    // Ensure wallet exists & create pending transaction
+    // Ensure wallet exists
     let wallet = await prisma.wallet.findUnique({ where: { userId } });
     if (!wallet) {
       wallet = await prisma.wallet.create({
@@ -527,8 +530,8 @@ async function submitPaymentRequest(req, res, next) {
       });
     }
 
-    const coinAmount = Number(coins) || 1;
-    const reqRef = `REQ-${Date.now()}`;
+    const coinAmount = Math.max(1, Math.round(Number(coins) || 1));
+    const reqRef = `REQ-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
     const transaction = await prisma.transaction.create({
       data: {
@@ -541,12 +544,15 @@ async function submitPaymentRequest(req, res, next) {
         payerName: userName,
         payerPhone: String(phone || user?.phone || ''),
         payerEmail: String(user?.email || ''),
+        phoneNumber: String(phone || user?.phone || ''),
         description: `Manual coin purchase: ${coinAmount} coins (${price || 'XAF'}) via ${method || 'Mobile Money'} (${phone || 'N/A'})`
       },
       include: {
         wallet: {
           include: {
-            user: true
+            user: {
+              select: { id: true, fullName: true, email: true, phone: true, avatar: true }
+            }
           }
         }
       }
@@ -656,6 +662,9 @@ async function submitPaymentRequest(req, res, next) {
     });
   } catch (error) {
     console.error('[submitPaymentRequest Error]:', error);
-    next(error);
+    return res.status(500).json({
+      success: false,
+      message: error?.message || 'Failed to submit payment request. Please try again.'
+    });
   }
 }
