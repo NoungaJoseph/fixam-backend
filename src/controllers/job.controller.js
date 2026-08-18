@@ -1079,11 +1079,11 @@ const getProviderJobs = async (req, res, next) => {
     // Fast ETag check
     const [latestAssignment, total] = await Promise.all([
       prisma.jobAssignment.findFirst({
-        where: { providerId },
+        where: { providerId, status: 'ACCEPTED' },
         orderBy: { assignedAt: 'desc' },
         select: { assignedAt: true }
       }),
-      prisma.jobAssignment.count({ where: { providerId } })
+      prisma.jobAssignment.count({ where: { providerId, status: 'ACCEPTED' } })
     ]);
 
     const lastUpdated = latestAssignment ? latestAssignment.assignedAt.getTime() : 0;
@@ -1095,7 +1095,7 @@ const getProviderJobs = async (req, res, next) => {
     res.setHeader('ETag', etag);
 
     const assignments = await prisma.jobAssignment.findMany({
-      where: { providerId },
+      where: { providerId, status: 'ACCEPTED' },
       include: { 
         job: { 
           include: { 
