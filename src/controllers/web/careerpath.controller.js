@@ -57,11 +57,11 @@ exports.completeModuleWithExam = async (req, res) => {
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { email: true, firstName: true, lastName: true }
+      select: { email: true, fullName: true }
     });
 
     if (user?.email) {
-      const fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+      const fullName = user.fullName || 'Fixam User';
       // Send the email non-blocking
       sendModuleCompletionEmail(user.email, fullName, moduleId, examScore).catch(e => {
         console.error("Failed to send module completion email", e);

@@ -518,9 +518,9 @@ async function submitPaymentRequest(req, res, next) {
     // Fetch user info
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, fullName: true, firstName: true, lastName: true, email: true, phone: true }
+      select: { id: true, fullName: true, email: true, phone: true }
     });
-    const userName = user?.fullName || [user?.firstName, user?.lastName].filter(Boolean).join(' ') || 'User';
+    const userName = user?.fullName || 'User';
 
     // Ensure wallet exists
     let wallet = await prisma.wallet.findUnique({ where: { userId } });
