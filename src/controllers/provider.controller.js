@@ -519,10 +519,27 @@ const updateProviderStatus = async (req, res, next) => {
       });
     }
 
+    try {
+      const { clearUserCache } = require('../middlewares/auth.middleware');
+      clearUserCache(req.user.id);
+    } catch (_) {}
+
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
       include: { providerProfile: true, wallet: true }
     });
+
+    // Broadcast real-time availability update to user's devices
+    try {
+      const { getIO } = require('../services/socket.service');
+      const io = getIO();
+      io.to(req.user.id).emit('provider:status-changed', {
+        userId: req.user.id,
+        isOnline: statusVal,
+        isAvailable: statusVal,
+        user
+      });
+    } catch (_) {}
 
     res.status(200).json({ success: true, data: user });
   } catch (error) {
