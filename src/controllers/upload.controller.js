@@ -1,15 +1,39 @@
 const { uploadFile } = require('../services/storage.service');
 const { processMedia } = require('../services/media.service');
+const { prisma } = require('../config/database');
 
 const uploadProfileImage = async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
     
     // Compress image before uploading
-    const processedFile = await processMedia(req.file);
+    let processedFile;
+    try {
+      processedFile = await processMedia(req.file);
+    } catch (mediaErr) {
+      console.warn('[uploadProfileImage] Media processing skipped:', mediaErr.message);
+      processedFile = req.file;
+    }
+
     const url = await uploadFile(processedFile, 'profile-images', { requireCloud: true, req });
+
+    // Automatically update user avatar in DB and clear session cache
+    if (req.user?.id) {
+      try {
+        await prisma.user.update({
+          where: { id: req.user.id },
+          data: { avatar: url }
+        });
+        const { clearUserCache } = require('../middlewares/auth.middleware');
+        clearUserCache(req.user.id);
+      } catch (dbErr) {
+        console.warn('[uploadProfileImage] Auto-update avatar DB error:', dbErr.message);
+      }
+    }
+
     res.status(200).json({ success: true, url, data: { url }, path: processedFile.originalname });
   } catch (error) {
+    console.error('[uploadProfileImage Error]:', error);
     next(error);
   }
 };
