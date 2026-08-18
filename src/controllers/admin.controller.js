@@ -598,7 +598,7 @@ const getPendingTransactions = async (req, res, next) => {
   try {
     const transactions = await prisma.transaction.findMany({
       where: {
-        status: { in: ['PENDING', 'PROCESSING', 'pending', 'processing'] }
+        status: 'PENDING'
       },
       include: {
         wallet: {
@@ -621,6 +621,7 @@ const getPendingTransactions = async (req, res, next) => {
     });
     res.status(200).json({ success: true, data: transactions });
   } catch (error) {
+    console.error('[getPendingTransactions Error]:', error);
     next(error);
   }
 };
