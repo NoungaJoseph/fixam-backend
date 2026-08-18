@@ -61,7 +61,13 @@ const { getIO } = require('../services/socket.service');
 const { sendEmail, sendMarketingBroadcast, sendSecurityNotice } = require('../services/email.service');
 const { sendPushNotification } = require('../services/notification.service');
 
-const toNumber = (val) => Number(val) || 0;
+const toNumber = (val) => {
+  if (val === null || val === undefined) return 0;
+  if (typeof val === 'bigint') return Number(val);
+  if (typeof val === 'string') return parseFloat(val) || 0;
+  const num = Number(val);
+  return isNaN(num) ? 0 : num;
+};
 
 const giveWelcomeCoins = async (userId, coins, reason) => {
   try {
