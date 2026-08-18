@@ -597,9 +597,27 @@ const getProviders = async (req, res, next) => {
 const getPendingTransactions = async (req, res, next) => {
   try {
     const transactions = await prisma.transaction.findMany({
-      where: { status: 'PENDING' },
-      include: { wallet: { include: { user: true } } },
-      orderBy: { createdAt: 'desc' }
+      where: {
+        status: { in: ['PENDING', 'PROCESSING', 'pending', 'processing'] }
+      },
+      include: {
+        wallet: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                fullName: true,
+                phone: true,
+                email: true,
+                avatar: true,
+                role: true
+              }
+            }
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 100
     });
     res.status(200).json({ success: true, data: transactions });
   } catch (error) {
