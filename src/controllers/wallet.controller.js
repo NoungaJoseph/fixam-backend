@@ -547,7 +547,7 @@ async function submitPaymentRequest(req, res, next) {
 
     // Find the Fixam admin user (first admin)
     const adminUser = await prisma.user.findFirst({
-      where: { role: { in: ['ADMIN', 'SUPER_ADMIN'] } },
+      where: { role: 'ADMIN' },
       select: { id: true }
     });
 
