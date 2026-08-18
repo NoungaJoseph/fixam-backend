@@ -18,5 +18,6 @@ router.post('/:bookingId/request-review', bookingController.requestReview);
 router.post('/:bookingId/materials/propose', bookingController.proposeDiagnosisMaterials);
 router.post('/:bookingId/materials/respond', bookingController.respondToMaterialsProposal);
 router.get('/:bookingId/agreements', bookingController.getAgreementHistory);
+router.get('/:bookingId/contract-pdf', bookingController.downloadContractPdf);
 
 module.exports = router;

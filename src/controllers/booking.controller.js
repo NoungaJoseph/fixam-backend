@@ -806,6 +806,55 @@ const getAgreementHistory = async (req, res, next) => {
   }
 };
 
+const downloadContractPdf = async (req, res, next) => {
+  try {
+    const { bookingId } = req.params;
+    const booking = await prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: {
+        client: { select: { id: true, fullName: true, phone: true, email: true } },
+        provider: { select: { id: true, fullName: true, phone: true, email: true } },
+        agreements: { orderBy: { version: 'desc' } }
+      }
+    });
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: 'Booking not found.' });
+    }
+
+    if (booking.clientId !== req.user.id && booking.providerId !== req.user.id && req.user.role !== 'ADMIN') {
+      return res.status(403).json({ success: false, message: 'Not authorized to download contract.' });
+    }
+
+    let agreement = booking.agreements?.[0];
+    if (!agreement) {
+      agreement = await agreementService.createOrUpdateAgreement({
+        sourceType: 'BOOKING',
+        bookingId: booking.id,
+        clientId: booking.clientId,
+        providerId: booking.providerId,
+        title: booking.service || 'Service Booking',
+        category: booking.category || 'General Service',
+        scopeOfWork: booking.notes || booking.description || 'Service booking placed on Fixam.',
+        location: booking.location || 'Client location',
+        schedule: { date: booking.bookingDate, time: booking.bookingTime },
+        price: booking.budget,
+        materialsList: booking.materialsList || []
+      });
+    }
+
+    const lang = req.query.lang === 'fr' ? 'fr' : (req.user?.preferredLanguage === 'fr' ? 'fr' : 'en');
+    const { generateAgreementPdf } = require('../services/agreementPdf.service');
+    const pdfResult = await generateAgreementPdf(agreement, lang);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="Fixam-Service-Contract-${agreement.publicAgreementNumber || booking.id}.pdf"`);
+    res.sendFile(pdfResult.filePath);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createBooking,
   getMyBookings,
@@ -817,5 +866,6 @@ module.exports = {
   proposeDiagnosisMaterials,
   respondToMaterialsProposal,
   getAgreementHistory,
+  downloadContractPdf,
 };
 
