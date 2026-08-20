@@ -41,6 +41,8 @@ async function startServer() {
       await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "country" TEXT DEFAULT 'Cameroon'`);
       await prisma.$executeRawUnsafe(`ALTER TABLE "Job" ADD COLUMN IF NOT EXISTS "country" TEXT DEFAULT 'Cameroon'`);
       await prisma.$executeRawUnsafe(`ALTER TABLE "Job" ADD COLUMN IF NOT EXISTS "isRemote" BOOLEAN NOT NULL DEFAULT false`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "PageView" ADD COLUMN IF NOT EXISTS "cookieConsent" TEXT`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "PageView" ADD COLUMN IF NOT EXISTS "isLoggedIn" BOOLEAN DEFAULT false`);
 
       try {
         await prisma.$executeRawUnsafe(`ALTER TYPE "BookingStatus" ADD VALUE 'COUNTER_PROPOSED'`);

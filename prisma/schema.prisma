@@ -690,17 +690,20 @@ model CareerpathCertificate {
 // --- ANALYTICS MODELS ---
 
 model PageView {
-  id           String    @id @default(uuid())
-  path         String
-  domain       String    
-  ipAddress    String?
-  userAgent    String?
-  userId       String?
-  duration     Int?      
-  createdAt    DateTime  @default(now())
+  id            String    @id @default(uuid())
+  path          String
+  domain        String    
+  ipAddress     String?
+  userAgent     String?
+  userId        String?
+  duration      Int?      
+  cookieConsent String?
+  isLoggedIn    Boolean   @default(false)
+  createdAt     DateTime  @default(now())
 
   @@index([domain, path])
   @@index([createdAt])
+  @@index([cookieConsent])
 }
 
 model SecurityLog {
