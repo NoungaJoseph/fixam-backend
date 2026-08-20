@@ -207,7 +207,6 @@ app.get('/uploads/:bucket/:filename', secureFileProtect, (req, res) => {
 // --- WEB / CAREERPATH EXCLUSIVE ROUTES ---
 const webAuthRoutes = require('./routes/web/web-auth.routes');
 const careerpathRoutes = require('./routes/web/careerpath.routes');
-const analyticsRoutes = require('./routes/web/analytics.routes');
 
 app.use('/api/v1/web-auth', webAuthRoutes);
 app.use('/api/v1/careerpath', careerpathRoutes);
