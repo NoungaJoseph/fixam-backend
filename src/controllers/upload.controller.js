@@ -83,8 +83,7 @@ const uploadGeneric = async (req, res, next) => {
 
     // Compress media before uploading
     const processedFile = await processMedia(req.file);
-    const bucket = req.body?.type === 'video' || processedFile.mimetype?.startsWith('video/') ? 'portfolio-media' : 'chat-media';
-    const url = await uploadFile(processedFile, bucket, { requireCloud: true, req });
+    const url = await uploadFile(processedFile, 'chat-media', { requireCloud: true, req });
     res.status(200).json({ success: true, url, data: { url } });
   } catch (error) {
     next(error);
