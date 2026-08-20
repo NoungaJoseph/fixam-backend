@@ -165,6 +165,21 @@ const register = async (req, res, next) => {
       dob = new Date(parseInt(providerProfile.birthYear), months[providerProfile.birthMonth] || 0, parseInt(providerProfile.birthDay));
     }
 
+    const payload = {
+      fullName,
+      email,
+      phone,
+      password: hashedPassword,
+      dob,
+      role: role || 'CLIENT',
+      referralCode: generatedReferralCode,
+      language: language || 'en',
+      providerProfile,
+      originalReferral: referralCode,
+      location,
+      country: selectedCountry
+    };
+
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     await otpDb.set(email, otp, 'registration', payload);
     await sendOTP(email, otp, language || 'en');

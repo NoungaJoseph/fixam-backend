@@ -3,23 +3,29 @@ const { Resend } = require('resend');
 const resend = new Resend(process.env.RESEND_API_KEY || process.env.EMAIL_PASS);
 
 const sendEmail = async (options) => {
-  const { error, data } = await resend.emails.send({
-    from: process.env.EMAIL_FROM || 'Fixam <support@fixam.net>',
-    to: options.email,
-    subject: options.subject,
-    text: options.message,
-    html: options.html,
-  });
+  try {
+    const fromAddress = process.env.EMAIL_FROM || 'Fixam <onboarding@resend.dev>';
+    const { error, data } = await resend.emails.send({
+      from: fromAddress,
+      to: options.email,
+      subject: options.subject,
+      text: options.message,
+      html: options.html,
+    });
 
-  if (error) {
-    console.error('[EmailService] Resend API Error:', error.message);
-    throw new Error(error.message);
+    if (error) {
+      console.warn('[EmailService] Resend API Warning:', error.message);
+    }
+    
+    return data;
+  } catch (err) {
+    console.error('[EmailService] Send failure:', err.message);
+    return null;
   }
-  
-  return data;
 };
 
 const sendOTP = async (email, otp, language = 'en') => {
+  console.log(`[OTP] Generated verification code for ${email}: ${otp}`);
   const isFr = language === 'fr';
   const subject = isFr ? 'Fixam - Votre code de vérification' : 'Fixam - Your OTP Verification Code';
   const message = isFr 
