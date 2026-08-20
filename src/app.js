@@ -108,9 +108,17 @@ app.use('/uploads/portfolio-videos', express.static('uploads/portfolio-videos', 
   maxAge: process.env.NODE_ENV === 'production' ? '7d' : 0,
   fallthrough: false
 }));
+app.use('/uploads/portfolio-media', express.static('uploads/portfolio-media', {
+  maxAge: process.env.NODE_ENV === 'production' ? '7d' : 0,
+  fallthrough: false
+}));
 app.use('/uploads/chat-media', express.static('uploads/chat-media', {
   maxAge: process.env.NODE_ENV === 'production' ? '7d' : 0,
   fallthrough: false
+}));
+app.use('/uploads', express.static('uploads', {
+  maxAge: process.env.NODE_ENV === 'production' ? '7d' : 0,
+  fallthrough: true
 }));
 // NOTE: verification-documents and payment-proofs are served via authenticated routes only (not static)
 app.use('/public', express.static('public', {
