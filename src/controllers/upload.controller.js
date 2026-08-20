@@ -1,6 +1,7 @@
 const { uploadFile } = require('../services/storage.service');
 const { processMedia } = require('../services/media.service');
 const prisma = require('../config/prisma');
+const cacheMiddleware = require('../middlewares/cache.middleware');
 
 const uploadProfileImage = async (req, res, next) => {
   try {
@@ -26,6 +27,7 @@ const uploadProfileImage = async (req, res, next) => {
         });
         const { clearUserCache } = require('../middlewares/auth.middleware');
         clearUserCache(req.user.id);
+        cacheMiddleware.clearCache();
       } catch (dbErr) {
         console.warn('[uploadProfileImage] Auto-update avatar DB error:', dbErr.message);
       }
@@ -69,8 +71,9 @@ const uploadPortfolioMedia = async (req, res, next) => {
     
     // Compress portfolio images and videos before uploading
     const processedFile = await processMedia(req.file);
-    const bucket = req.body?.type === 'video' || processedFile.mimetype?.startsWith('video/') ? 'portfolio-videos' : 'portfolio-images';
+    const bucket = 'portfolio-media';
     const url = await uploadFile(processedFile, bucket, { requireCloud: true, req });
+    cacheMiddleware.clearCache();
     res.status(200).json({ success: true, url, data: { url } });
   } catch (error) {
     next(error);
