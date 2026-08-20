@@ -1,12 +1,11 @@
 const { uploadFile } = require('../services/storage.service');
 const { processMedia } = require('../services/media.service');
 const prisma = require('../config/prisma');
-const cacheMiddleware = require('../middlewares/cache.middleware');
 
 const uploadProfileImage = async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
-    
+
     // Compress image before uploading
     let processedFile;
     try {
@@ -27,7 +26,6 @@ const uploadProfileImage = async (req, res, next) => {
         });
         const { clearUserCache } = require('../middlewares/auth.middleware');
         clearUserCache(req.user.id);
-        cacheMiddleware.clearCache();
       } catch (dbErr) {
         console.warn('[uploadProfileImage] Auto-update avatar DB error:', dbErr.message);
       }
@@ -43,7 +41,7 @@ const uploadProfileImage = async (req, res, next) => {
 const uploadVerificationDoc = async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
-    
+
     // Verification docs: compress images but leave PDFs untouched
     const processedFile = await processMedia(req.file);
     const url = await uploadFile(processedFile, 'verification-documents', { requireCloud: true, req });
@@ -56,7 +54,7 @@ const uploadVerificationDoc = async (req, res, next) => {
 const uploadPaymentProof = async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
-    
+
     const processedFile = await processMedia(req.file);
     const url = await uploadFile(processedFile, 'payment-proofs', { requireCloud: true, req });
     res.status(200).json({ success: true, url, data: { url } });
@@ -68,12 +66,11 @@ const uploadPaymentProof = async (req, res, next) => {
 const uploadPortfolioMedia = async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
-    
+
     // Compress portfolio images and videos before uploading
     const processedFile = await processMedia(req.file);
-    const bucket = 'portfolio-media';
-    const url = await uploadFile(processedFile, bucket, { requireCloud: true, req });
-    cacheMiddleware.clearCache();
+    // All portfolio media (images AND videos) go to a single 'portfolio-media' bucket
+    const url = await uploadFile(processedFile, 'portfolio-media', { requireCloud: true, req });
     res.status(200).json({ success: true, url, data: { url } });
   } catch (error) {
     next(error);
@@ -83,10 +80,10 @@ const uploadPortfolioMedia = async (req, res, next) => {
 const uploadGeneric = async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
-    
+
     // Compress media before uploading
     const processedFile = await processMedia(req.file);
-    const bucket = req.body?.type === 'video' || processedFile.mimetype?.startsWith('video/') ? 'portfolio-videos' : 'chat-media';
+    const bucket = req.body?.type === 'video' || processedFile.mimetype?.startsWith('video/') ? 'portfolio-media' : 'chat-media';
     const url = await uploadFile(processedFile, bucket, { requireCloud: true, req });
     res.status(200).json({ success: true, url, data: { url } });
   } catch (error) {
