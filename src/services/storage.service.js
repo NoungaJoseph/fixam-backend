@@ -28,6 +28,8 @@ const uploadLocal = async (file, bucket, fileName, req) => {
   return `${baseUrl}/uploads/${bucket}/${fileName}`;
 };
 
+const verifiedBuckets = new Set();
+
 const uploadFile = async (file, bucket, options = {}) => {
   const { req } = options;
   const safeName = (file.originalname || 'file').replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -39,6 +41,16 @@ const uploadFile = async (file, bucket, options = {}) => {
   }
 
   try {
+    // If bucket not yet verified in memory, ensure it exists quickly once
+    if (!verifiedBuckets.has(bucket)) {
+      try {
+        await supabase.storage.createBucket(bucket, { public: true });
+      } catch (e) {
+        // Bucket probably already exists
+      }
+      verifiedBuckets.add(bucket);
+    }
+
     let uploadRes = await supabase.storage
       .from(bucket)
       .upload(fileName, file.buffer, {
@@ -46,16 +58,8 @@ const uploadFile = async (file, bucket, options = {}) => {
         upsert: true
       });
 
-    // If bucket upload fails, attempt creating/ensuring public bucket and retry
     if (uploadRes.error) {
-      console.warn(`[Storage] Upload error for bucket '${bucket}': ${uploadRes.error.message || uploadRes.error}. Attempting bucket creation...`);
-      try {
-        await supabase.storage.createBucket(bucket, { public: true });
-      } catch (e) {
-        console.warn(`[Storage] Bucket creation notice:`, e.message);
-      }
-
-      // Retry upload after bucket check
+      console.warn(`[Storage] Upload retry for '${bucket}': ${uploadRes.error.message || uploadRes.error}`);
       uploadRes = await supabase.storage
         .from(bucket)
         .upload(fileName, file.buffer, {
