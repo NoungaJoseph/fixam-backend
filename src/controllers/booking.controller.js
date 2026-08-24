@@ -386,13 +386,20 @@ const updateBookingStatus = async (req, res, next) => {
 
     if (status === 'ACCEPTED') {
       try {
+        const providerSkills = Array.isArray(booking.provider?.providerProfile?.skills) ? booking.provider.providerProfile.skills : [];
+        const primarySkill = providerSkills.length > 0 ? providerSkills[0] : null;
+        const derivedCategory = booking.task?.category || (primarySkill ? `Direct Booking (${providerSkills.slice(0, 2).join(', ')})` : 'Direct Service Booking');
+        const derivedTitle = booking.task?.title || (primarySkill ? `Professional ${primarySkill} Service` : (booking.service || 'Fixam Direct Booking'));
+        const derivedScope = booking.notes || booking.task?.description || 'Execution of requested professional service in compliance with Fixam quality and safety standards.';
+
         agreementService.createOrUpdateAgreement({
           sourceType: 'BOOKING',
           bookingId: booking.id,
           clientId: booking.clientId,
           providerId: booking.providerId,
-          title: 'Fixam Direct Booking',
-          category: 'General Service',
+          title: derivedTitle,
+          category: derivedCategory,
+          scopeOfWork: derivedScope,
           location: booking.location,
           schedule: {
             date: booking.bookingDate ? new Date(booking.bookingDate).toLocaleDateString() : 'Scheduled Date',
