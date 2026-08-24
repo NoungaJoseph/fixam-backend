@@ -552,8 +552,19 @@ const applyForJob = async (req, res, next) => {
       return res.status(409).json({ success: false, data: existing, message: 'You have already applied for this task.', code: 'ALREADY_APPLIED' });
     }
 
-    if (!req.user.isOnline) {
-      return res.status(403).json({ success: false, message: 'You must be available for work to apply for tasks.', code: 'PROVIDER_OFFLINE' });
+    const isAvailable = Boolean(req.user.isOnline || req.user.providerProfile?.isAvailable);
+    if (!isAvailable) {
+      if (req.user.providerProfile) {
+        // Auto-activate availability since provider is actively submitting a proposal
+        await prisma.user.update({ where: { id: req.user.id }, data: { isOnline: true } }).catch(() => {});
+        await prisma.providerProfile.update({ where: { id: req.user.providerProfile.id }, data: { isAvailable: true } }).catch(() => {});
+        try {
+          const { clearUserCache } = require('../middlewares/auth.middleware');
+          clearUserCache(req.user.id);
+        } catch (_) {}
+      } else {
+        return res.status(403).json({ success: false, message: 'You must be available for work to apply for tasks.', code: 'PROVIDER_OFFLINE' });
+      }
     }
 
     if (boostCoinsAmount > 0) {

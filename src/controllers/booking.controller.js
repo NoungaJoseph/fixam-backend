@@ -281,8 +281,18 @@ const updateBookingStatus = async (req, res, next) => {
         if (!isProvider && !isAdmin) {
           return res.status(403).json({ success: false, message: 'Only the provider can accept a booking.' });
         }
-        if (!req.user.isOnline) {
-          return res.status(403).json({ success: false, message: 'You must be available for work to accept a booking.', code: 'PROVIDER_OFFLINE' });
+        const isAvailable = Boolean(req.user.isOnline || req.user.providerProfile?.isAvailable);
+        if (!isAvailable) {
+          if (req.user.providerProfile) {
+            await prisma.user.update({ where: { id: req.user.id }, data: { isOnline: true } }).catch(() => {});
+            await prisma.providerProfile.update({ where: { id: req.user.providerProfile.id }, data: { isAvailable: true } }).catch(() => {});
+            try {
+              const { clearUserCache } = require('../middlewares/auth.middleware');
+              clearUserCache(req.user.id);
+            } catch (_) {}
+          } else {
+            return res.status(403).json({ success: false, message: 'You must be available for work to accept a booking.', code: 'PROVIDER_OFFLINE' });
+          }
         }
       }
     }
