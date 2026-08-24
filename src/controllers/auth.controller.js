@@ -844,7 +844,15 @@ const logout = async (req, res) => {
 };
 
 const me = async (req, res) => {
-  res.status(200).json({ success: true, user: req.user });
+  try {
+    const freshUser = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      include: { wallet: true, providerProfile: true }
+    });
+    res.status(200).json({ success: true, user: freshUser || req.user });
+  } catch (_) {
+    res.status(200).json({ success: true, user: req.user });
+  }
 };
 
 module.exports = {
