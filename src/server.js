@@ -6,6 +6,7 @@ const prisma = require('./config/prisma');
 const { connectWithRetry } = require('./config/prisma');
 const { initSocket } = require('./services/socket.service');
 const { startStatusUpdater } = require('./jobs/statusUpdater');
+const { startMarketingNotificationEngine } = require('./jobs/marketingNotificationEngine');
 
 const PORT = process.env.PORT || 8080;
 
@@ -13,6 +14,7 @@ const server = http.createServer(app);
 
 initSocket(server);
 startStatusUpdater();
+startMarketingNotificationEngine();
 
 async function startServer() {
   try {

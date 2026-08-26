@@ -70,8 +70,9 @@ const createJob = async (req, res, next) => {
     });
 
     // 2. Check client verification status
+    const isUserVerified = clientUser?.providerProfile?.verification === 'VERIFIED' || clientUser?.isVerified === true;
     const verificationStatus = clientUser?.providerProfile?.verification;
-    if (verificationStatus !== 'VERIFIED') {
+    if (!isUserVerified) {
       return res.status(403).json({
         success: false,
         message: 'Your account must be verified before you can post a task.',
@@ -79,11 +80,17 @@ const createJob = async (req, res, next) => {
       });
     }
 
-    // 3. Check client wallet balance
+    // 3. Check client wallet balance (ensure wallet exists)
     const providersNeeded = validatedData.providersNeeded || 1;
     const coinCost = calculateJobCoinCost(providersNeeded);
-    const clientWallet = clientUser?.wallet;
-    if (!clientWallet || clientWallet.balance < coinCost) {
+    let clientWallet = clientUser?.wallet;
+    if (!clientWallet) {
+      clientWallet = await prisma.wallet.create({
+        data: { userId: clientUser.id, balance: 1 }
+      });
+    }
+
+    if (clientWallet.balance < coinCost) {
       return res.status(400).json({
         success: false,
         message: `You do not have enough coins to post this task. Cost is ${coinCost} coins. Please top up.`

@@ -401,6 +401,26 @@ const approveTransaction = async (req, res, next) => {
       console.error('[Socket Error] Transaction notification failed:', err.message);
     }
 
+    // Send FCM Push Notification to Device
+    try {
+      const { sendPushNotification } = require('../services/notification.service');
+      const pushTitle = status === 'SUCCESS' 
+        ? 'Coins Added / Pièces ajoutées ✅' 
+        : 'Payment Update / Statut de paiement ℹ️';
+      const pushBody = status === 'SUCCESS'
+        ? `Your purchase of ${transaction.amount} coins was approved! Your balance is updated. / Votre achat de ${transaction.amount} pièces a été approuvé !`
+        : 'Your coin purchase request was rejected. / Votre demande d\'achat de pièces a été rejetée.';
+
+      await sendPushNotification(
+        transaction.wallet.userId,
+        pushTitle,
+        pushBody,
+        { type: 'TRANSACTION', transactionId: transaction.id, status }
+      );
+    } catch (pushErr) {
+      console.error('[Push Error] Transaction push notification failed:', pushErr.message);
+    }
+
     res.status(200).json({ success: true, data: updatedTransaction });
   } catch (error) {
     next(error);
@@ -1367,29 +1387,45 @@ const approveJob = async (req, res, next) => {
         }
       });
 
+      const now = new Date();
       const matchingProviders = providers.filter(provider => {
         const profile = provider.providerProfile;
         if (!profile) return false;
-        return (
-          matchesSkill(profile.skills, job.category) &&
-          matchesLocation(profile.serviceArea, job.location)
-        );
+        const isBoosted = profile.boostExpiresAt && new Date(profile.boostExpiresAt) > now;
+        const skillMatches = matchesSkill(profile.skills, job.category);
+        if (!skillMatches) return false;
+        
+        // Boosted providers receive instant customized alerts for all skill matches
+        if (isBoosted) return true;
+        
+        // Non-boosted providers match location as well
+        return matchesLocation(profile.serviceArea, job.location);
       });
 
-      console.log(`[Proximity Alert] Found ${matchingProviders.length} matching providers for category "${job.category}" and location "${job.location}"`);
+      console.log(`[Proximity Alert] Found ${matchingProviders.length} matching providers (including boosted) for category "${job.category}" and location "${job.location}"`);
 
       const { getIO } = require('../services/socket.service');
       const { sendPushNotification } = require('../services/notification.service');
       const io = getIO();
 
       for (const provider of matchingProviders) {
+        const profile = provider.providerProfile;
+        const isBoosted = profile?.boostExpiresAt && new Date(profile.boostExpiresAt) > now;
+
+        const notifTitle = isBoosted
+          ? '🚀 Boosted Job Alert: New Task Match!'
+          : 'New Task Near You 📍';
+        const notifBody = isBoosted
+          ? `Priority alert for your boosted profile: "${job.title}" in "${job.category}" (${job.location})`
+          : `A new task for "${job.category}" was posted nearby in "${job.location}": "${job.title}"`;
+
         // Create DB notification
         const providerNotif = await prisma.notification.create({
           data: {
             userId: provider.id,
-            title: 'New Task Near You 📍',
-            body: `A new task for "${job.category}" was posted nearby in "${job.location}": "${job.title}"`,
-            data: { type: 'NEW_JOB_NEARBY', jobId: job.id, category: job.category }
+            title: notifTitle,
+            body: notifBody,
+            data: { type: 'NEW_JOB_NEARBY', jobId: job.id, category: job.category, isBoosted }
           }
         });
 
@@ -1404,8 +1440,8 @@ const approveJob = async (req, res, next) => {
         try {
           await sendPushNotification(
             provider.id,
-            'New Task Near You 📍',
-            `A new ${job.category} task is available in ${job.location}`,
+            notifTitle,
+            notifBody,
             {
               type: 'NEW_JOB_NEARBY',
               jobId: job.id,
