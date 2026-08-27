@@ -9,7 +9,7 @@ const parser = new Parser({
 // Cache structures
 let cachedMatches = null;
 let lastMatchesFetch = 0;
-const MATCHES_CACHE_DURATION = 20 * 1000; // 20 seconds for rapid live score updates
+const MATCHES_CACHE_DURATION = 20 * 1000; // 20 seconds for fast live score updates
 
 let cachedStandings = {};
 let lastStandingsFetch = {};
@@ -52,13 +52,13 @@ const rateLimitedGet = async (url, apiKey) => {
   }
 };
 
+// Target Leagues: Premier League, La Liga, Bundesliga, Serie A, Ligue 1, Champions League
 const TARGET_LEAGUES = [
   { code: 'PL', name: 'Premier League', short: 'PL', country: 'England', emoji: '🏴󠁧󠁢󠁥󠁮󠁧󠁿', hasScorers: true },
   { code: 'PD', name: 'La Liga', short: 'LaLiga', country: 'Spain', emoji: '🇪🇸', hasScorers: true },
   { code: 'BL1', name: 'Bundesliga', short: 'Bundesliga', country: 'Germany', emoji: '🇩🇪', hasScorers: true },
   { code: 'SA', name: 'Serie A', short: 'SerieA', country: 'Italy', emoji: '🇮🇹', hasScorers: true },
   { code: 'FL1', name: 'Ligue 1', short: 'Ligue1', country: 'France', emoji: '🇫🇷', hasScorers: true },
-  { code: 'PPL', name: 'Primeira Liga', short: 'Liga Portugal', country: 'Portugal', emoji: '🇵🇹', hasScorers: false },
   { code: 'CL', name: 'Champions League', short: 'UCL', country: 'Europe', emoji: '⭐', hasScorers: true }
 ];
 
@@ -74,6 +74,13 @@ const getDayFormatted = (utcDateString, lang) => {
   const dayNum = date.getDate();
 
   return `${dayName} ${dayNum} ${monthName}`;
+};
+
+const getTimeFormatted = (utcDateString) => {
+  const date = new Date(utcDateString);
+  const hours = String(date.getUTCHours()).padStart(2, '0');
+  const mins = String(date.getUTCMinutes()).padStart(2, '0');
+  return `${hours}:${mins}`;
 };
 
 // 1. Fetch Matches (Live, Recent Finished, Upcoming for the next 7 days)
@@ -189,7 +196,7 @@ const getRssNews = async (lang, country) => {
 
     // Cameroon News (🇨🇲)
     if (cameroonFeed?.items) {
-      cameroonFeed.items.slice(0, 4).forEach(item => {
+      cameroonFeed.items.slice(0, 3).forEach(item => {
         const title = cleanNewsTitle(item.title);
         if (title) {
           newsItems.push({
@@ -203,7 +210,7 @@ const getRssNews = async (lang, country) => {
 
     // World News (🌍)
     if (worldFeed?.items) {
-      worldFeed.items.slice(0, 4).forEach(item => {
+      worldFeed.items.slice(0, 3).forEach(item => {
         const title = cleanNewsTitle(item.title);
         if (title) {
           newsItems.push({
@@ -226,7 +233,7 @@ const getRssNews = async (lang, country) => {
         'Nigeria': '🇳🇬'
       };
       const prefix = countryEmojis[country] || '📍';
-      countryFeed.items.slice(0, 3).forEach(item => {
+      countryFeed.items.slice(0, 2).forEach(item => {
         const title = cleanNewsTitle(item.title);
         if (title) {
           newsItems.push({
@@ -288,7 +295,7 @@ const fetchSportsData = async (lang, country = 'Cameroon') => {
     const finishedMatches = allMatches
       .filter(m => m.status === 'FINISHED')
       .sort((a, b) => new Date(b.utcDate) - new Date(a.utcDate))
-      .slice(0, 5);
+      .slice(0, 4);
 
     finishedMatches.forEach(m => {
       const league = TARGET_LEAGUES.find(l => l.code === m.competition?.code);
@@ -303,28 +310,48 @@ const fetchSportsData = async (lang, country = 'Cameroon') => {
       });
     });
 
-    // 1C. UPCOMING FIXTURES (Next 7 days across top leagues with Date & Kickoff Time)
+    // 1C. UPCOMING FIXTURES (GROUPED BY LEAGUE & MATCHDAY)
+    // Shows each league once for that day, followed by all matchups and their times
     const upcomingMatches = allMatches
       .filter(m => m.status === 'TIMED' || m.status === 'SCHEDULED')
-      .sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate))
-      .slice(0, 12);
+      .sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate));
 
+    const groupedUpcoming = {};
     upcomingMatches.forEach(m => {
-      const league = TARGET_LEAGUES.find(l => l.code === m.competition?.code);
-      const leagueLabel = league ? league.short : (m.competition?.name || '');
+      const comp = TARGET_LEAGUES.find(l => l.code === m.competition?.code);
+      if (!comp) return;
       const dayFormatted = getDayFormatted(m.utcDate, lang);
+      const groupKey = `${comp.code}_${dayFormatted}`;
 
-      items.push({
-        type: 'UPCOMING',
-        home: `[${leagueLabel} · ${dayFormatted}] ${m.homeTeam?.shortName || m.homeTeam?.name || 'TBD'}`,
+      if (!groupedUpcoming[groupKey]) {
+        groupedUpcoming[groupKey] = {
+          comp,
+          day: dayFormatted,
+          matches: []
+        };
+      }
+
+      groupedUpcoming[groupKey].matches.push({
+        home: m.homeTeam?.shortName || m.homeTeam?.name || 'TBD',
         away: m.awayTeam?.shortName || m.awayTeam?.name || 'TBD',
-        time: m.utcDate
+        time: getTimeFormatted(m.utcDate)
+      });
+    });
+
+    // Output grouped fixture lines (up to 8 league matchdays to keep ticker optimal)
+    Object.values(groupedUpcoming).slice(0, 8).forEach(g => {
+      const matchesStr = g.matches.map(m => `${m.home} vs ${m.away} (${m.time})`).join(' | ');
+      items.push({
+        type: 'NEWS',
+        title: `${g.comp.emoji} ${g.comp.name} (${g.day}): ${matchesStr}`,
+        prefix: '📅'
       });
     });
 
     // 2. STANDINGS: TOP 4 FOR EACH TARGET LEAGUE
     const standingsMap = await getStandingsData(apiKey);
     TARGET_LEAGUES.forEach(league => {
+      if (league.code === 'CL') return;
       const top4 = standingsMap[league.code];
       if (top4 && top4.length > 0) {
         const tableStr = top4
@@ -333,9 +360,7 @@ const fetchSportsData = async (lang, country = 'Cameroon') => {
 
         items.push({
           type: 'NEWS',
-          title: lang === 'fr'
-            ? `${league.emoji} ${league.name} Top 4: ${tableStr}`
-            : `${league.emoji} ${league.name} Top 4: ${tableStr}`,
+          title: `${league.emoji} ${league.name} Top 4: ${tableStr}`,
           prefix: '📊'
         });
       }
@@ -364,16 +389,14 @@ const fetchSportsData = async (lang, country = 'Cameroon') => {
   } else {
     // High-quality fallback if API key is not present
     items.push({
-      type: 'UPCOMING',
-      home: `[PL · Sat] Arsenal`,
-      away: 'Chelsea',
-      time: new Date(Date.now() + 86400000 * 2).toISOString()
+      type: 'NEWS',
+      title: "🏴󠁧󠁢󠁥󠁮󠁧󠁿 Premier League (Sat 29 Aug): Arsenal vs Chelsea (12:30) | Liverpool vs Everton (15:00) | Man City vs Tottenham (17:30)",
+      prefix: '📅'
     });
     items.push({
-      type: 'UPCOMING',
-      home: `[LaLiga · Sat] Real Madrid`,
-      away: 'Barcelona',
-      time: new Date(Date.now() + 86400000 * 2).toISOString()
+      type: 'NEWS',
+      title: "🇪🇸 La Liga (Sat 29 Aug): Real Madrid vs Betis (16:15) | Barcelona vs Sevilla (18:30) | Atletico vs Valencia (21:00)",
+      prefix: '📅'
     });
     items.push({
       type: 'NEWS',
