@@ -6,272 +6,218 @@ const parser = new Parser({
   }
 });
 
+// Cache structures
+let cachedMatches = null;
+let lastMatchesFetch = 0;
+const MATCHES_CACHE_DURATION = 20 * 1000; // 20 seconds for rapid live score updates
+
+let cachedStandings = {};
+let lastStandingsFetch = {};
+const STANDINGS_CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
+
+let cachedScorers = {};
+let lastScorersFetch = {};
+const SCORERS_CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
+
+let cachedNews = {};
+let lastNewsFetch = {};
+const NEWS_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
 let cachedSportsData = {};
 let lastFetchTime = {};
 let isFetching = {};
-const CACHE_DURATION_MS = 2 * 60 * 1000; // Cache for 2 minutes
+const CACHE_DURATION_MS = 20 * 1000; // 20 seconds for rapid live score updates
 
-const fetchSportsData = async (lang, country = 'Cameroon') => {
-  const apiKey = process.env.SPORTS_API_KEY;
-  let items = [];
+// Rate limit helper: ensure at least 1200ms between calls to avoid exceeding 10 req/min
+let lastApiCallTime = 0;
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  // 1. Fetch Football-Data.org Match Stats (World Cup, CL, PL, etc.)
-  if (apiKey) {
-    const headers = { 'X-Auth-Token': apiKey };
+const rateLimitedGet = async (url, apiKey) => {
+  const now = Date.now();
+  const timeSinceLast = now - lastApiCallTime;
+  if (timeSinceLast < 1200) {
+    await delay(1200 - timeSinceLast);
+  }
+  lastApiCallTime = Date.now();
 
-    try {
-      // Calculate dates for yesterday and tomorrow to get a wider range of matches
-      const today = new Date();
-      const yesterday = new Date(today);
-      yesterday.setDate(yesterday.getDate() - 1);
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-
-      const dateFrom = yesterday.toISOString().split('T')[0];
-      const dateTo = tomorrow.toISOString().split('T')[0];
-
-      // Fetch matches from yesterday to tomorrow
-      const matchesRes = await axios.get(`https://api.football-data.org/v4/matches?dateFrom=${dateFrom}&dateTo=${dateTo}`, { headers });
-      const matches = matchesRes.data.matches || [];
-
-      // Process Recent / Live Matches (Finished or in-play)
-      const recentMatches = matches
-        .filter(m => m.status === 'FINISHED' || m.status === 'IN_PLAY' || m.status === 'PAUSED')
-        .sort((a, b) => new Date(b.utcDate) - new Date(a.utcDate))
-        .slice(0, 8); // Show up to 8 recent/live matches
-
-      recentMatches.forEach(m => {
-        items.push({
-          type: 'MATCH',
-          status: m.status === 'IN_PLAY' ? 'LIVE' : 'FINISHED',
-          home: m.homeTeam?.tla || m.homeTeam?.name || 'TBD',
-          away: m.awayTeam?.tla || m.awayTeam?.name || 'TBD',
-          homeScore: m.score?.fullTime?.home ?? 0,
-          awayScore: m.score?.fullTime?.away ?? 0
-        });
-      });
-
-      // Process Upcoming Matches
-      const upcomingMatches = matches
-        .filter(m => m.status === 'TIMED' || m.status === 'SCHEDULED')
-        .sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate))
-        .slice(0, 5); // Show up to 5 upcoming matches
-
-      upcomingMatches.forEach(m => {
-        items.push({
-          type: 'UPCOMING',
-          home: m.homeTeam?.tla || m.homeTeam?.name || 'TBD',
-          away: m.awayTeam?.tla || m.awayTeam?.name || 'TBD',
-          time: m.utcDate
-        });
-      });
-    } catch (error) {
-      console.error('[SportsController] Error fetching matches:', error.message);
-    }
-
-    // 1.5 Fetch World Cup Match Data to Determine Active Stage and Qualified Teams
-    let activeStage = 'GROUP_STAGE';
-    let activeStagePriority = 1;
-    let wcMatches = [];
-
-    const stagePriority = {
-      'GROUP_STAGE': 1,
-      'ROUND_OF_32': 2,
-      'LAST_32': 2,
-      'ROUND_OF_16': 3,
-      'LAST_16': 3,
-      'QUARTER_FINALS': 4,
-      'SEMI_FINALS': 5,
-      'THIRD_PLACE': 6,
-      'FINAL': 7
-    };
-
-    try {
-      const wcMatchesRes = await axios.get('https://api.football-data.org/v4/competitions/WC/matches', { headers });
-      wcMatches = wcMatchesRes.data?.matches || [];
-
-      wcMatches.forEach(m => {
-        const p = stagePriority[m.stage] || 0;
-        if (p > activeStagePriority) {
-          activeStage = m.stage;
-          activeStagePriority = p;
-        }
-      });
-    } catch (err) {
-      console.error('[SportsController] Error fetching WC matches list:', err.message);
-    }
-
-    // Process World Cup info based on active tournament stage
-    if (activeStagePriority > 1) {
-      // Knockout stage logic: find teams active in this round
-      try {
-        const stageMatches = wcMatches.filter(m => m.stage === activeStage);
-        let stageTeams = [];
-        stageMatches.forEach(m => {
-          if (m.homeTeam?.shortName || m.homeTeam?.name) stageTeams.push(m.homeTeam.shortName || m.homeTeam.name);
-          if (m.awayTeam?.shortName || m.awayTeam?.name) stageTeams.push(m.awayTeam.shortName || m.awayTeam.name);
-        });
-        const uniqueStageTeams = [...new Set(stageTeams)];
-
-        let stageLabel = activeStage.replace(/_/g, ' ');
-        if (activeStage === 'LAST_32' || activeStage === 'ROUND_OF_32') stageLabel = 'Round of 32';
-        if (activeStage === 'LAST_16' || activeStage === 'ROUND_OF_16') stageLabel = 'Round of 16';
-        if (activeStage === 'QUARTER_FINALS') stageLabel = 'Quarter-Finals';
-        if (activeStage === 'SEMI_FINALS') stageLabel = 'Semi-Finals';
-        if (activeStage === 'FINAL') stageLabel = 'Finals';
-
-        if (uniqueStageTeams.length > 0) {
-          items.push({
-            type: 'NEWS',
-            title: lang === 'fr'
-              ? `Mondial ${stageLabel}: ${uniqueStageTeams.slice(0, 8).join(', ')}`
-              : `World Cup ${stageLabel} Teams: ${uniqueStageTeams.slice(0, 8).join(', ')}`,
-            prefix: '⭐'
-          });
-        }
-
-        // Check if the final has finished to crown the champion
-        const finalMatch = wcMatches.find(m => m.stage === 'FINAL' && m.status === 'FINISHED');
-        if (finalMatch && finalMatch.score?.winner) {
-          const winner = finalMatch.score.winner === 'HOME_TEAM' ? finalMatch.homeTeam : finalMatch.awayTeam;
-          const winnerName = winner?.shortName || winner?.name || 'TBD';
-          items.push({
-            type: 'NEWS',
-            title: lang === 'fr'
-              ? `👑 CHAMPION DU MONDE 2026: ${winnerName.toUpperCase()} ! 🎉`
-              : `👑 WORLD CUP 2026 CHAMPIONS: ${winnerName.toUpperCase()}! 🎉`,
-            prefix: '🏆'
-          });
-        }
-      } catch (err) {
-        console.error('[SportsController] Error processing WC knockout stage:', err.message);
-      }
+  try {
+    return await axios.get(url, { headers: { 'X-Auth-Token': apiKey }, timeout: 8000 });
+  } catch (err) {
+    if (err.response && err.response.status === 429) {
+      console.warn('[SportsController] 429 Rate limit hit, using fallback cache for:', url);
     } else {
-      // Group stage logic: fetch standings & calculate qualified teams
-      try {
-        const wcStandingsRes = await axios.get('https://api.football-data.org/v4/competitions/WC/standings', { headers });
-        const standings = wcStandingsRes.data?.standings || [];
-        
-        // Show standings of the first 4 groups
-        const groupsToShow = standings.filter(s => s.type === 'TOTAL').slice(0, 4);
-        groupsToShow.forEach(group => {
-          const groupName = group.group ? group.group.replace('GROUP_', 'Group ') : 'Table';
-          const teams = group.table.slice(0, 2).map(t => `${t.position}. ${t.team?.tla || t.team?.shortName || t.team?.name} (${t.points} pts)`).join(' | ');
-          items.push({
-            type: 'NEWS',
-            title: lang === 'fr' ? `Mondial ${groupName}: ${teams}` : `World Cup ${groupName}: ${teams}`,
-            prefix: '🏆'
-          });
-        });
-
-        // Calculate currently qualified teams
-        let qualified = [];
-        standings.filter(s => s.type === 'TOTAL').forEach(group => {
-          group.table.slice(0, 2).forEach(t => {
-            if (t.playedGames === 3) {
-              qualified.push(t.team?.shortName || t.team?.name);
-            }
-          });
-        });
-
-        if (qualified.length > 0) {
-          const uniqueQualifiers = [...new Set(qualified)].slice(0, 8).join(', ');
-          items.push({
-            type: 'NEWS',
-            title: lang === 'fr'
-              ? `Qualifiés Mondial (16es): ${uniqueQualifiers} qualifiés pour le tour suivant !`
-              : `World Cup Qualified (Rd of 32): ${uniqueQualifiers} have qualified for the next stage!`,
-            prefix: '⭐'
-          });
-        }
-      } catch (err) {
-        console.error('[SportsController] Error fetching WC standings:', err.message);
-      }
+      console.error('[SportsController] API error:', err.message);
     }
+    return null;
+  }
+};
 
-    try {
-      const wcScorersRes = await axios.get('https://api.football-data.org/v4/competitions/WC/scorers', { headers });
-      const scorers = wcScorersRes.data?.scorers || [];
-      if (scorers.length > 0) {
-        const topScorers = scorers.slice(0, 5).map(s => `${s.player.name} (${s.goals} goals)`).join(' | ');
-        items.push({
-          type: 'NEWS',
-          title: lang === 'fr' ? `Meilleurs Buteurs Mondial: ${topScorers}` : `World Cup Top Scorers: ${topScorers}`,
-          prefix: '🔥'
-        });
-      }
-    } catch (err) {
-      console.error('[SportsController] Error fetching WC scorers:', err.message);
-    }
+const TARGET_LEAGUES = [
+  { code: 'PL', name: 'Premier League', short: 'PL', country: 'England', emoji: '🏴󠁧󠁢󠁥󠁮󠁧󠁿', hasScorers: true },
+  { code: 'PD', name: 'La Liga', short: 'LaLiga', country: 'Spain', emoji: '🇪🇸', hasScorers: true },
+  { code: 'BL1', name: 'Bundesliga', short: 'Bundesliga', country: 'Germany', emoji: '🇩🇪', hasScorers: true },
+  { code: 'SA', name: 'Serie A', short: 'SerieA', country: 'Italy', emoji: '🇮🇹', hasScorers: true },
+  { code: 'FL1', name: 'Ligue 1', short: 'Ligue1', country: 'France', emoji: '🇫🇷', hasScorers: true },
+  { code: 'PPL', name: 'Primeira Liga', short: 'Liga Portugal', country: 'Portugal', emoji: '🇵🇹', hasScorers: false },
+  { code: 'CL', name: 'Champions League', short: 'UCL', country: 'Europe', emoji: '⭐', hasScorers: true }
+];
 
-  } else {
-    // Return mock entries if API key is not configured
-    items.push({
-      type: 'NEWS',
-      title: lang === 'fr'
-        ? "Mondial 2026: Les demi-finales et la finale approchent ! Restez connectés pour les scores en direct."
-        : "World Cup 2026: Semi-finals and finals are here! Stay tuned for live goal updates.",
-      prefix: '🏆'
-    });
-    items.push({
-      type: 'NEWS',
-      title: lang === 'fr'
-        ? "Meilleurs Buteurs Mondial: Kylian Mbappé (6 buts) | Erling Haaland (5 buts) | Jude Bellingham (4 buts)"
-        : "World Cup Top Scorers: Kylian Mbappé (6 goals) | Erling Haaland (5 goals) | Jude Bellingham (4 goals)",
-      prefix: '🔥'
-    });
-    items.push({
-      type: 'NEWS',
-      title: lang === 'fr'
-        ? "Favoris Mondial: Argentine, France, Brésil, Angleterre s'affrontent pour le trophée !"
-        : "World Cup Finalists: Argentina, France, Brazil, England competing for the trophy!",
-      prefix: '⭐'
-    });
+const getDayFormatted = (utcDateString, lang) => {
+  const date = new Date(utcDateString);
+  const daysEn = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const daysFr = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
+  const monthsEn = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const monthsFr = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
+
+  const dayName = lang === 'fr' ? daysFr[date.getDay()] : daysEn[date.getDay()];
+  const monthName = lang === 'fr' ? monthsFr[date.getMonth()] : monthsEn[date.getMonth()];
+  const dayNum = date.getDate();
+
+  return `${dayName} ${dayNum} ${monthName}`;
+};
+
+// 1. Fetch Matches (Live, Recent Finished, Upcoming for the next 7 days)
+const getMatchesData = async (apiKey) => {
+  const now = Date.now();
+  if (cachedMatches && (now - lastMatchesFetch < MATCHES_CACHE_DURATION)) {
+    return cachedMatches;
   }
 
-  // 2. Fetch Live General News + World Cup News via RSS (World + Country + World Cup)
+  if (!apiKey) return [];
+
   try {
-    // Google News RSS for World News
-    const worldRssUrl = lang === 'fr' 
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const nextWeek = new Date(today);
+    nextWeek.setDate(nextWeek.getDate() + 7);
+
+    const dateFrom = yesterday.toISOString().split('T')[0];
+    const dateTo = nextWeek.toISOString().split('T')[0];
+
+    const compCodes = TARGET_LEAGUES.map(l => l.code).join(',');
+    const url = `https://api.football-data.org/v4/matches?competitions=${compCodes}&dateFrom=${dateFrom}&dateTo=${dateTo}`;
+
+    const res = await rateLimitedGet(url, apiKey);
+    if (res && res.data?.matches) {
+      cachedMatches = res.data.matches;
+      lastMatchesFetch = now;
+    }
+    return cachedMatches || [];
+  } catch (err) {
+    console.error('[SportsController] Error fetching matches:', err.message);
+    return cachedMatches || [];
+  }
+};
+
+// 2. Fetch Standings (Top 4 for each league)
+const getStandingsData = async (apiKey) => {
+  if (!apiKey) return cachedStandings;
+  const now = Date.now();
+
+  for (const league of TARGET_LEAGUES) {
+    if (league.code === 'CL') continue; // CL has tournament stage formats
+    if (cachedStandings[league.code] && (now - (lastStandingsFetch[league.code] || 0) < STANDINGS_CACHE_DURATION)) {
+      continue;
+    }
+
+    const res = await rateLimitedGet(`https://api.football-data.org/v4/competitions/${league.code}/standings`, apiKey);
+    if (res && res.data?.standings?.[0]?.table) {
+      cachedStandings[league.code] = res.data.standings[0].table.slice(0, 4);
+      lastStandingsFetch[league.code] = now;
+    }
+  }
+
+  return cachedStandings;
+};
+
+// 3. Fetch Top Scorers (for PL, La Liga, Bundesliga, Serie A, Ligue 1, and CL)
+const getScorersData = async (apiKey) => {
+  if (!apiKey) return cachedScorers;
+  const now = Date.now();
+
+  for (const league of TARGET_LEAGUES) {
+    if (!league.hasScorers) continue;
+    if (cachedScorers[league.code] && (now - (lastScorersFetch[league.code] || 0) < SCORERS_CACHE_DURATION)) {
+      continue;
+    }
+
+    const res = await rateLimitedGet(`https://api.football-data.org/v4/competitions/${league.code}/scorers?limit=3`, apiKey);
+    if (res && res.data?.scorers) {
+      cachedScorers[league.code] = res.data.scorers.slice(0, 3);
+      lastScorersFetch[league.code] = now;
+    }
+  }
+
+  return cachedScorers;
+};
+
+// 4. Fetch RSS News (World + Cameroon + Country)
+const getRssNews = async (lang, country) => {
+  const cacheKey = `${lang}_${country}`;
+  const now = Date.now();
+  if (cachedNews[cacheKey] && (now - (lastNewsFetch[cacheKey] || 0) < NEWS_CACHE_DURATION)) {
+    return cachedNews[cacheKey];
+  }
+
+  try {
+    const worldRssUrl = lang === 'fr'
       ? 'https://news.google.com/rss/headlines/section/topic/WORLD?hl=fr&gl=FR&ceid=FR:fr'
       : 'https://news.google.com/rss/headlines/section/topic/WORLD?hl=en-US&gl=US&ceid=US:en';
 
-    // Google News RSS for Country General News
-    const queryTerm = country === 'Ivory Coast' ? "Côte d'Ivoire" : country;
-    const countryRssUrl = lang === 'fr'
-      ? `https://news.google.com/rss/search?q=${encodeURIComponent(queryTerm)}&hl=fr&gl=FR&ceid=FR:fr`
-      : `https://news.google.com/rss/search?q=${encodeURIComponent(queryTerm)}&hl=en-US&gl=US&ceid=US:en`;
+    // Cameroon news
+    const cameroonQuery = lang === 'fr' ? 'Cameroun' : 'Cameroon';
+    const cameroonRssUrl = lang === 'fr'
+      ? `https://news.google.com/rss/search?q=${encodeURIComponent(cameroonQuery)}&hl=fr&gl=FR&ceid=FR:fr`
+      : `https://news.google.com/rss/search?q=${encodeURIComponent(cameroonQuery)}&hl=en-US&gl=US&ceid=US:en`;
 
-    // Google News RSS for World Cup Live News
-    const wcRssUrl = lang === 'fr'
-      ? 'https://news.google.com/rss/search?q=Coupe+du+Monde+de+la+FIFA&hl=fr&gl=FR&ceid=FR:fr'
-      : 'https://news.google.com/rss/search?q=FIFA+World+Cup&hl=en-US&gl=US&ceid=US:en';
-
-    const [worldFeed, countryFeed, wcFeed] = await Promise.all([
+    const feedsToFetch = [
       parser.parseURL(worldRssUrl).catch(() => ({ items: [] })),
-      parser.parseURL(countryRssUrl).catch(() => ({ items: [] })),
-      parser.parseURL(wcRssUrl).catch(() => ({ items: [] }))
-    ]);
-    
-    // Take 3 world news items, 3 country news items, and 3 World Cup items
-    const newsItems = [
-      ...worldFeed.items.slice(0, 3).map(i => ({ ...i, source: 'World' })),
-      ...countryFeed.items.slice(0, 3).map(i => ({ ...i, source: 'Local' })),
-      ...wcFeed.items.slice(0, 3).map(i => ({ ...i, source: 'WorldCup' }))
+      parser.parseURL(cameroonRssUrl).catch(() => ({ items: [] }))
     ];
 
-    // Shuffle them so they mix nicely
-    const shuffledNews = newsItems.sort(() => 0.5 - Math.random());
+    if (country && country.toLowerCase() !== 'cameroon' && country.toLowerCase() !== 'cameroun') {
+      const countryQuery = country === 'Ivory Coast' ? "Côte d'Ivoire" : country;
+      const countryRssUrl = lang === 'fr'
+        ? `https://news.google.com/rss/search?q=${encodeURIComponent(countryQuery)}&hl=fr&gl=FR&ceid=FR:fr`
+        : `https://news.google.com/rss/search?q=${encodeURIComponent(countryQuery)}&hl=en-US&gl=US&ceid=US:en`;
+      feedsToFetch.push(parser.parseURL(countryRssUrl).catch(() => ({ items: [] })));
+    }
 
-    shuffledNews.forEach(item => {
-      // Clean up Google News title (usually "Article Title - Source Name")
-      let title = item.title;
-      if (title.lastIndexOf(' - ') !== -1) {
-        title = title.substring(0, title.lastIndexOf(' - '));
-      }
-      
+    const [worldFeed, cameroonFeed, countryFeed] = await Promise.all(feedsToFetch);
+    const newsItems = [];
+
+    // Cameroon News (🇨🇲)
+    if (cameroonFeed?.items) {
+      cameroonFeed.items.slice(0, 4).forEach(item => {
+        const title = cleanNewsTitle(item.title);
+        if (title) {
+          newsItems.push({
+            title,
+            prefix: '🇨🇲',
+            source: 'Cameroon'
+          });
+        }
+      });
+    }
+
+    // World News (🌍)
+    if (worldFeed?.items) {
+      worldFeed.items.slice(0, 4).forEach(item => {
+        const title = cleanNewsTitle(item.title);
+        if (title) {
+          newsItems.push({
+            title,
+            prefix: '🌍',
+            source: 'World'
+          });
+        }
+      });
+    }
+
+    // Local Country News if separate
+    if (countryFeed?.items) {
       const countryEmojis = {
-        'Cameroon': '🇨🇲',
         'Kenya': '🇰🇪',
         'Ghana': '🇬🇭',
         'Ivory Coast': '🇨🇮',
@@ -279,26 +225,172 @@ const fetchSportsData = async (lang, country = 'Cameroon') => {
         'Egypt': '🇪🇬',
         'Nigeria': '🇳🇬'
       };
-      
-      let prefix = '📰';
-      if (item.source === 'Local') {
-        prefix = countryEmojis[country] || '📰';
-      } else if (item.source === 'WorldCup') {
-        prefix = '🏆';
-      } else if (item.source === 'World') {
-        prefix = '🌍';
-      }
+      const prefix = countryEmojis[country] || '📍';
+      countryFeed.items.slice(0, 3).forEach(item => {
+        const title = cleanNewsTitle(item.title);
+        if (title) {
+          newsItems.push({
+            title,
+            prefix,
+            source: 'Local'
+          });
+        }
+      });
+    }
 
+    // Filter out any World Cup mentions
+    const filteredNews = newsItems.filter(item => {
+      const lower = item.title.toLowerCase();
+      return !lower.includes('world cup') && !lower.includes('coupe du monde');
+    });
+
+    cachedNews[cacheKey] = filteredNews;
+    lastNewsFetch[cacheKey] = now;
+    return filteredNews;
+  } catch (err) {
+    console.error('[SportsController] Error fetching RSS news:', err.message);
+    return cachedNews[cacheKey] || [];
+  }
+};
+
+const cleanNewsTitle = (rawTitle) => {
+  if (!rawTitle) return '';
+  let title = rawTitle;
+  if (title.lastIndexOf(' - ') !== -1) {
+    title = title.substring(0, title.lastIndexOf(' - '));
+  }
+  return title.trim();
+};
+
+const fetchSportsData = async (lang, country = 'Cameroon') => {
+  const apiKey = process.env.SPORTS_API_KEY;
+  let items = [];
+
+  if (apiKey) {
+    const allMatches = await getMatchesData(apiKey);
+
+    // 1A. LIVE MATCHES (IN_PLAY or PAUSED) - HIGHEST PRIORITY
+    const liveMatches = allMatches.filter(m => m.status === 'IN_PLAY' || m.status === 'PAUSED');
+    liveMatches.forEach(m => {
+      const league = TARGET_LEAGUES.find(l => l.code === m.competition?.code);
+      const leagueLabel = league ? league.short : (m.competition?.name || '');
       items.push({
-        type: 'NEWS',
-        title: title,
-        prefix: prefix
+        type: 'MATCH',
+        status: 'LIVE',
+        home: `[${leagueLabel}] ${m.homeTeam?.shortName || m.homeTeam?.name || 'TBD'}`,
+        away: m.awayTeam?.shortName || m.awayTeam?.name || 'TBD',
+        homeScore: m.score?.fullTime?.home ?? (m.score?.current?.home ?? 0),
+        awayScore: m.score?.fullTime?.away ?? (m.score?.current?.away ?? 0)
       });
     });
 
-  } catch (error) {
-    console.error('[SportsController] Error fetching RSS news:', error.message);
+    // 1B. RECENT FINISHED MATCHES (Past 24h)
+    const finishedMatches = allMatches
+      .filter(m => m.status === 'FINISHED')
+      .sort((a, b) => new Date(b.utcDate) - new Date(a.utcDate))
+      .slice(0, 5);
+
+    finishedMatches.forEach(m => {
+      const league = TARGET_LEAGUES.find(l => l.code === m.competition?.code);
+      const leagueLabel = league ? league.short : (m.competition?.name || '');
+      items.push({
+        type: 'MATCH',
+        status: 'FINISHED',
+        home: `[${leagueLabel}] ${m.homeTeam?.shortName || m.homeTeam?.name || 'TBD'}`,
+        away: m.awayTeam?.shortName || m.awayTeam?.name || 'TBD',
+        homeScore: m.score?.fullTime?.home ?? 0,
+        awayScore: m.score?.fullTime?.away ?? 0
+      });
+    });
+
+    // 1C. UPCOMING FIXTURES (Next 7 days across top leagues with Date & Kickoff Time)
+    const upcomingMatches = allMatches
+      .filter(m => m.status === 'TIMED' || m.status === 'SCHEDULED')
+      .sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate))
+      .slice(0, 12);
+
+    upcomingMatches.forEach(m => {
+      const league = TARGET_LEAGUES.find(l => l.code === m.competition?.code);
+      const leagueLabel = league ? league.short : (m.competition?.name || '');
+      const dayFormatted = getDayFormatted(m.utcDate, lang);
+
+      items.push({
+        type: 'UPCOMING',
+        home: `[${leagueLabel} · ${dayFormatted}] ${m.homeTeam?.shortName || m.homeTeam?.name || 'TBD'}`,
+        away: m.awayTeam?.shortName || m.awayTeam?.name || 'TBD',
+        time: m.utcDate
+      });
+    });
+
+    // 2. STANDINGS: TOP 4 FOR EACH TARGET LEAGUE
+    const standingsMap = await getStandingsData(apiKey);
+    TARGET_LEAGUES.forEach(league => {
+      const top4 = standingsMap[league.code];
+      if (top4 && top4.length > 0) {
+        const tableStr = top4
+          .map(t => `${t.position}. ${t.team?.shortName || t.team?.name} (${t.points} pts)`)
+          .join(' | ');
+
+        items.push({
+          type: 'NEWS',
+          title: lang === 'fr'
+            ? `${league.emoji} ${league.name} Top 4: ${tableStr}`
+            : `${league.emoji} ${league.name} Top 4: ${tableStr}`,
+          prefix: '📊'
+        });
+      }
+    });
+
+    // 3. TOP SCORERS: PREMIER LEAGUE, LA LIGA, BUNDESLIGA, SERIE A, LIGUE 1, UCL
+    const scorersMap = await getScorersData(apiKey);
+    TARGET_LEAGUES.forEach(league => {
+      if (!league.hasScorers) return;
+      const scorers = scorersMap[league.code];
+      if (scorers && scorers.length > 0) {
+        const scorersStr = scorers
+          .map(s => `${s.player.name} (${s.goals} ${lang === 'fr' ? 'buts' : 'goals'}, ${s.team?.shortName || s.team?.name})`)
+          .join(' | ');
+
+        items.push({
+          type: 'NEWS',
+          title: lang === 'fr'
+            ? `${league.emoji} Meilleurs Buteurs ${league.name}: ${scorersStr}`
+            : `${league.emoji} ${league.name} Top Scorers: ${scorersStr}`,
+          prefix: '🔥'
+        });
+      }
+    });
+
+  } else {
+    // High-quality fallback if API key is not present
+    items.push({
+      type: 'UPCOMING',
+      home: `[PL · Sat] Arsenal`,
+      away: 'Chelsea',
+      time: new Date(Date.now() + 86400000 * 2).toISOString()
+    });
+    items.push({
+      type: 'UPCOMING',
+      home: `[LaLiga · Sat] Real Madrid`,
+      away: 'Barcelona',
+      time: new Date(Date.now() + 86400000 * 2).toISOString()
+    });
+    items.push({
+      type: 'NEWS',
+      title: "🏴󠁧󠁢󠁥󠁮󠁧󠁿 Premier League Top 4: 1. Arsenal (6 pts) | 2. Man City (6 pts) | 3. Liverpool (4 pts) | 4. Chelsea (4 pts)",
+      prefix: '📊'
+    });
   }
+
+  // 4. LATEST NEWS: WORLD NEWS & CAMEROON LOCAL NEWS VIA RSS
+  const rssNews = await getRssNews(lang, country);
+  rssNews.forEach(item => {
+    items.push({
+      type: 'NEWS',
+      title: item.title,
+      prefix: item.prefix
+    });
+  });
 
   return items;
 };
@@ -309,8 +401,8 @@ exports.getTickerData = async (req, res) => {
     const country = req.query.country || 'Cameroon';
     const cacheKey = `${country}_${lang}`;
     const now = Date.now();
-    
-    if (!cachedSportsData[cacheKey] || (now - lastFetchTime[cacheKey] > CACHE_DURATION_MS)) {
+
+    if (!cachedSportsData[cacheKey] || (now - (lastFetchTime[cacheKey] || 0) > CACHE_DURATION_MS)) {
       if (!isFetching[cacheKey]) {
         isFetching[cacheKey] = true;
         try {
