@@ -930,6 +930,53 @@ const logContactWarning = async (req, res, next) => {
   }
 };
 
+const deleteMessage = async (req, res, next) => {
+  try {
+    const { messageId } = req.params;
+    if (!messageId) {
+      return res.status(400).json({ success: false, message: 'Message ID is required' });
+    }
+
+    const message = await prisma.message.findUnique({
+      where: { id: messageId },
+      select: { id: true, conversationId: true, senderId: true, content: true, mediaUrl: true }
+    });
+
+    if (!message) {
+      return res.status(404).json({ success: false, message: 'Message not found' });
+    }
+
+    // Only the message sender or an admin can delete the message for everyone
+    if (message.senderId !== req.user.id && req.user.role !== 'ADMIN') {
+      return res.status(403).json({ success: false, message: 'You can only delete your own messages' });
+    }
+
+    await prisma.message.delete({
+      where: { id: messageId }
+    });
+
+    // Real-time broadcast to all participants in conversation
+    try {
+      const io = getIO();
+      io.to(message.conversationId).emit('message:deleted', {
+        messageId: message.id,
+        conversationId: message.conversationId,
+        deletedBy: req.user.id
+      });
+    } catch (socketErr) {
+      console.warn('[Socket Error] Failed to emit message:deleted:', socketErr.message);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Message deleted successfully',
+      data: { messageId: message.id, conversationId: message.conversationId }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getConversations,
   getConversationById,
@@ -938,6 +985,7 @@ module.exports = {
   getActiveTaskForChat,
   getMessages,
   sendMessage,
+  deleteMessage,
   markAsRead,
   getUnreadCount,
   checkBooking,

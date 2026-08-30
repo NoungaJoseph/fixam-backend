@@ -14,6 +14,8 @@ router.post('/support', chatController.openSupportConversation);
 router.get('/:conversationId/active-task', chatController.getActiveTaskForChat);
 router.get('/:conversationId/messages', chatController.getMessages);
 router.post('/send', chatController.sendMessage);
+router.delete('/messages/:messageId', chatController.deleteMessage);
+router.delete('/message/:messageId', chatController.deleteMessage);
 router.put('/:conversationId/read', chatController.markAsRead);
 
 // Audit: logs when a user is shown the external-contact-sharing warning

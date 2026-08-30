@@ -77,6 +77,24 @@ const uploadPortfolioMedia = async (req, res, next) => {
   }
 };
 
+const uploadProposalMedia = async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
+
+    const processedFile = await processMedia(req.file);
+    const url = await uploadFile(processedFile, 'proposal-media', { requireCloud: true, req });
+    res.status(200).json({ 
+      success: true, 
+      url, 
+      data: { url }, 
+      fileName: req.file.originalname, 
+      fileType: req.file.mimetype 
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const uploadGeneric = async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
@@ -95,5 +113,6 @@ module.exports = {
   uploadVerificationDoc,
   uploadPaymentProof,
   uploadPortfolioMedia,
+  uploadProposalMedia,
   uploadGeneric
 };

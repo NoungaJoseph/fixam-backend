@@ -5,11 +5,11 @@ const agreementService = require('../services/agreement.service');
 
 const calculateJobCoinCost = (providersCount) => {
   const count = parseInt(providersCount) || 1;
-  if (count >= 1 && count <= 5) return 1;
-  if (count >= 6 && count <= 10) return 2;
-  if (count >= 11 && count <= 20) return 3;
-  if (count >= 21 && count <= 30) return 4;
-  return 5;
+  if (count === 1) return 1;
+  if (count === 2) return 2;
+  if (count >= 3 && count <= 6) return 3;
+  if (count >= 7 && count <= 9) return 4;
+  return 5; // 10 and above
 };
 
 const normalizeBudgetRange = (data) => {
@@ -602,6 +602,8 @@ const applyForJob = async (req, res, next) => {
 
 
     const materialsList = req.body.materialsList;
+    const proposedBudget = req.body.proposedBudget !== undefined && req.body.proposedBudget !== null ? Number(req.body.proposedBudget) : null;
+    const proposalMedia = req.body.proposalMedia || null;
 
     const assignment = await prisma.jobAssignment.create({
       data: { 
@@ -610,6 +612,8 @@ const applyForJob = async (req, res, next) => {
         status: 'PENDING', 
         boostCoins: boostCoinsAmount,
         coverLetter: coverLetter || null,
+        proposedBudget: (proposedBudget !== null && !isNaN(proposedBudget)) ? proposedBudget : null,
+        proposalMedia: proposalMedia,
         materialsList: Array.isArray(materialsList) ? materialsList : null
       }
     });

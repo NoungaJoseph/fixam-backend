@@ -308,6 +308,8 @@ model JobAssignment {
   refundedAt  DateTime?
   boostCoins  Int              @default(0)
   coverLetter String?
+  proposedBudget Float?
+  proposalMedia Json?
   materialsList Json?
 
   job      Job             @relation(fields: [jobId], references: [id])

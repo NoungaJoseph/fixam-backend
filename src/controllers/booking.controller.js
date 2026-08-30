@@ -90,15 +90,16 @@ const createBooking = async (req, res, next) => {
     }
 
     const COIN_COSTS = {
-      NORMAL: 1,
-      URGENT: 2,
-      EMERGENCY: 3
+      NORMAL: 0,
+      HIGH_PRIORITY: 1
     };
     let resolvedUrgency = urgencyLevel || 'NORMAL';
-    if (resolvedUrgency === 'HIGH') resolvedUrgency = 'URGENT';
+    if (resolvedUrgency === 'HIGH' || resolvedUrgency === 'URGENT' || resolvedUrgency === 'EMERGENCY') {
+      resolvedUrgency = 'HIGH_PRIORITY';
+    }
     if (resolvedUrgency === 'LOW') resolvedUrgency = 'NORMAL';
     const isProposal = Boolean(req.body.isProposal || req.body.isProjectProposal);
-    const coinCost = isProposal ? 0 : (COIN_COSTS[resolvedUrgency] || 1);
+    const coinCost = isProposal ? 0 : (COIN_COSTS[resolvedUrgency] !== undefined ? COIN_COSTS[resolvedUrgency] : 0);
 
     const { requiresDiagnosis, materialsList } = req.body;
     const isDiagnosisReq = Boolean(requiresDiagnosis);
@@ -109,7 +110,7 @@ const createBooking = async (req, res, next) => {
       const wallet = await tx.wallet.findUnique({ where: { userId: req.user.id } });
       const currentBalance = wallet ? wallet.balance : 0;
 
-      if (!isProposal && currentBalance < coinCost) {
+      if (!isProposal && coinCost > 0 && currentBalance < coinCost) {
         const error = new Error(`Insufficient coins to make this request. You need ${coinCost} coin${coinCost > 1 ? 's' : ''} to book this provider.`);
         error.statusCode = 400;
         error.code = 'INSUFFICIENT_COINS';
@@ -294,6 +295,40 @@ const updateBookingStatus = async (req, res, next) => {
             return res.status(403).json({ success: false, message: 'You must be available for work to accept a booking.', code: 'PROVIDER_OFFLINE' });
           }
         }
+
+        // Deduct 1 coin from provider when accepting booking
+        if (isProvider && existing.status !== 'ACCEPTED') {
+          const providerWallet = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
+          const providerBalance = providerWallet ? providerWallet.balance : 0;
+          if (providerBalance < 1) {
+            return res.status(403).json({
+              success: false,
+              message: 'You need at least 1 coin to accept this booking. Please top up your wallet.',
+              code: 'INSUFFICIENT_COINS'
+            });
+          }
+
+          await prisma.wallet.update({
+            where: { userId: req.user.id },
+            data: { balance: { decrement: 1 } }
+          });
+
+          await prisma.transaction.create({
+            data: {
+              walletId: providerWallet.id,
+              amount: 1,
+              type: 'DEDUCTION',
+              status: 'SUCCESS',
+              reference: `ACCEPT-${existing.id.substring(0, 8)}`,
+              description: `Coins used to accept booking: ${existing.id.substring(0, 8)}`
+            }
+          });
+
+          try {
+            const { getIO } = require('../services/socket.service');
+            getIO().to(req.user.id).emit('wallet:update', { balance: providerBalance - 1 });
+          } catch (_) {}
+        }
       }
     }
 
@@ -308,26 +343,57 @@ const updateBookingStatus = async (req, res, next) => {
     }).catch(() => {});
 
     if (status === 'CANCELLED') {
-      // 1. If coins were deducted, refund client
-      const wallet = await prisma.wallet.findUnique({ where: { userId: existing.clientId } });
-      if (wallet) {
-        await prisma.wallet.update({
-          where: { userId: existing.clientId },
-          data: { balance: { increment: existing.coinCost || 1 } }
-        });
-        await prisma.transaction.create({
-          data: {
-            walletId: wallet.id,
-            amount: existing.coinCost || 1,
-            type: 'REFUND',
-            status: 'SUCCESS',
-            reference: `REF-${existing.id.substring(0, 8)}`,
-            description: 'Refund for cancelled booking'
-          }
-        });
+      // 1. If coins were deducted from client, refund client
+      if (existing.coinCost && existing.coinCost > 0) {
+        const clientWallet = await prisma.wallet.findUnique({ where: { userId: existing.clientId } });
+        if (clientWallet) {
+          await prisma.wallet.update({
+            where: { userId: existing.clientId },
+            data: { balance: { increment: existing.coinCost } }
+          });
+          await prisma.transaction.create({
+            data: {
+              walletId: clientWallet.id,
+              amount: existing.coinCost,
+              type: 'REFUND',
+              status: 'SUCCESS',
+              reference: `REF-${existing.id.substring(0, 8)}`,
+              description: 'Refund for cancelled booking'
+            }
+          });
+          try {
+            const { getIO } = require('../services/socket.service');
+            getIO().to(existing.clientId).emit('wallet:update', { balance: clientWallet.balance + existing.coinCost });
+          } catch (_) {}
+        }
       }
 
-      // 2. Delete related records & booking completely
+      // 2. If provider was charged 1 coin (booking was accepted), refund provider
+      if (['ACCEPTED', 'IN_PROGRESS'].includes(existing.status)) {
+        const providerWallet = await prisma.wallet.findUnique({ where: { userId: existing.providerId } });
+        if (providerWallet) {
+          await prisma.wallet.update({
+            where: { userId: existing.providerId },
+            data: { balance: { increment: 1 } }
+          });
+          await prisma.transaction.create({
+            data: {
+              walletId: providerWallet.id,
+              amount: 1,
+              type: 'REFUND',
+              status: 'SUCCESS',
+              reference: `REF-PROV-${existing.id.substring(0, 8)}`,
+              description: 'Refund of acceptance fee for cancelled booking'
+            }
+          });
+          try {
+            const { getIO } = require('../services/socket.service');
+            getIO().to(existing.providerId).emit('wallet:update', { balance: providerWallet.balance + 1 });
+          } catch (_) {}
+        }
+      }
+
+      // 3. Delete related records & booking completely
       await prisma.serviceAgreement.deleteMany({ where: { bookingId } }).catch(() => {});
       await prisma.agreementAmendment.deleteMany({ where: { bookingId } }).catch(() => {});
       await prisma.dispute.deleteMany({ where: { bookingId } }).catch(() => {});
@@ -335,7 +401,7 @@ const updateBookingStatus = async (req, res, next) => {
 
       await prisma.booking.delete({ where: { id: bookingId } });
 
-      // 3. Emit deletion event via socket to both client and provider
+      // 4. Emit deletion event via socket to both client and provider
       emitBooking({ id: bookingId, clientId: existing.clientId, providerId: existing.providerId, status: 'CANCELLED', isDeleted: true });
 
       return res.status(200).json({
