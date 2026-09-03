@@ -491,8 +491,10 @@ const getAvailableJobsForProvider = async (req, res, next) => {
 
 const applyForJob = async (req, res, next) => {
   try {
-    const { jobId } = req.params;
-    const providerId = req.user.providerProfile.id;
+    const providerId = req.user.providerProfile?.id;
+    if (!providerId) {
+      return res.status(400).json({ success: false, message: 'Provider profile required.' });
+    }
 
     if (req.user.isBlocked) {
       return res.status(403).json({ success: false, message: req.user.blockedReason || 'This account has been blocked.', code: 'ACCOUNT_BLOCKED' });
@@ -1093,7 +1095,20 @@ const getAllJobs = async (req, res, next) => {
 
 const getProviderJobs = async (req, res, next) => {
   try {
-    const providerId = req.user.providerProfile.id;
+    const providerId = req.user.providerProfile?.id;
+    if (!providerId) {
+      return res.status(200).json({
+        success: true,
+        data: [],
+        pagination: {
+          total: 0,
+          page: 1,
+          limit: 20,
+          totalPages: 0
+        }
+      });
+    }
+
     const page = parseInt(req.query.page) || 1;
     const limit = Math.min(parseInt(req.query.limit) || 20, 100);
     const skip = (page - 1) * limit;

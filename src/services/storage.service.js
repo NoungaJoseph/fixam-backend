@@ -1,43 +1,39 @@
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
-const fs = require('fs/promises');
-const path = require('path');
 
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE
   || process.env.SUPABASE_SERVICE_ROLE_KEY
-  || process.env.SUPABASE_ANON_KEY
-  || process.env.SUPABASE_KEY;
+  || process.env.SUPABASE_KEY
+  || process.env.SUPABASE_ANON_KEY;
+
 const hasSupabase = Boolean(process.env.SUPABASE_URL && supabaseServiceKey);
 const supabase = hasSupabase ? createClient(
   process.env.SUPABASE_URL,
   supabaseServiceKey
 ) : null;
 
-const uploadLocal = async (file, bucket, fileName, req) => {
-  const dir = path.join(process.cwd(), 'uploads', bucket);
-  await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(path.join(dir, fileName), file.buffer);
-  
-  let baseUrl = process.env.PUBLIC_URL;
-  if (!baseUrl && req) {
-    baseUrl = `${req.protocol}://${req.get('host')}`;
-  }
-  if (!baseUrl) {
-    baseUrl = 'https://api.usefixam.com';
-  }
-  return `${baseUrl}/uploads/${bucket}/${fileName}`;
-};
-
 const verifiedBuckets = new Set();
 
-const uploadFile = async (file, bucket, options = {}) => {
-  const { req } = options;
+const createStorageUnavailableError = (message) => {
+  const error = new Error(message);
+  error.statusCode = 503;
+  error.code = 'MEDIA_UPLOAD_TEMPORARILY_UNAVAILABLE';
+  error.publicMessage = 'We could not upload your file to cloud storage right now. Please check your connection and try again.';
+  error.publicMessageFr = "Nous n'avons pas pu televerser votre fichier sur le stockage cloud pour le moment. Verifiez votre connexion, puis reessayez.";
+  return error;
+};
+
+/**
+ * Uploads media directly to Supabase Cloud Storage.
+ * Never writes to local ephemeral server storage.
+ */
+const uploadFile = async (file, bucket) => {
   const safeName = (file.originalname || 'file').replace(/[^a-zA-Z0-9._-]/g, '_');
   const fileName = `${Date.now()}-${safeName}`;
 
   if (!supabase) {
-    console.warn('[Storage] Supabase client not initialized. Falling back to local server storage.');
-    return uploadLocal(file, bucket, fileName, req);
+    console.error('[Storage Error] Supabase credentials missing (SUPABASE_URL or SUPABASE_SERVICE_ROLE).');
+    throw createStorageUnavailableError('Cloud storage is not configured on the server.');
   }
 
   try {
@@ -74,10 +70,14 @@ const uploadFile = async (file, bucket, options = {}) => {
       .from(bucket)
       .getPublicUrl(fileName);
 
+    if (!publicUrl) {
+      throw new Error('Could not retrieve public URL from Supabase.');
+    }
+
     return publicUrl;
   } catch (error) {
-    console.error('[Storage] Storage Upload Error, using fallback:', error.message || error);
-    return uploadLocal(file, bucket, fileName, req);
+    console.error(`[Storage Cloud Upload Error in bucket '${bucket}']`, error.message || error);
+    throw createStorageUnavailableError(error.message || 'Cloud storage upload failed.');
   }
 };
 

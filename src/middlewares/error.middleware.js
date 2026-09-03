@@ -1,5 +1,14 @@
 const errorHandler = (err, req, res, next) => {
   const isDev = process.env.NODE_ENV !== 'production'
+  const language = String(
+    req.body?.language ||
+    req.body?.lang ||
+    req.query?.language ||
+    req.query?.lang ||
+    req.headers['accept-language'] ||
+    ''
+  ).toLowerCase()
+  const isFr = language.startsWith('fr')
   
   // Always log the full error
   console.error('[Error]', {
@@ -69,13 +78,15 @@ const errorHandler = (err, req, res, next) => {
   
   // Default error response
   const statusCode = err.statusCode || err.status || 500
+  const safeMessage = isFr && err.publicMessageFr ? err.publicMessageFr : err.publicMessage
   return res.status(statusCode).json({
     success: false,
+    ...(err.code && { code: err.code }),
     message: isDev 
-      ? err.message 
+      ? (safeMessage || err.message)
       : statusCode === 500 
         ? 'Something went wrong. Please try again.'
-        : err.message
+        : (safeMessage || err.message)
   })
 }
 

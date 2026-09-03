@@ -3,6 +3,11 @@ const prisma = require('../config/prisma')
 
 async function sendPushNotification(userId, title, body, data = {}) {
   try {
+    if (!admin.apps.length) {
+      console.log('[Push] Firebase Admin SDK is not initialized')
+      return { success: false, reason: 'firebase_not_initialized' }
+    }
+
     // Get user's FCM token
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -88,6 +93,11 @@ async function sendPushToMultiple(userIds, title, body, data = {}) {
 
 async function sendMulticastNotification(tokens, payload = {}) {
   try {
+    if (!admin.apps.length) {
+      console.log('[Push Multicast] Firebase Admin SDK is not initialized');
+      return { success: false, reason: 'firebase_not_initialized' };
+    }
+
     const { title, body, data = {} } = payload;
     if (!tokens || tokens.length === 0) return { success: false, reason: 'no_tokens' };
 
@@ -152,6 +162,11 @@ async function sendMulticastNotification(tokens, payload = {}) {
 
 async function sendBookingNotification(fcmToken, title, body, bookingId) {
   try {
+    if (!admin.apps.length) {
+      console.log(`[Push Booking] Firebase Admin SDK is not initialized for booking ${bookingId}`)
+      return { success: false, reason: 'firebase_not_initialized' }
+    }
+
     if (!fcmToken) {
       console.log(`[Push Booking] No FCM token provided for booking ${bookingId}`)
       return { success: false, reason: 'no_fcm_token' }
@@ -203,6 +218,11 @@ async function sendBookingNotification(fcmToken, title, body, bookingId) {
 
 async function sendCallNotification(fcmToken, callerName, callType, callId) {
   try {
+    if (!admin.apps.length) {
+      console.log(`[Push Call] Firebase Admin SDK is not initialized for call ${callId}`)
+      return { success: false, reason: 'firebase_not_initialized' }
+    }
+
     if (!fcmToken) {
       console.log(`[Push Call] No FCM token provided for call ${callId}`)
       return { success: false, reason: 'no_fcm_token' }
