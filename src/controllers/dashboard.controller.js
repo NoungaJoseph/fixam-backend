@@ -46,7 +46,12 @@ const getDashboardData = async (req, res, next) => {
         select: { updatedAt: true }
       }),
       prisma.user.findFirst({
-        where: { role: 'PROVIDER' },
+        where: {
+          OR: [
+            { role: 'PROVIDER' },
+            { providerProfile: { isNot: null } }
+          ]
+        },
         orderBy: { updatedAt: 'desc' },
         select: { updatedAt: true }
       })

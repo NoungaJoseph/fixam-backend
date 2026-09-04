@@ -95,6 +95,7 @@ const updateProfile = async (req, res, next) => {
     } else if (profileMode === 'PERSONAL' && req.user.role !== 'CLIENT') {
       updateData.role = 'CLIENT';
     }
+    updateData.updatedAt = new Date();
 
     const user = await prisma.user.update({
       where: { id: req.user.id },
