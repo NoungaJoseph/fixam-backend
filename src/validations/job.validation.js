@@ -22,10 +22,10 @@ const createJobSchema = z.object({
     requiresDiagnosis: z.boolean().optional(),
     materialsList: z.array(
       z.object({
-        id: z.string().optional(),
-        name: z.string(),
+        id: z.string().optional().nullable(),
+        name: z.string().optional().nullable(),
         quantity: z.string().optional().nullable(),
-        suppliedBy: z.enum(["CLIENT", "PROVIDER"])
+        suppliedBy: z.enum(["CLIENT", "PROVIDER"]).default("CLIENT").optional().nullable()
       })
     ).optional().nullable(),
   }).refine(data => {
