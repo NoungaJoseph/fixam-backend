@@ -2,7 +2,7 @@ const { z } = require('zod');
 
 const createJobSchema = z.object({
   body: z.object({
-    category: z.string().min(2, "Category is required"),
+    category: z.string().optional().default('General Service'),
     title: z.string().min(5, "Title must be at least 5 characters"),
     description: z.string().min(10, "Description must be at least 10 characters"),
     location: z.string().min(3, "Location is required"),

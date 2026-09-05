@@ -22,6 +22,26 @@ const normalizeBudgetRange = (data) => {
   };
 };
 
+const deriveCategoryFromTitle = (title) => {
+  if (!title || typeof title !== 'string') return 'General Service';
+  const t = title.toLowerCase();
+  if (/plumb|leak|pipe|drain|water|faucet|toilet|sink|robinet|tuyau|fuite|chasse|évier|lavabo|chauffe-eau/i.test(t)) return 'Plumbing';
+  if (/electr|wire|light|power|breaker|socket|prise|disjoncteur|lumière|câble|ampoule|fusible|compteur/i.test(t)) return 'Electrical';
+  if (/clean|wash|laundry|housekeeping|maid|nettoy|ménage|propreté|laver|décapage/i.test(t)) return 'Cleaning';
+  if (/paint|peint|wall|mur|plafond|couleur|vernis|enduit/i.test(t)) return 'Painting';
+  if (/carpent|wood|furniture|table|chair|door|menuiserie|bois|porte|meuble|placard|serrur/i.test(t)) return 'Carpentry';
+  if (/ac|air condition|clim|froid|ventilat/i.test(t)) return 'AC & Cooling';
+  if (/appliance|fridge|refrigerator|washer|oven|stove|réfrigérateur|four|micro-onde|machine à laver|télé/i.test(t)) return 'Appliance Repair';
+  if (/garden|lawn|grass|tree|plant|jardin|pelouse|haie|tonte/i.test(t)) return 'Gardening';
+  if (/mov|relocat|pack|delivery|déménag|transport|colis|livrais/i.test(t)) return 'Moving & Delivery';
+  if (/tile|tiling|carrelage|carreleur/i.test(t)) return 'Tiling';
+  if (/camera|cctv|surveillance|sécurité/i.test(t)) return 'CCTV Installation';
+  if (/it|computer|laptop|network|wifi|software|ordinateur|wifi|réseau|informatique/i.test(t)) return 'IT Support';
+  if (/tutor|teach|lesson|cours|soutien|enseign/i.test(t)) return 'Tutoring';
+  if (/photo|video|camera|shoot|mariage|shooting/i.test(t)) return 'Photography';
+  return 'General Service';
+};
+
 const parseEstimatedDays = (job) => {
   const candidates = [job.duration, job.estimatedDuration, job.description, job.title]
     .filter(Boolean)
@@ -116,11 +136,15 @@ const createJob = async (req, res, next) => {
         }
       });
 
+      const finalCategory = (validatedData.category && validatedData.category.toLowerCase() !== 'general' && validatedData.category.toLowerCase() !== 'general service')
+        ? validatedData.category
+        : deriveCategoryFromTitle(validatedData.title);
+
       // Determine if the job is remote
       const { isRemoteSkill } = require('../utils/skillClassifier');
       const isRemote = typeof validatedData.isRemote === 'boolean'
         ? validatedData.isRemote
-        : isRemoteSkill(validatedData.category);
+        : isRemoteSkill(finalCategory);
 
       const isDiagnosisReq = Boolean(req.body.requiresDiagnosis || validatedData.requiresDiagnosis);
       const rawMaterials = req.body.materialsList || validatedData.materialsList;
@@ -131,6 +155,7 @@ const createJob = async (req, res, next) => {
       return await tx.job.create({
         data: {
           ...validatedData,
+          category: finalCategory,
           ...budgetRange,
           providersNeeded,
           coinCost,
@@ -151,6 +176,21 @@ const createJob = async (req, res, next) => {
 
     // Notify admins about new job awaiting approval
     try {
+      const adminUsers = await prisma.user.findMany({
+        where: { role: 'ADMIN' },
+        select: { id: true }
+      });
+      if (adminUsers.length > 0) {
+        await prisma.notification.createMany({
+          data: adminUsers.map((admin) => ({
+            userId: admin.id,
+            title: 'Task Awaiting Approval',
+            body: `"${job.title}" posted by ${req.user.fullName || 'Client'} (${job.category}). Review required.`,
+            data: { type: 'JOB_PENDING_APPROVAL', jobId: job.id }
+          }))
+        });
+      }
+
       const { getIO } = require('../services/socket.service');
       const io = getIO();
       io.emit('job:pending-approval', { 
@@ -158,8 +198,14 @@ const createJob = async (req, res, next) => {
         title: job.title,
         clientName: req.user.fullName 
       });
+      io.emit('notification:admin', {
+        type: 'JOB_PENDING_APPROVAL',
+        jobId: job.id,
+        message: 'New Task Awaiting Approval',
+        body: `"${job.title}" by ${req.user.fullName || 'Client'}. Click to review.`
+      });
     } catch (err) {
-      console.error('[Socket Error] Job pending approval notification failed:', err.message);
+      console.error('[Notification/Socket Error] Job pending approval notification failed:', err.message);
     }
 
     res.status(201).json({ success: true, data: job });
