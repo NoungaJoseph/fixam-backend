@@ -1266,7 +1266,12 @@ const getPendingJobs = async (req, res, next) => {
           select: { id: true, fullName: true, phone: true, email: true }
         },
         assignments: {
-          include: {
+          select: {
+            id: true,
+            jobId: true,
+            providerId: true,
+            status: true,
+            assignedAt: true,
             provider: {
               include: { user: { select: { fullName: true, phone: true } } }
             }
@@ -1291,7 +1296,12 @@ const getApprovedJobs = async (req, res, next) => {
           select: { id: true, fullName: true, phone: true, email: true }
         },
         assignments: {
-          include: {
+          select: {
+            id: true,
+            jobId: true,
+            providerId: true,
+            status: true,
+            assignedAt: true,
             provider: {
               include: { user: { select: { fullName: true, phone: true } } }
             }
