@@ -1,129 +1,198 @@
 const prisma = require('../config/prisma');
 const { sendPushNotification } = require('../services/notification.service');
 
-const ROTATING_SKILLS = [
+// Dedicated, rotating weekly skills with engaging, problem-solving copy for clients.
+// Each new week spotlights strictly ONE skill, rotating deterministically.
+const WEEKLY_SKILLS = [
   {
+    category: 'Home Tutor',
+    search: 'tutor',
     en: {
-      title: 'Need a Private Home Teacher? 📚',
-      body: 'Find top-rated tutors for your children on Fixam Pro — math, science, languages, and more!'
+      title: 'Need a Home Tutor for Your Kids? 📚',
+      body: 'Give your children the academic edge! Find verified private tutors on Fixam for mathematics, science, languages, and exam prep.'
     },
     fr: {
-      title: 'Besoin d\'un répétiteur à domicile ? 📚',
-      body: 'Trouvez les meilleurs enseignants particuliers pour vos enfants sur Fixam Pro !'
-    },
-    category: 'Tutoring'
+      title: 'Besoin d\'un répétiteur à domicile pour vos enfants ? 📚',
+      body: 'Offrez le meilleur soutien scolaire à vos enfants ! Trouvez des répétiteurs qualifiés sur Fixam en maths, sciences, langues et préparation aux examens.'
+    }
   },
   {
+    category: 'AC Repair',
+    search: 'ac repair',
     en: {
-      title: 'Moving or Need Heavy Lifting? 📦',
-      body: 'Hire reliable moving and packing professionals nearby to transport your items safely.'
+      title: 'Is Your AC or Fridge Giving You Trouble? ❄️',
+      body: 'Stay cool and protect your food! Book certified refrigeration technicians on Fixam for AC servicing, gas refill, and fridge repairs.'
     },
     fr: {
-      title: 'Besoin d\'aide pour déménager ? 📦',
-      body: 'Engagez des professionnels du déménagement et de la manutention vérifiés près de chez vous.'
-    },
-    category: 'Moving & Packing'
+      title: 'Votre climatiseur ou frigo vous pose problème ? ❄️',
+      body: 'Restez au frais ! Réservez des frigoristes certifiés sur Fixam pour l\'entretien de votre clim, recharge de gaz et réparation de frigos.'
+    }
   },
   {
+    category: 'Plumbing',
+    search: 'plumber',
     en: {
-      title: 'AC Not Cooling or Fridge Issue? ❄️',
-      body: 'Book certified air conditioning and refrigeration technicians on Fixam today!'
+      title: 'Water Leak, Clogged Drain or Tap Issues? 🔧',
+      body: 'Don\'t let a small leak cause costly damage. Hire top-rated master plumbers near you on Fixam for fast and reliable repairs.'
     },
     fr: {
-      title: 'Problème de climatiseur ou frigo ? ❄️',
-      body: 'Réservez des techniciens certifiés en climatisation et froid sur Fixam dès aujourd\'hui !'
-    },
-    category: 'Air Conditioning'
+      title: 'Fuite d\'eau, tuyau bouché ou souci de robinet ? 🔧',
+      body: 'Ne laissez pas une fuite abîmer votre maison. Engagez des plombiers expérimentés près de chez vous sur Fixam pour des réparations rapides.'
+    }
   },
   {
+    category: 'Electrical',
+    search: 'electrician',
     en: {
-      title: 'Water Leak or Plumbing Problem? 🔧',
-      body: 'Get verified master plumbers to fix leaks, drainage, and installations instantly.'
+      title: 'Electrical Fault, Spark or Rewiring Needed? ⚡',
+      body: 'Protect your home and loved ones. Connect with certified electricians on Fixam for circuit diagnostics, socket fixes, and safe installations.'
     },
     fr: {
-      title: 'Fuite d\'eau ou souci de plomberie ? 🔧',
-      body: 'Trouvez des plombiers qualifiés pour réparer vos fuites et installations en toute sécurité.'
-    },
-    category: 'Plumbing'
+      title: 'Panne électrique, disjoncteur ou besoin de câblage ? ⚡',
+      body: 'Sécurisez votre habitation sans attendre. Contactez des électriciens agréés sur Fixam pour vos diagnostics, prises et installations en toute sûreté.'
+    }
   },
   {
+    category: 'Cleaning',
+    search: 'cleaning',
     en: {
-      title: 'Electrical Faults or Wiring Needs? ⚡',
-      body: 'Protect your home with certified electricians for fast repairs and safe installations.'
+      title: 'Time for a Sparkling Deep Clean at Home? 🧹',
+      body: 'Relax and let the pros handle it! Book vetted cleaners on Fixam for deep house cleaning, sofa washing, and complete sanitization.'
     },
     fr: {
-      title: 'Panne électrique ou besoin de câblage ? ⚡',
-      body: 'Sécurisez votre maison avec des électriciens agréés pour des interventions rapides et sûres.'
-    },
-    category: 'Electrical'
+      title: 'Envie d\'un grand nettoyage étincelant chez vous ? 🧹',
+      body: 'Détendez-vous et laissez faire les pros ! Réservez des agents de ménage vérifiés sur Fixam pour un nettoyage complet et désinfection de votre maison.'
+    }
   },
   {
+    category: 'Carpentry',
+    search: 'carpentry',
     en: {
-      title: 'Give Your Home a Fresh Look! 🎨',
-      body: 'Professional painters and interior decor experts are ready to transform your space.'
+      title: 'Broken Wardrobe, Squeaky Doors or Custom Furniture? 🪚',
+      body: 'Give your home a quality wooden touch. Hire skilled carpenters on Fixam to craft custom wardrobes, repair doors, and restore furniture.'
     },
     fr: {
-      title: 'Envie de rafraîchir vos murs ? 🎨',
-      body: 'Des peintres professionnels et décorateurs d\'intérieur sont disponibles pour embellir votre espace.'
-    },
-    category: 'Painting'
+      title: 'Porte bloquée, placard cassé ou meuble sur mesure ? 🪚',
+      body: 'Embellissez votre intérieur avec du bois de qualité ! Engagez des menuisiers qualifiés sur Fixam pour placards sur mesure et réparations de meubles.'
+    }
   },
   {
+    category: 'Painting',
+    search: 'painter',
     en: {
-      title: 'Deep House & Office Cleaning 🧹',
-      body: 'Book professional cleaners for a spotless, sanitized home or workspace.'
+      title: 'Give Your Home a Fresh New Look with Paint! 🎨',
+      body: 'Brighten your living spaces with expert finishes. Hire professional interior and exterior house painters on Fixam today.'
     },
     fr: {
-      title: 'Nettoyage complet maison & bureau 🧹',
-      body: 'Réservez des professionnels du nettoyage pour un intérieur éclatant et désinfecté.'
-    },
-    category: 'Cleaning'
+      title: 'Envie de rafraîchir et embellir vos murs ? 🎨',
+      body: 'Illuminez votre intérieur avec des finitions impeccables. Trouvez des peintres en bâtiment professionnels sur Fixam dès aujourd\'hui.'
+    }
   },
   {
+    category: 'Mechanic',
+    search: 'mechanic',
     en: {
-      title: 'Custom Furniture & Carpentry 🪚',
-      body: 'Connect with skilled carpenters for custom woodwork, door fixes, and furniture repair.'
+      title: 'Strange Engine Noise or Time for Car Servicing? 🚗',
+      body: 'Save time and avoid towing! Experienced mobile mechanics can come directly to your home or office for vehicle checkups and repairs.'
     },
     fr: {
-      title: 'Menuiserie & Meubles sur mesure 🪚',
-      body: 'Contactez des menuisiers qualifiés pour vos fabrications en bois et réparations de meubles.'
-    },
-    category: 'Carpentry'
+      title: 'Bruit suspect au moteur ou révision auto à faire ? 🚗',
+      body: 'Gagnez du temps ! Des mécaniciens auto mobiles se déplacent directement à votre domicile ou bureau pour diagnostics et réparations.'
+    }
   },
   {
+    category: 'Child Care',
+    search: 'nanny',
     en: {
-      title: 'Car Diagnostics & Auto Mechanics 🚗',
-      body: 'Certified mobile mechanics ready for on-demand inspection, oil change, and engine repair.'
+      title: 'Need a Caring, Vetted Nanny or Babysitter? 👶',
+      body: 'Enjoy peace of mind while at work. Find trusted, background-checked child care providers and nannies on Fixam.'
     },
     fr: {
-      title: 'Entretien auto & mécanique 🚗',
-      body: 'Des mécaniciens qualifiés interviennent à domicile pour vos diagnostics et réparations.'
-    },
-    category: 'Auto Repair'
+      title: 'Besoin d\'une nounou ou baby-sitter de confiance ? 👶',
+      body: 'Ayez l\'esprit serein durant vos journées. Trouvez des gardiennes d\'enfants et nounous vérifiées sur Fixam pour prendre soin de vos tout-petits.'
+    }
   },
   {
+    category: 'Appliance Repair',
+    search: 'appliance',
     en: {
-      title: 'CCTV & Security System Setup 📹',
-      body: 'Upgrade your home and business security with certified surveillance camera technicians.'
+      title: 'Washing Machine, TV or Microwave Not Working? 🔌',
+      body: 'Before buying a replacement, have an expert check it! Book skilled electronics & appliance technicians on Fixam to fix it at a great price.'
     },
     fr: {
-      title: 'Installation caméras & sécurité 📹',
-      body: 'Renforcez la sécurité de votre domicile ou commerce avec des experts en vidéosurveillance.'
+      title: 'Machine à laver, téléviseur ou micro-ondes en panne ? 🔌',
+      body: 'Avant de racheter, faites réparer ! Trouvez des techniciens qualifiés en électroménager sur Fixam pour dépanner vos appareils à bon prix.'
+    }
+  },
+  {
+    category: 'Security Guard',
+    search: 'cctv',
+    en: {
+      title: 'Keep Your Family & Home Safe with CCTV 📹',
+      body: 'Monitor your property anytime from your phone. Connect with verified security camera and alarm technicians on Fixam.'
     },
-    category: 'Security Installation'
+    fr: {
+      title: 'Renforcez la sécurité de votre famille avec des caméras 📹',
+      body: 'Gardez un œil sur votre maison 24h/24 depuis votre smartphone. Faites appel à des installateurs de vidéosurveillance agréés sur Fixam.'
+    }
+  },
+  {
+    category: 'Moving Service',
+    search: 'moving',
+    en: {
+      title: 'Moving House or Need Heavy Transport? 📦',
+      body: 'Relocate with ease! Book reliable moving teams with transport vehicles on Fixam for hassle-free packing and safe delivery.'
+    },
+    fr: {
+      title: 'Déménagement ou transport d\'équipements lourds ? 📦',
+      body: 'Déménagez sans stress ! Réservez des déménageurs et véhicules adaptés sur Fixam pour un transport sécurisé de vos affaires.'
+    }
   }
 ];
 
-// Helper to determine day of year for deterministic non-repeating rotation
-function getSkillForToday() {
-  const dayIndex = Math.floor(Date.now() / (24 * 60 * 60 * 1000)) % ROTATING_SKILLS.length;
-  return ROTATING_SKILLS[dayIndex];
+// Determine the skill and ISO week key for the given date (anchored to Monday Sept 7, 2026)
+function getCurrentWeekInfo(date = new Date()) {
+  const anchorMs = Date.UTC(2026, 8, 7); // Sept 7, 2026 is Monday (Week 0 = Home Tutor)
+  const diffWeeks = Math.floor((date.getTime() - anchorMs) / (7 * 24 * 60 * 60 * 1000));
+  const weekIndex = ((diffWeeks % WEEKLY_SKILLS.length) + WEEKLY_SKILLS.length) % WEEKLY_SKILLS.length;
+
+  const tempDate = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = tempDate.getUTCDay() || 7;
+  tempDate.setUTCDate(tempDate.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(tempDate.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((tempDate - yearStart) / 86400000) + 1) / 7);
+  const weekKey = `${tempDate.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+
+  return {
+    weekKey,
+    weekIndex,
+    skill: WEEKLY_SKILLS[weekIndex]
+  };
 }
 
-// Daily Client Skill Discovery Alert (Runs once per day around 10:00 AM)
-async function sendDailyClientSkillAlert() {
+// Push notifications to all active clients for the current week's single spotlighted skill
+async function sendWeeklyClientSkillAlert(options = {}) {
+  const { force = false, targetDate = new Date() } = options;
+  const { weekKey, skill } = getCurrentWeekInfo(targetDate);
+
   try {
-    const skillItem = getSkillForToday();
+    if (!force) {
+      // Check if this week's skill notification has already been sent to prevent duplicate blasts
+      const alreadySent = await prisma.notification.findFirst({
+        where: {
+          data: {
+            path: ['weekKey'],
+            equals: weekKey
+          }
+        }
+      });
+
+      if (alreadySent) {
+        console.log(`[Marketing Scheduler] Weekly skill alert for ${weekKey} ("${skill.category}") was already sent. Skipping.`);
+        return { success: true, skipped: true, weekKey, category: skill.category };
+      }
+    }
+
     const clients = await prisma.user.findMany({
       where: {
         role: 'CLIENT',
@@ -135,50 +204,65 @@ async function sendDailyClientSkillAlert() {
         language: true,
         preferredLanguage: true
       },
-      take: 500
+      take: 2000
     });
 
-    console.log(`[Marketing Scheduler] Sending daily skill alert (${skillItem.category}) to ${clients.length} clients`);
+    console.log(`[Marketing Scheduler] Dispatching new week skill spotlight: "${skill.category}" (${weekKey}) to ${clients.length} clients`);
 
+    let sentCount = 0;
     for (const client of clients) {
       const isFr = (client.preferredLanguage === 'fr' || client.language === 'fr');
-      const content = isFr ? skillItem.fr : skillItem.en;
+      const content = isFr ? skill.fr : skill.en;
 
-      // Create DB notification
+      // 1. Create In-App Notification
       await prisma.notification.create({
         data: {
           userId: client.id,
           title: content.title,
           body: content.body,
           data: {
-            type: 'MARKETING_SKILL_DISCOVERY',
-            category: skillItem.category,
-            screen: 'FindServices'
+            type: 'WEEKLY_SKILL_SPOTLIGHT',
+            weekKey,
+            category: skill.category,
+            search: skill.search,
+            screen: 'ProviderList'
           }
         }
-      }).catch(() => {});
+      }).catch(err => console.error('[DB Notification Error]:', client.id, err.message));
 
-      // Send Push Notification
+      // 2. Send Push Notification via FCM
       await sendPushNotification(
         client.id,
         content.title,
         content.body,
         {
-          type: 'MARKETING_SKILL_DISCOVERY',
-          category: skillItem.category,
-          screen: 'FindServices'
+          type: 'WEEKLY_SKILL_SPOTLIGHT',
+          weekKey,
+          category: skill.category,
+          search: skill.search,
+          screen: 'ProviderList'
         }
-      ).catch(err => console.error('[Push Error] Daily client push failed:', client.id, err.message));
+      ).catch(err => console.error('[Push Error] Weekly client push failed:', client.id, err.message));
+
+      sentCount++;
     }
+
+    return {
+      success: true,
+      sent: sentCount,
+      weekKey,
+      category: skill.category,
+      title: skill.en.title
+    };
   } catch (err) {
-    console.error('[Marketing Scheduler] sendDailyClientSkillAlert error:', err.message);
+    console.error('[Marketing Scheduler] sendWeeklyClientSkillAlert error:', err.message);
+    throw err;
   }
 }
 
 // Weekly Provider Intelligence & Boost Notification (Runs every Wednesday / Sunday)
 async function sendWeeklyProviderIntelligence() {
   try {
-    // 1. Calculate the most requested category in the last 7 days
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const recentJobs = await prisma.job.groupBy({
       by: ['category'],
@@ -201,7 +285,7 @@ async function sendWeeklyProviderIntelligence() {
       include: {
         providerProfile: true
       },
-      take: 500
+      take: 1000
     });
 
     console.log(`[Marketing Scheduler] Sending weekly provider marketplace trends to ${providers.length} providers (Top: ${topCategory})`);
@@ -231,7 +315,6 @@ async function sendWeeklyProviderIntelligence() {
           : `Your boosted profile is featured to clients searching for "${topCategory}". Keep your status available to maximize bookings.`;
       }
 
-      // Create DB notification
       await prisma.notification.create({
         data: {
           userId: provider.id,
@@ -245,7 +328,6 @@ async function sendWeeklyProviderIntelligence() {
         }
       }).catch(() => {});
 
-      // Send Push Notification
       await sendPushNotification(
         provider.id,
         title,
@@ -262,30 +344,31 @@ async function sendWeeklyProviderIntelligence() {
   }
 }
 
-// Background Cron Scheduler (Runs every 15 minutes check)
-let lastDailyRunDate = null;
-let lastWeeklyRunWeek = null;
+// Background Cron Scheduler (Runs every 15 minutes)
+let lastWeeklyClientRunWeek = null;
+let lastWeeklyProviderRunWeek = null;
 
 function startMarketingNotificationEngine() {
-  console.log('[Marketing Scheduler] Initialized Automated Skill & Market Alert Engine');
+  console.log('[Marketing Scheduler] Initialized Weekly Skill Spotlight & Provider Engine');
 
   setInterval(async () => {
     try {
       const now = new Date();
-      const todayStr = now.toISOString().split('T')[0];
-      const hour = now.getUTCHours(); // UTC hour
+      const dayOfWeek = now.getUTCDay(); // 0 = Sunday, 1 = Monday, 3 = Wednesday
+      const hour = now.getUTCHours();
+      const { weekKey } = getCurrentWeekInfo(now);
 
-      // Run daily client notification around 09:00 - 12:00 UTC once per day
-      if (hour >= 9 && hour <= 12 && lastDailyRunDate !== todayStr) {
-        lastDailyRunDate = todayStr;
-        await sendDailyClientSkillAlert();
+      // 1. Run Weekly Client Skill Spotlight on Mondays between 08:00 and 12:00 UTC
+      if (dayOfWeek === 1 && hour >= 8 && hour <= 12 && lastWeeklyClientRunWeek !== weekKey) {
+        lastWeeklyClientRunWeek = weekKey;
+        await sendWeeklyClientSkillAlert();
       }
 
-      // Run weekly provider trend alert on Wednesdays & Sundays
-      const dayOfWeek = now.getUTCDay(); // 0 = Sunday, 3 = Wednesday
-      const weekKey = `${todayStr}-${dayOfWeek}`;
-      if ((dayOfWeek === 0 || dayOfWeek === 3) && hour >= 14 && hour <= 17 && lastWeeklyRunWeek !== weekKey) {
-        lastWeeklyRunWeek = weekKey;
+      // 2. Run weekly provider trends on Wednesdays & Sundays between 14:00 and 17:00 UTC
+      const todayStr = now.toISOString().split('T')[0];
+      const provWeekKey = `${todayStr}-${dayOfWeek}`;
+      if ((dayOfWeek === 0 || dayOfWeek === 3) && hour >= 14 && hour <= 17 && lastWeeklyProviderRunWeek !== provWeekKey) {
+        lastWeeklyProviderRunWeek = provWeekKey;
         await sendWeeklyProviderIntelligence();
       }
     } catch (err) {
@@ -295,7 +378,11 @@ function startMarketingNotificationEngine() {
 }
 
 module.exports = {
-  startMarketingNotificationEngine,
-  sendDailyClientSkillAlert,
-  sendWeeklyProviderIntelligence
+  WEEKLY_SKILLS,
+  ROTATING_SKILLS: WEEKLY_SKILLS,
+  getCurrentWeekInfo,
+  sendWeeklyClientSkillAlert,
+  sendDailyClientSkillAlert: sendWeeklyClientSkillAlert,
+  sendWeeklyProviderIntelligence,
+  startMarketingNotificationEngine
 };

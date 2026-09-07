@@ -156,12 +156,45 @@ const readAllNotifications = async (req, res, next) => {
   }
 };
 
+const getWeeklySpotlightPreview = async (req, res, next) => {
+  try {
+    const { getCurrentWeekInfo, WEEKLY_SKILLS } = require('../jobs/marketingNotificationEngine');
+    const weekInfo = getCurrentWeekInfo(new Date());
+
+    res.status(200).json({
+      success: true,
+      currentWeek: weekInfo,
+      allSkills: WEEKLY_SKILLS
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const triggerWeeklySpotlight = async (req, res, next) => {
+  try {
+    const { sendWeeklyClientSkillAlert } = require('../jobs/marketingNotificationEngine');
+    const force = req.body?.force === true;
+    const result = await sendWeeklyClientSkillAlert({ force });
+
+    res.status(200).json({
+      success: true,
+      message: 'Weekly skill spotlight push triggered',
+      result
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getNotifications,
   markAsRead,
   archiveNotification,
   clearNotifications,
   readAllNotifications,
-  testPush
+  testPush,
+  getWeeklySpotlightPreview,
+  triggerWeeklySpotlight
 };
 

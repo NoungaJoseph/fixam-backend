@@ -13,5 +13,7 @@ router.patch('/:id/read', notificationController.markAsRead);
 router.put('/:id/archive', notificationController.archiveNotification);
 router.delete('/clear', notificationController.clearNotifications);
 router.post('/test-push', protect, adminOnly, notificationController.testPush);
+router.get('/weekly-spotlight', protect, adminOnly, notificationController.getWeeklySpotlightPreview);
+router.post('/weekly-spotlight/trigger', protect, adminOnly, notificationController.triggerWeeklySpotlight);
 
 module.exports = router;
