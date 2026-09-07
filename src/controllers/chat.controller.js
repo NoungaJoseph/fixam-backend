@@ -45,6 +45,22 @@ const hasActiveWorkBetweenUsers = async (userId, participantId) => {
     if (activeJob) return true;
   }
 
+  // Multi-provider task check: any providers on the same multi-provider job can communicate
+  if (user1ProviderId && user2ProviderId) {
+    const multiJob = await prisma.job.findFirst({
+      where: {
+        status: { notIn: ['CANCELLED'] },
+        providersNeeded: { gt: 1 },
+        AND: [
+          { assignments: { some: { providerId: user1ProviderId } } },
+          { assignments: { some: { providerId: user2ProviderId } } }
+        ]
+      },
+      select: { id: true }
+    });
+    if (multiJob) return true;
+  }
+
   const bookingOrConditions = [
     { clientId: userId, providerId: participantId },
     { clientId: participantId, providerId: userId }
@@ -107,7 +123,25 @@ const getConversationStatus = async (userId, otherUserId) => {
         OR: jobOrConditions
       }
     });
-    if (activeJob) return { active: true, reason: 'ACTIVE_JOB' };
+    if (activeJob) return { active: true, reason: 'ACTIVE_JOB', jobId: activeJob.id };
+  }
+
+  // Multi-provider task check: If both users are providers on the same active multi-provider task, allow messaging without restrictions
+  if (user1ProviderId && user2ProviderId) {
+    const sharedMultiJob = await prisma.job.findFirst({
+      where: {
+        status: { in: ['PENDING', 'ASSIGNED', 'IN_PROGRESS'] },
+        providersNeeded: { gt: 1 },
+        AND: [
+          { assignments: { some: { providerId: user1ProviderId } } },
+          { assignments: { some: { providerId: user2ProviderId } } }
+        ]
+      },
+      select: { id: true, title: true }
+    });
+    if (sharedMultiJob) {
+      return { active: true, reason: 'MULTI_PROVIDER_TASK', jobId: sharedMultiJob.id };
+    }
   }
 
   // Find active bookings

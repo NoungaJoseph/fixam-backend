@@ -309,9 +309,12 @@ const getJobById = async (req, res, next) => {
       return new Date(a.assignedAt).getTime() - new Date(b.assignedAt).getTime();
     });
 
+    const isMultiProvider = (job.providersNeeded || 1) > 1;
+    const isApplicantOrAssigned = job.assignments.some((a) => a.provider?.userId === req.user.id);
+
     const filteredAssignments = sortedAssignments.map((assignment, index) => {
       const isOwn = assignment.provider?.userId === req.user.id;
-      if (isClient || isAdmin || isOwn) {
+      if (isClient || isAdmin || isOwn || (isMultiProvider && isApplicantOrAssigned)) {
         return {
           ...assignment,
           isAnonymous: false

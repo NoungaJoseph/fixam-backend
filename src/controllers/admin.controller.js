@@ -1497,6 +1497,7 @@ const rejectJob = async (req, res, next) => {
       const updated = await tx.job.update({
         where: { id },
         data: {
+          status: 'CANCELLED',
           approvalStatus: 'REJECTED',
           rejectionReason: reason
         },
