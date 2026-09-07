@@ -540,6 +540,7 @@ const getAvailableJobsForProvider = async (req, res, next) => {
 
 const applyForJob = async (req, res, next) => {
   try {
+    const jobId = req.params.jobId || req.params.id;
     const providerId = req.user.providerProfile?.id;
     if (!providerId) {
       return res.status(400).json({ success: false, message: 'Provider profile required.' });
