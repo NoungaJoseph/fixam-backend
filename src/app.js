@@ -117,6 +117,10 @@ app.use('/uploads/chat-media', express.static('uploads/chat-media', {
   maxAge: process.env.NODE_ENV === 'production' ? '7d' : 0,
   fallthrough: false
 }));
+app.use('/uploads/proposal-media', express.static('uploads/proposal-media', {
+  maxAge: process.env.NODE_ENV === 'production' ? '7d' : 0,
+  fallthrough: false
+}));
 app.use('/uploads', express.static('uploads', {
   maxAge: process.env.NODE_ENV === 'production' ? '7d' : 0,
   fallthrough: true
@@ -167,6 +171,7 @@ app.use('/api/transactions', walletRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/uploads', uploadRoutes);
 app.use('/api/calls', callRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/notifications', notificationRoutes);
