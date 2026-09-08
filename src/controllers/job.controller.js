@@ -368,7 +368,7 @@ const getJobById = async (req, res, next) => {
 
 const getAvailableJobsForProvider = async (req, res, next) => {
   try {
-    const { page = 1, limit = 10, search = '', location = '', sortBy = 'newest', budgetMin, budgetMax, jobType = '' } = req.query;
+    const { page = 1, limit = 10, search = '', location = '', sortBy = 'newest', budgetMin, budgetMax, jobType = '', tab = '', filter = '', appliedOnly = '' } = req.query;
     const skip = (page - 1) * limit;
 
     // Build where clause for filtering
@@ -376,12 +376,15 @@ const getAvailableJobsForProvider = async (req, res, next) => {
       clientId: { not: req.user.id }, // Exclude own tasks
       status: 'PENDING',
       approvalStatus: 'APPROVED',  // Only show approved jobs
-      assignments: {
-        none: {
-          provider: { userId: req.user.id } // Exclude tasks this provider has already applied to
-        }
-      }
     };
+
+    if (tab === 'applied' || filter === 'applied' || appliedOnly === 'true') {
+      whereClause.assignments = {
+        some: {
+          provider: { userId: req.user.id }
+        }
+      };
+    }
 
     // Filter by provider's country and location for local jobs, or show remote jobs from any country
     const providerCountry = req.user.country || 'Cameroon';
@@ -525,13 +528,22 @@ const getAvailableJobsForProvider = async (req, res, next) => {
     });
     const userReviews = new Map(reviewCounts.map(r => [r.targetUserId, r._count.id]));
 
-    const enrichedJobs = jobs.map(job => addTimingMetadata({
-      ...job,
-      clientVerified: job.client?.providerProfile?.verification === 'VERIFIED',
-      clientSpending: userSpending.get(job.clientId) || 0,
-      clientSpendingTier: getSpendingTier(userSpending.get(job.clientId) || 0),
-      clientReviewCount: userReviews.get(job.clientId) || 0,
-    }));
+    const enrichedJobs = jobs.map(job => {
+      const myAssignment = job.assignments?.find(a => a.provider?.userId === req.user.id || a.providerId === req.user.providerProfile?.id) || null;
+      const hasApplied = Boolean(myAssignment);
+      const myBoostCoins = myAssignment?.boostCoins || 0;
+      return addTimingMetadata({
+        ...job,
+        hasApplied,
+        hasBoosted: myBoostCoins > 0,
+        myAssignment,
+        myBoostCoins,
+        clientVerified: job.client?.providerProfile?.verification === 'VERIFIED',
+        clientSpending: userSpending.get(job.clientId) || 0,
+        clientSpendingTier: getSpendingTier(userSpending.get(job.clientId) || 0),
+        clientReviewCount: userReviews.get(job.clientId) || 0,
+      });
+    });
 
     res.status(200).json({
       success: true,

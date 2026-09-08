@@ -89,11 +89,6 @@ const getDashboardData = async (req, res, next) => {
           clientId: { not: userId }, // Exclude own tasks
           status: 'PENDING',
           approvalStatus: 'APPROVED',
-          assignments: {
-            none: {
-              provider: { userId }
-            }
-          },
           OR: [
             { isRemote: true },
             {
@@ -368,11 +363,20 @@ const getDashboardData = async (req, res, next) => {
       }
     }
 
-    finalJobs = finalJobs.map(job => ({
-      ...job,
-      applicationCount: job._count?.assignments ?? (Array.isArray(job.assignments) ? job.assignments.length : 0),
-      proposalsCount: job._count?.assignments ?? (Array.isArray(job.assignments) ? job.assignments.length : 0),
-    }));
+    finalJobs = finalJobs.map(job => {
+      const myAssignment = job.assignments?.find(a => a.provider?.userId === userId) || null;
+      const hasApplied = Boolean(myAssignment);
+      const myBoostCoins = myAssignment?.boostCoins || 0;
+      return {
+        ...job,
+        hasApplied,
+        hasBoosted: myBoostCoins > 0,
+        myAssignment,
+        myBoostCoins,
+        applicationCount: job._count?.assignments ?? (Array.isArray(job.assignments) ? job.assignments.length : 0),
+        proposalsCount: job._count?.assignments ?? (Array.isArray(job.assignments) ? job.assignments.length : 0),
+      };
+    });
 
     res.status(200).json({
       success: true,
