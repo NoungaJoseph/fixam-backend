@@ -88,7 +88,7 @@ const getDashboardData = async (req, res, next) => {
         where: {
           clientId: { not: userId }, // Exclude own tasks
           status: 'PENDING',
-          approvalStatus: { in: ['APPROVED', 'PENDING_APPROVAL'] },
+          approvalStatus: 'APPROVED',
           assignments: {
             none: {
               provider: { userId }

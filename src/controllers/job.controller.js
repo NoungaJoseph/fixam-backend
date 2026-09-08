@@ -165,7 +165,7 @@ const createJob = async (req, res, next) => {
           coinCost,
           clientId: req.user.id,
           status: 'PENDING',
-          approvalStatus: 'APPROVED',  // Approved and live immediately upon paid posting
+          approvalStatus: 'PENDING_APPROVAL',  // New jobs require admin approval
           scheduledTime: validatedData.scheduledTime ? new Date(validatedData.scheduledTime) : null,
           isRemote,
           country: clientUser.country || 'Cameroon',
@@ -305,7 +305,7 @@ const getJobById = async (req, res, next) => {
 
     const isClient = job.clientId === req.user.id;
     const isAssignedProvider = job.assignments.some((assignment) => assignment.provider?.userId === req.user.id);
-    const canViewAvailable = req.user.role === 'PROVIDER' && job.approvalStatus !== 'REJECTED';
+    const canViewAvailable = req.user.role === 'PROVIDER' && job.approvalStatus === 'APPROVED';
     const isAdmin = req.user.role === 'ADMIN';
 
     if (!isClient && !isAssignedProvider && !canViewAvailable && !isAdmin) {
@@ -375,7 +375,7 @@ const getAvailableJobsForProvider = async (req, res, next) => {
     const whereClause = {
       clientId: { not: req.user.id }, // Exclude own tasks
       status: 'PENDING',
-      approvalStatus: { in: ['APPROVED', 'PENDING_APPROVAL'] }, // Show approved and newly submitted tasks; exclude REJECTED
+      approvalStatus: 'APPROVED',  // Only show approved jobs
       assignments: {
         none: {
           provider: { userId: req.user.id } // Exclude tasks this provider has already applied to
