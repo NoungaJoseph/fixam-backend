@@ -4,12 +4,7 @@ const { calculateProviderStats } = require('../utils/providerStats');
 const agreementService = require('../services/agreement.service');
 
 const calculateJobCoinCost = (providersCount) => {
-  const count = parseInt(providersCount) || 1;
-  if (count === 1) return 1;
-  if (count === 2) return 2;
-  if (count >= 3 && count <= 6) return 3;
-  if (count >= 7 && count <= 9) return 4;
-  return 5; // 10 and above
+  return 0; // Job creation is currently free for clients
 };
 
 const normalizeBudgetRange = (data) => {
@@ -104,41 +99,34 @@ const createJob = async (req, res, next) => {
       });
     }
 
-    // 3. Check client wallet balance (ensure wallet exists)
+    // 3. Client job creation is 100% free
     const providersNeeded = validatedData.providersNeeded || 1;
-    const coinCost = calculateJobCoinCost(providersNeeded);
+    const coinCost = 0; // Free for clients
     let clientWallet = clientUser?.wallet;
     if (!clientWallet) {
       clientWallet = await prisma.wallet.create({
-        data: { userId: clientUser.id, balance: 1 }
+        data: { userId: clientUser.id, balance: 0 }
       });
     }
 
-    if (clientWallet.balance < coinCost) {
-      return res.status(400).json({
-        success: false,
-        message: `You do not have enough coins to post this task. Cost is ${coinCost} coins. Please top up.`
-      });
-    }
-
-    // 4. Deduct coins and create job in a transaction
+    // 4. Create job in a transaction
     const job = await prisma.$transaction(async (tx) => {
-      // Decrement wallet balance
-      await tx.wallet.update({
-        where: { id: clientWallet.id },
-        data: { balance: { decrement: coinCost } }
-      });
+      if (coinCost > 0) {
+        await tx.wallet.update({
+          where: { id: clientWallet.id },
+          data: { balance: { decrement: coinCost } }
+        });
 
-      // Record deduction transaction
-      await tx.transaction.create({
-        data: {
-          walletId: clientWallet.id,
-          amount: -coinCost,
-          type: 'DEDUCTION',
-          status: 'SUCCESS',
-          description: `Posted task: ${validatedData.title}`
-        }
-      });
+        await tx.transaction.create({
+          data: {
+            walletId: clientWallet.id,
+            amount: -coinCost,
+            type: 'DEDUCTION',
+            status: 'SUCCESS',
+            description: `Posted job: ${validatedData.title}`
+          }
+        });
+      }
 
       const finalCategory = (validatedData.category && validatedData.category.toLowerCase() !== 'general' && validatedData.category.toLowerCase() !== 'general service')
         ? validatedData.category
