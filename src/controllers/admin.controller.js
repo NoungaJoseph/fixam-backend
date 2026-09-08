@@ -1493,23 +1493,10 @@ const rejectJob = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Job not found' });
     }
 
-    const job = await prisma.$transaction(async (tx) => {
-      const updated = await tx.job.update({
-        where: { id },
-        data: {
-          status: 'CANCELLED',
-          approvalStatus: 'REJECTED',
-          rejectionReason: reason
-        },
-        include: {
-          client: {
-            select: { id: true, fullName: true, email: true }
-          }
-        }
-      });
-
+    await prisma.$transaction(async (tx) => {
+      // 1. Refund any providers who applied
       for (const assignment of existing.assignments) {
-        const wallet = assignment.provider.user.wallet;
+        const wallet = assignment.provider?.user?.wallet;
         if (!wallet || assignment.refundedAt) continue;
 
         await tx.wallet.update({
@@ -1526,30 +1513,40 @@ const rejectJob = async (req, res, next) => {
             description: `Refund for rejected task: ${existing.title}`
           }
         });
-        await tx.jobAssignment.update({
-          where: { id: assignment.id },
-          data: { refundedAt: new Date(), status: 'REJECTED' }
-        });
       }
 
-      return updated;
+      // 2. Remove related records
+      await tx.serviceAgreement.deleteMany({ where: { taskId: id } }).catch(() => {});
+      await tx.agreementAmendment.deleteMany({ where: { taskId: id } }).catch(() => {});
+      await tx.review.deleteMany({ where: { jobId: id } }).catch(() => {});
+      await tx.booking.deleteMany({ where: { taskId: id } }).catch(() => {});
+      await tx.jobAssignment.deleteMany({ where: { jobId: id } }).catch(() => {});
+
+      // 3. Completely delete the job from the database
+      await tx.job.delete({ where: { id } });
     });
 
     // Notify client
     const notification = await prisma.notification.create({
       data: {
-        userId: job.clientId,
-        title: 'Task Rejected',
-        body: `Your task "${job.title}" was not approved. Reason: ${reason}`,
-        data: { type: 'JOB', jobId: job.id, status: 'REJECTED', reason }
+        userId: existing.clientId,
+        title: 'Task Rejected & Removed',
+        body: `Your task "${existing.title}" was rejected and removed. Reason: ${reason}`,
+        data: { type: 'JOB', jobId: id, status: 'REJECTED', reason, deleted: true }
       }
     });
 
-    // Emit socket event
+    // Emit socket events to update client and providers in real-time
     try {
       const { getIO } = require('../services/socket.service');
       const io = getIO();
-      io.to(job.clientId).emit('notification:new', notification);
+      io.to(existing.clientId).emit('notification:new', notification);
+      io.to(existing.clientId).emit('job:deleted', { id, deleted: true });
+      existing.assignments?.forEach((assignment) => {
+        if (assignment.provider?.user?.id) {
+          io.to(assignment.provider.user.id).emit('job:deleted', { id, deleted: true });
+        }
+      });
     } catch (err) {
       console.error('[Socket Error] Job rejection notification failed:', err.message);
     }
@@ -1557,16 +1554,16 @@ const rejectJob = async (req, res, next) => {
     try {
       const { sendPushNotification } = require('../services/notification.service');
       await sendPushNotification(
-        job.clientId,
-        'Task Rejected ❌',
-        `Your task "${job.title}" was rejected.`,
-        { type: 'JOB_REJECTED', jobId: job.id, reason }
+        existing.clientId,
+        'Task Rejected & Removed ❌',
+        `Your task "${existing.title}" was rejected and removed. Reason: ${reason}`,
+        { type: 'JOB_REJECTED', jobId: id, reason, deleted: true }
       );
     } catch (pushErr) {
       console.error('[Push Error] Job reject push failed:', pushErr.message);
     }
 
-    res.status(200).json({ success: true, data: job, message: 'Job rejected successfully' });
+    res.status(200).json({ success: true, message: 'Job rejected and completely removed from the system', deleted: true });
   } catch (error) {
     next(error);
   }

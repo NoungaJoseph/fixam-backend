@@ -212,19 +212,25 @@ const getClientJobs = async (req, res, next) => {
     const limit = Math.min(parseInt(req.query.limit) || 20, 100);
     const skip = (page - 1) * limit;
 
+    const clientJobsWhere = {
+      clientId: req.user.id,
+      approvalStatus: { not: 'REJECTED' },
+      status: { not: 'CANCELLED' }
+    };
+
     // Fast ETag check
     const [latestJob, latestAssignment, total] = await Promise.all([
       prisma.job.findFirst({
-        where: { clientId: req.user.id },
+        where: clientJobsWhere,
         orderBy: { updatedAt: 'desc' },
         select: { updatedAt: true }
       }),
       prisma.jobAssignment.findFirst({
-        where: { job: { clientId: req.user.id } },
+        where: { job: clientJobsWhere },
         orderBy: { assignedAt: 'desc' },
         select: { assignedAt: true }
       }),
-      prisma.job.count({ where: { clientId: req.user.id } })
+      prisma.job.count({ where: clientJobsWhere })
     ]);
 
     const lastJobUpdated = latestJob ? latestJob.updatedAt.getTime() : 0;
@@ -237,7 +243,7 @@ const getClientJobs = async (req, res, next) => {
     res.setHeader('ETag', etag);
 
     const items = await prisma.job.findMany({
-      where: { clientId: req.user.id },
+      where: clientJobsWhere,
       include: {
         _count: { select: { assignments: true } },
         assignments: {

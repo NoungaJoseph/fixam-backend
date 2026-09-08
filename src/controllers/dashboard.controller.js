@@ -116,7 +116,11 @@ const getDashboardData = async (req, res, next) => {
       });
     } else {
       jobsQuery = prisma.job.findMany({
-        where: { clientId: userId },
+        where: {
+          clientId: userId,
+          approvalStatus: { not: 'REJECTED' },
+          status: { not: 'CANCELLED' }
+        },
         include: {
           _count: { select: { assignments: true } },
           client: { select: { id: true, fullName: true, avatar: true } },
