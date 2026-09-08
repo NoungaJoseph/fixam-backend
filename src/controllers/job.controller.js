@@ -71,8 +71,12 @@ const addTimingMetadata = (job) => {
     }
   }
 
+  const applicationCount = job._count?.assignments ?? (Array.isArray(job.assignments) ? job.assignments.length : 0);
+
   return {
     ...job,
+    applicationCount,
+    proposalsCount: applicationCount,
     estimatedDurationDays: estimatedDays,
     expectedCompletionAt,
     isPastExpectedCompletion: Boolean(expectedCompletionAt && new Date(expectedCompletionAt) < new Date() && status === 'IN_PROGRESS'),
@@ -161,7 +165,7 @@ const createJob = async (req, res, next) => {
           coinCost,
           clientId: req.user.id,
           status: 'PENDING',
-          approvalStatus: 'PENDING_APPROVAL',  // New jobs require admin approval
+          approvalStatus: 'APPROVED',  // Approved and live immediately upon paid posting
           scheduledTime: validatedData.scheduledTime ? new Date(validatedData.scheduledTime) : null,
           isRemote,
           country: clientUser.country || 'Cameroon',
@@ -221,17 +225,23 @@ const getClientJobs = async (req, res, next) => {
     const skip = (page - 1) * limit;
 
     // Fast ETag check
-    const [latestJob, total] = await Promise.all([
+    const [latestJob, latestAssignment, total] = await Promise.all([
       prisma.job.findFirst({
         where: { clientId: req.user.id },
         orderBy: { updatedAt: 'desc' },
         select: { updatedAt: true }
       }),
+      prisma.jobAssignment.findFirst({
+        where: { job: { clientId: req.user.id } },
+        orderBy: { assignedAt: 'desc' },
+        select: { assignedAt: true }
+      }),
       prisma.job.count({ where: { clientId: req.user.id } })
     ]);
 
-    const lastUpdated = latestJob ? latestJob.updatedAt.getTime() : 0;
-    const etag = `W/"${lastUpdated}-${total}-${page}-${limit}"`;
+    const lastJobUpdated = latestJob ? latestJob.updatedAt.getTime() : 0;
+    const lastAssigned = latestAssignment ? latestAssignment.assignedAt.getTime() : 0;
+    const etag = `W/"${lastJobUpdated}-${lastAssigned}-${total}-${page}-${limit}"`;
 
     if (req.headers['if-none-match'] === etag) {
       return res.status(304).end();
@@ -295,7 +305,7 @@ const getJobById = async (req, res, next) => {
 
     const isClient = job.clientId === req.user.id;
     const isAssignedProvider = job.assignments.some((assignment) => assignment.provider?.userId === req.user.id);
-    const canViewAvailable = req.user.role === 'PROVIDER' && job.approvalStatus === 'APPROVED';
+    const canViewAvailable = req.user.role === 'PROVIDER' && job.approvalStatus !== 'REJECTED';
     const isAdmin = req.user.role === 'ADMIN';
 
     if (!isClient && !isAssignedProvider && !canViewAvailable && !isAdmin) {
@@ -342,6 +352,8 @@ const getJobById = async (req, res, next) => {
       data: {
         ...addTimingMetadata(job),
         assignments: filteredAssignments,
+        applicationCount: sortedAssignments.length,
+        proposalsCount: sortedAssignments.length,
         client: {
           ...job.client,
           isVerified: job.client?.providerProfile?.verification === 'VERIFIED',
@@ -363,13 +375,10 @@ const getAvailableJobsForProvider = async (req, res, next) => {
     const whereClause = {
       clientId: { not: req.user.id }, // Exclude own tasks
       status: 'PENDING',
-      approvalStatus: 'APPROVED',  // Only show approved jobs
+      approvalStatus: { in: ['APPROVED', 'PENDING_APPROVAL'] }, // Show approved and newly submitted tasks; exclude REJECTED
       assignments: {
         none: {
-          OR: [
-            { provider: { userId: req.user.id } },
-            { status: 'ACCEPTED' } // Exclude accepted tasks
-          ]
+          provider: { userId: req.user.id } // Exclude tasks this provider has already applied to
         }
       }
     };
@@ -437,6 +446,7 @@ const getAvailableJobsForProvider = async (req, res, next) => {
     const jobs = await prisma.job.findMany({
       where: whereClause,
       include: {
+        _count: { select: { assignments: true } },
         client: {
           select: {
             id: true, fullName: true, avatar: true,
@@ -671,6 +681,11 @@ const applyForJob = async (req, res, next) => {
     });
 
     const applicationCount = await prisma.jobAssignment.count({ where: { jobId } });
+
+    await prisma.job.update({
+      where: { id: jobId },
+      data: { updatedAt: new Date() }
+    }).catch(() => {});
 
     const notification = await prisma.notification.create({
       data: {

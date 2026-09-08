@@ -88,13 +88,10 @@ const getDashboardData = async (req, res, next) => {
         where: {
           clientId: { not: userId }, // Exclude own tasks
           status: 'PENDING',
-          approvalStatus: 'APPROVED',
+          approvalStatus: { in: ['APPROVED', 'PENDING_APPROVAL'] },
           assignments: {
             none: {
-              OR: [
-                { provider: { userId } },
-                { status: 'ACCEPTED' } // Exclude accepted tasks
-              ]
+              provider: { userId }
             }
           },
           OR: [
@@ -102,10 +99,13 @@ const getDashboardData = async (req, res, next) => {
             {
               isRemote: false,
               country: userCountry
-            }
+            },
+            { isRemote: false, country: null },
+            { isRemote: false, country: '' }
           ]
         },
         include: {
+          _count: { select: { assignments: true } },
           client: { 
             select: { 
               id: true, 
@@ -123,6 +123,7 @@ const getDashboardData = async (req, res, next) => {
       jobsQuery = prisma.job.findMany({
         where: { clientId: userId },
         include: {
+          _count: { select: { assignments: true } },
           client: { select: { id: true, fullName: true, avatar: true } },
           assignments: { include: { provider: { include: { user: { select: { id: true, fullName: true, avatar: true } } } } } },
           reviews: true
@@ -363,10 +364,15 @@ const getDashboardData = async (req, res, next) => {
           clientVerified: job.client?.providerProfile?.verification === 'VERIFIED',
           clientSpending: userSpending.get(job.clientId) || 0,
           clientSpendingTier: getSpendingTier(userSpending.get(job.clientId) || 0),
-          clientReviewCount: userReviews.get(job.clientId) || 0,
         }));
       }
     }
+
+    finalJobs = finalJobs.map(job => ({
+      ...job,
+      applicationCount: job._count?.assignments ?? (Array.isArray(job.assignments) ? job.assignments.length : 0),
+      proposalsCount: job._count?.assignments ?? (Array.isArray(job.assignments) ? job.assignments.length : 0),
+    }));
 
     res.status(200).json({
       success: true,
