@@ -242,6 +242,7 @@ const formatConversationForUser = async (conversationId, userId) => {
             select: {
               id: true,
               fullName: true,
+              phone: true,
               avatar: true,
               isOnline: true,
               role: true,
@@ -411,12 +412,12 @@ const findActiveTaskBetweenUsers = async (currentUserId, otherUserId) => {
         OR: orConditions
       },
       include: {
-        client: { select: { id: true, fullName: true, avatar: true } },
+        client: { select: { id: true, fullName: true, phone: true, avatar: true } },
         assignments: {
           include: {
             provider: {
               include: {
-                user: { select: { id: true, fullName: true, avatar: true } }
+                user: { select: { id: true, fullName: true, phone: true, avatar: true } }
               }
             }
           }
@@ -441,8 +442,8 @@ const findActiveTaskBetweenUsers = async (currentUserId, otherUserId) => {
         OR: bookingOrConditions
       },
       include: {
-        client: { select: { id: true, fullName: true, avatar: true } },
-        provider: { select: { id: true, fullName: true, avatar: true } }
+        client: { select: { id: true, fullName: true, phone: true, avatar: true } },
+        provider: { select: { id: true, fullName: true, phone: true, avatar: true } }
       },
       orderBy: { updatedAt: 'desc' }
     });
@@ -863,6 +864,7 @@ const getConversationById = async (req, res, next) => {
               select: {
                 id: true,
                 fullName: true,
+                phone: true,
                 avatar: true,
                 isOnline: true,
                 role: true,

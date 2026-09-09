@@ -1,4 +1,5 @@
 const prisma = require('../config/prisma');
+const cacheMiddleware = require('../middlewares/cache.middleware');
 const getSupportConversations = async (req, res, next) => {
   try {
     const conversations = await prisma.conversation.findMany({
@@ -311,6 +312,7 @@ const verifyProvider = async (req, res, next) => {
       console.error('[Socket Error] Verification notification failed:', err.message);
     }
 
+    cacheMiddleware.clearCache();
     res.status(200).json({ success: true, data: profile });
   } catch (error) {
     next(error);

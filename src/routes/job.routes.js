@@ -14,6 +14,8 @@ router.get('/popular-categories', protect, jobController.getPopularCategories);
 router.get('/:jobId', protect, jobController.getJobById);
 router.post('/:jobId/apply', protect, authorize('PROVIDER', 'CLIENT'), jobController.applyForJob);
 router.post('/:jobId/applications/:assignmentId/select', protect, authorize('CLIENT', 'PROVIDER'), jobController.selectProviderForJob);
+router.post('/:jobId/applications/:assignmentId/view', protect, jobController.markProposalViewed);
+router.post('/:jobId/applications/:assignmentId/interview', protect, jobController.markProposalInterviewing);
 router.put('/:jobId/status', protect, jobController.updateJobStatus);
 router.patch('/:jobId/status', protect, jobController.updateJobStatus);
 router.put('/:jobId', protect, authorize('CLIENT', 'PROVIDER', 'ADMIN'), jobController.updateJob);

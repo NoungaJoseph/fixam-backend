@@ -68,10 +68,24 @@ const addTimingMetadata = (job) => {
 
   const applicationCount = job._count?.assignments ?? (Array.isArray(job.assignments) ? job.assignments.length : 0);
 
+  const interviewingCount = Array.isArray(job.assignments)
+    ? job.assignments.filter((a) => {
+        if (a.status === 'INTERVIEWING') return true;
+        const media = a.proposalMedia;
+        return media && typeof media === 'object' && !Array.isArray(media) && media.isInterviewing;
+      }).length
+    : 0;
+
+  const hiredCount = Array.isArray(job.assignments)
+    ? job.assignments.filter((a) => a.status === 'ACCEPTED' || a.status === 'ASSIGNED' || a.status === 'COMPLETED').length
+    : 0;
+
   return {
     ...job,
     applicationCount,
     proposalsCount: applicationCount,
+    interviewingCount,
+    hiredCount,
     estimatedDurationDays: estimatedDays,
     expectedCompletionAt,
     isPastExpectedCompletion: Boolean(expectedCompletionAt && new Date(expectedCompletionAt) < new Date() && status === 'IN_PROGRESS'),
@@ -313,12 +327,9 @@ const getJobById = async (req, res, next) => {
       return new Date(a.assignedAt).getTime() - new Date(b.assignedAt).getTime();
     });
 
-    const isMultiProvider = (job.providersNeeded || 1) > 1;
-    const isApplicantOrAssigned = job.assignments.some((a) => a.provider?.userId === req.user.id);
-
     const filteredAssignments = sortedAssignments.map((assignment, index) => {
       const isOwn = assignment.provider?.userId === req.user.id;
-      if (isClient || isAdmin || isOwn || (isMultiProvider && isApplicantOrAssigned)) {
+      if (isClient || isAdmin || isOwn) {
         return {
           ...assignment,
           isAnonymous: false
@@ -333,7 +344,7 @@ const getJobById = async (req, res, next) => {
         provider: {
           id: `anon-prov-${index}`,
           user: {
-            fullName: `Provider #${index + 1}`,
+            fullName: `Top Spot #${index + 1}`,
             avatar: null,
             isAnonymous: true
           }
@@ -348,6 +359,12 @@ const getJobById = async (req, res, next) => {
         assignments: filteredAssignments,
         applicationCount: sortedAssignments.length,
         proposalsCount: sortedAssignments.length,
+        interviewingCount: sortedAssignments.filter((a) => {
+          if (a.status === 'INTERVIEWING') return true;
+          const media = a.proposalMedia;
+          return media && typeof media === 'object' && !Array.isArray(media) && media.isInterviewing;
+        }).length,
+        hiredCount: sortedAssignments.filter((a) => a.status === 'ACCEPTED' || a.status === 'ASSIGNED' || a.status === 'COMPLETED').length,
         client: {
           ...job.client,
           isVerified: job.client?.providerProfile?.verification === 'VERIFIED',
@@ -526,8 +543,26 @@ const getAvailableJobsForProvider = async (req, res, next) => {
       const myAssignment = job.assignments?.find(a => a.provider?.userId === req.user.id || a.providerId === req.user.providerProfile?.id) || null;
       const hasApplied = Boolean(myAssignment);
       const myBoostCoins = myAssignment?.boostCoins || 0;
+      const maskedAssignments = job.assignments?.map((a, idx) => {
+        if (a.provider?.userId === req.user.id || a.providerId === req.user.providerProfile?.id) {
+          return { ...a, isOwn: true, isAnonymous: false };
+        }
+        return {
+          id: `anon-${idx}`,
+          boostCoins: a.boostCoins || 0,
+          status: a.status,
+          assignedAt: a.assignedAt,
+          isAnonymous: true,
+          provider: {
+            id: `anon-prov-${idx}`,
+            user: { fullName: `Top Spot #${idx + 1}`, avatar: null, isAnonymous: true }
+          }
+        };
+      }) || [];
+
       return addTimingMetadata({
         ...job,
+        assignments: maskedAssignments,
         hasApplied,
         hasBoosted: myBoostCoins > 0,
         myAssignment,
@@ -723,7 +758,7 @@ const applyForJob = async (req, res, next) => {
       console.error('[Push Error] Application push failed:', pushErr.message);
     }
 
-    res.status(200).json({ success: true, data: assignment, applicationCount, message: 'Application sent successfully. Coins are only deducted if the client selects you.' });
+    res.status(200).json({ success: true, data: assignment, applicationCount, message: 'Application submitted successfully!' });
   } catch (error) {
     next(error);
   }
@@ -1398,6 +1433,135 @@ const getAgreementHistory = async (req, res, next) => {
   }
 };
 
+const markProposalViewed = async (req, res, next) => {
+  try {
+    const { jobId, assignmentId } = req.params;
+
+    const assignment = await prisma.jobAssignment.findUnique({
+      where: { id: assignmentId },
+      include: {
+        job: true,
+        provider: {
+          include: { user: true }
+        }
+      }
+    });
+
+    if (!assignment) {
+      return res.status(404).json({ success: false, message: 'Assignment / Proposal not found.' });
+    }
+
+    // Record viewed metadata in proposalMedia
+    let currentMedia = assignment.proposalMedia;
+    let newMediaObj;
+    if (Array.isArray(currentMedia)) {
+      newMediaObj = { files: currentMedia, clientViewedAt: new Date() };
+    } else if (currentMedia && typeof currentMedia === 'object') {
+      newMediaObj = { ...currentMedia, clientViewedAt: new Date() };
+    } else {
+      newMediaObj = { files: [], clientViewedAt: new Date() };
+    }
+
+    await prisma.jobAssignment.update({
+      where: { id: assignmentId },
+      data: { proposalMedia: newMediaObj }
+    });
+
+    const providerUserId = assignment.provider?.userId || assignment.provider?.user?.id;
+    if (providerUserId && providerUserId !== req.user.id) {
+      // Prevent spamming notification repeatedly within 1 hour
+      const existingNotif = await prisma.notification.findFirst({
+        where: {
+          userId: providerUserId,
+          title: 'Proposal Viewed',
+          createdAt: { gte: new Date(Date.now() - 60 * 60 * 1000) }
+        }
+      });
+
+      if (!existingNotif) {
+        const notifTitle = 'Proposal Viewed';
+        const notifBody = `Your proposal for "${assignment.job.title}" has just been viewed by the client. Way to go!`;
+
+        const notification = await prisma.notification.create({
+          data: {
+            userId: providerUserId,
+            title: notifTitle,
+            body: notifBody,
+            data: { type: 'PROPOSAL_VIEWED', jobId, assignmentId: assignment.id }
+          }
+        });
+
+        try {
+          const { getIO } = require('../services/socket.service');
+          const io = getIO();
+          io.to(providerUserId).emit('notification:new', notification);
+        } catch (err) {
+          console.error('[Socket Error] Proposal viewed notification failed:', err.message);
+        }
+
+        try {
+          const { sendPushNotification } = require('../services/notification.service');
+          await sendPushNotification(
+            providerUserId,
+            notifTitle,
+            notifBody,
+            { type: 'PROPOSAL_VIEWED', jobId, assignmentId: assignment.id }
+          );
+        } catch (pushErr) {
+          console.error('[Push Error] Proposal viewed push failed:', pushErr.message);
+        }
+      }
+    }
+
+    res.status(200).json({ success: true, message: 'Proposal viewed recorded.' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const markProposalInterviewing = async (req, res, next) => {
+  try {
+    const { jobId, assignmentId } = req.params;
+
+    const assignment = await prisma.jobAssignment.findUnique({
+      where: { id: assignmentId },
+      include: { job: true }
+    });
+
+    if (!assignment) {
+      return res.status(404).json({ success: false, message: 'Assignment not found.' });
+    }
+
+    let currentMedia = assignment.proposalMedia;
+    let newMediaObj;
+    if (Array.isArray(currentMedia)) {
+      newMediaObj = { files: currentMedia, isInterviewing: true, interviewedAt: new Date() };
+    } else if (currentMedia && typeof currentMedia === 'object') {
+      newMediaObj = { ...currentMedia, isInterviewing: true, interviewedAt: new Date() };
+    } else {
+      newMediaObj = { files: [], isInterviewing: true, interviewedAt: new Date() };
+    }
+
+    const updated = await prisma.jobAssignment.update({
+      where: { id: assignmentId },
+      data: { proposalMedia: newMediaObj }
+    });
+
+    try {
+      const { getIO } = require('../services/socket.service');
+      const io = getIO();
+      io.to(assignment.job.clientId).emit('job:updated', { jobId });
+      if (assignment.providerId) {
+        io.to(assignment.providerId).emit('job:updated', { jobId });
+      }
+    } catch (err) {}
+
+    res.status(200).json({ success: true, data: updated, message: 'Interviewing state recorded.' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createJob,
   getJobById,
@@ -1412,5 +1576,8 @@ module.exports = {
   getPopularCategories,
   proposeDiagnosisMaterials,
   respondToMaterialsProposal,
-  getAgreementHistory
+  getAgreementHistory,
+  markProposalViewed,
+  markProposalInterviewing
 };
+

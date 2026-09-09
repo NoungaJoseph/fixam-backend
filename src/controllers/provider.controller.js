@@ -95,13 +95,18 @@ const updateProviderProfile = async (req, res, next) => {
 const getProviders = async (req, res, next) => {
   try {
     const { category, search } = req.query;
-    const clientCountry = req.user?.country || 'Cameroon';
     const isRemote = isRemoteSkill(category || search);
+
+    // If authenticated user specified country and skill is not remote, filter by country;
+    // for unauthenticated public requests, do not restrict by country so all providers can appear
+    const countryFilter = (req.user?.country && !isRemote)
+      ? { user: { country: req.user.country } }
+      : {};
 
     const providers = await prisma.providerProfile.findMany({
       where: { 
         profileMode: 'WORK',
-        ...(isRemote ? {} : { user: { country: clientCountry } })
+        ...countryFilter
       },
       include: { 
         user: { 
@@ -147,13 +152,13 @@ const getProviders = async (req, res, next) => {
 
 const getProvidersOfTheMonth = async (req, res, next) => {
   try {
-    const clientCountry = req.user?.country || 'Cameroon';
+    const countryFilter = req.user?.country ? { country: req.user.country } : {};
     const providers = await prisma.providerProfile.findMany({
       where: { 
         profileMode: 'WORK',
         user: { 
           isOnline: true,
-          country: clientCountry
+          ...countryFilter
         }
       },
       include: { 
@@ -189,7 +194,7 @@ const getProvidersOfTheMonth = async (req, res, next) => {
 const getNearbyProviders = async (req, res, next) => {
   try {
     const { category, latitude, longitude, distance = 10 } = req.query;
-    const clientCountry = req.user?.country || 'Cameroon';
+    const countryFilter = req.user?.country ? { country: req.user.country } : {};
 
     const providers = await prisma.providerProfile.findMany({
       where: {
@@ -197,7 +202,7 @@ const getNearbyProviders = async (req, res, next) => {
         skills: category ? { has: category } : undefined,
         user: { 
           isOnline: true,
-          country: clientCountry
+          ...countryFilter
         }
       },
       include: { 
