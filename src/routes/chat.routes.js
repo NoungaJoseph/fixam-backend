@@ -1,0 +1,25 @@
+const express = require('express');
+const router = express.Router();
+const chatController = require('../controllers/chat.controller');
+const { protect, authorize } = require('../middlewares/auth.middleware');
+
+router.use(protect);
+
+router.get('/conversations', chatController.getConversations);
+router.get('/conversations/:conversationId', chatController.getConversationById);
+router.get('/unread-count', chatController.getUnreadCount);
+router.post('/conversations', chatController.createConversation);
+router.get('/check-booking/:providerId', chatController.checkBooking);
+router.post('/support', chatController.openSupportConversation);
+router.get('/:conversationId/active-task', chatController.getActiveTaskForChat);
+router.get('/:conversationId/messages', chatController.getMessages);
+router.post('/send', chatController.sendMessage);
+router.delete('/messages/:messageId', chatController.deleteMessage);
+router.delete('/message/:messageId', chatController.deleteMessage);
+router.put('/:conversationId/read', chatController.markAsRead);
+
+// Audit: logs when a user is shown the external-contact-sharing warning
+// and whether they chose to send anyway (used for dispute resolution evidence)
+router.post('/:conversationId/log-contact-warning', chatController.logContactWarning);
+
+module.exports = router;

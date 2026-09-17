@@ -1,0 +1,853 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  CLIENT
+  PROVIDER
+  ADMIN
+}
+
+enum JobStatus {
+  PENDING
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum JobApprovalStatus {
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+}
+
+enum AssignmentStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+enum TransactionStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+enum TransactionType {
+  PURCHASE
+  DEDUCTION
+  REFUND
+}
+
+enum PaymentMethod {
+  MTN_MOMO
+  ORANGE_MONEY
+  CARD
+  BANK_TRANSFER
+  M_PESA
+  AIRTEL_MONEY
+  VODAFONE_CASH
+  MOOV_MONEY
+  WAVE
+  TIGO_PESA
+  ETISALAT_CASH
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  SUCCESS
+  FAILED
+  CANCELLED
+}
+
+enum BookingStatus {
+  PENDING
+  ACCEPTED
+  IN_PROGRESS
+  REJECTED
+  CANCELLED
+  COMPLETED
+  COUNTER_PROPOSED
+}
+
+enum SupportConversationStatus {
+  OPEN
+  WAITING
+  RESOLVED
+}
+
+enum VerificationStatus {
+  UNVERIFIED
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  FILE
+  AUDIO
+  AUDIO_CALL
+  VIDEO_CALL
+}
+
+model User {
+  id                     String    @id @default(uuid())
+  phone                  String    @unique
+  fullName               String?
+  email                  String?   @unique
+  password               String?
+  role                   Role      @default(CLIENT)
+  avatar                 String?
+  fcmToken               String?
+  lastSeen               DateTime  @default(now())
+  isOnline               Boolean   @default(false)
+  referralCode           String?   @unique
+  referredBy             String?
+  dob                    DateTime?
+  careerStatus           String?
+  lastNameChange         DateTime?
+  lastPasswordChange     DateTime?
+  twoFactorEnabled       Boolean   @default(false)
+  twoFactorCode          String?
+  twoFactorExpiry        DateTime?
+  pendingName            String?
+  isBlocked              Boolean   @default(false)
+  blockedReason          String?
+  blockedAt              DateTime?
+  lastIpAddress          String?
+  location               String?
+  isEmailVerified        Boolean   @default(false)
+  welcomeCoinsGiven      Boolean   @default(false)
+  verificationCoinsGiven Boolean   @default(false)
+  preferredLanguage      String    @default("en")
+  country                String?   @default("Cameroon")
+  tokenVersion           Int       @default(0)  // Incremented on logout/password change to revoke old JWTs
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  providerProfile      ProviderProfile?
+  wallet               Wallet?
+  jobsAsClient         Job[]                     @relation("ClientJobs")
+  receivedReviews      Review[]                  @relation("TargetReviews")
+  sentReviews          Review[]                  @relation("SentReviews")
+  sentMessages         Message[]                 @relation("SentMessages")
+  notifications        Notification[]
+  conversations        ConversationParticipant[]
+  payments             Payment[]
+  coinPurchases        CoinPurchase[]
+  bookingsAsClient     Booking[]                 @relation("ClientBookings")
+  bookingsAsProvider   Booking[]                 @relation("ProviderBookings")
+  supportConversations SupportConversation[]
+  usersBlocked         User[]                    @relation("BlockedUsers")
+  blockedBy            User[]                    @relation("BlockedUsers")
+  favoriteProviders    ClientFavoriteProvider[]  @relation("ClientFavoriteProviders")
+  unlockedProviders    UnlockedProvider[]        @relation("ClientUnlocks")
+  
+  // Web & Careerpath Relations
+  careerpathEnrollments   CareerpathEnrollment[]
+  careerpathProgress      CareerpathModuleProgress[]
+  careerpathCertificates  CareerpathCertificate[]
+  careerpathBookmarks     CareerpathBookmark[]
+
+  clientDisputes          Dispute[]                 @relation("ClientDisputes")
+  providerDisputes        Dispute[]                 @relation("ProviderDisputes")
+  assignedDisputes        Dispute[]                 @relation("AdminDisputes")
+
+  clientAgreements        ServiceAgreement[]        @relation("ClientAgreements")
+  providerAgreements      ServiceAgreement[]        @relation("ProviderAgreements")
+
+  @@index([role])
+}
+
+model ProviderProfile {
+  id                String             @id @default(uuid())
+  userId            String             @unique
+  skills            String[]
+  bio               String?
+  rate              Float?
+  rating            Float              @default(0.0)
+  reviewCount       Int                @default(0)
+  profileViews      Int                @default(0)
+  searchAppearances Int                @default(0)
+  availability      Json?
+  serviceArea       String?
+  experienceLevel   String?
+  birthDay          String?
+  birthMonth        String?
+  birthYear         String?
+  age               String?
+  verification      VerificationStatus @default(UNVERIFIED)
+  portfolio         Json?
+  certificates      Json?
+  employmentHistory Json?
+  socialLinks       Json?
+  setupBonusClaimed Boolean            @default(false)
+  profileMode       String             @default("WORK")
+  profileScore      Int                @default(0)
+  skillRank         String             @default("Newcomer")
+  boostExpiresAt    DateTime?
+  
+  user        User                     @relation(fields: [userId], references: [id])
+  assignments JobAssignment[]
+  
+  documents   VerificationDocument[]
+  favoritedBy ClientFavoriteProvider[]
+  unlockedBy  UnlockedProvider[] @relation("ProviderUnlocks")
+  monthlyStats ProviderMonthlyStats[]
+  reports     ProviderReport[]
+
+  @@index([verification])
+  @@index([rating])
+}
+
+model ProviderMonthlyStats {
+  id                String          @id @default(uuid())
+  providerId        String
+  year              Int
+  month             Int
+  profileViews      Int             @default(0)
+  searchAppearances Int             @default(0)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  provider          ProviderProfile @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, year, month])
+  @@index([providerId])
+}
+
+model ProviderReport {
+  id             String          @id @default(uuid())
+  providerId     String
+  year           Int
+  month          Int
+  views          Int             @default(0)
+  searches       Int             @default(0)
+  jobsCompleted  Int             @default(0)
+  earnings       Float           @default(0.0)
+  rating         Float           @default(0.0)
+  successRate    Float           @default(0.0)
+  coinsPurchased Int             @default(0)
+  generatedAt    DateTime        @default(now())
+
+  provider       ProviderProfile @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, year, month])
+  @@index([providerId])
+}
+
+
+model Job {
+  id                   String            @id @default(uuid())
+  clientId             String
+  category             String
+  title                String
+  description          String
+  location             String
+  latitude             Float?
+  longitude            Float?
+  budget               Float
+  budgetMin            Float?
+  budgetMax            Float?
+  status               JobStatus         @default(PENDING)
+  approvalStatus       JobApprovalStatus @default(PENDING_APPROVAL)
+  rejectionReason      String?
+  scheduledTime        DateTime?
+  coinCost             Int               @default(1)
+  providersNeeded      Int               @default(1)
+  selectedAssignmentId String?
+  isRemote             Boolean           @default(false)
+  country              String?           @default("Cameroon")
+  importantDetails     String?
+  whatNeedsDone        String?
+  taskScope            String?
+  preferences          String[]
+  priority             String            @default("normal")
+  requiresDiagnosis    Boolean           @default(false)
+  diagnosisStatus      String?
+  materialsList        Json?
+  materialsStatus      String?
+  materialsVersion     Int               @default(1)
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  client      User                 @relation("ClientJobs", fields: [clientId], references: [id])
+  assignments JobAssignment[]
+  reviews     Review[]
+  bookings    Booking[]
+  agreements  AgreementAmendment[]
+  serviceAgreements ServiceAgreement[]
+
+  @@index([clientId, status])
+  @@index([status, approvalStatus])
+  @@index([createdAt])
+  @@index([updatedAt])
+  @@index([category])
+  @@index([location])
+  @@index([clientId, updatedAt])
+  @@index([status, approvalStatus, updatedAt])
+}
+
+model JobAssignment {
+  id          String           @id @default(uuid())
+  jobId       String
+  providerId  String
+  status      AssignmentStatus @default(PENDING)
+  assignedAt  DateTime         @default(now())
+  selectedAt  DateTime?
+  refundedAt  DateTime?
+  boostCoins  Int              @default(0)
+  coverLetter String?
+  proposedBudget Float?
+  proposalMedia Json?
+  materialsList Json?
+
+  job      Job             @relation(fields: [jobId], references: [id])
+  provider ProviderProfile @relation(fields: [providerId], references: [id])
+
+  @@unique([jobId, providerId])
+  @@index([providerId, status])
+  @@index([jobId, status])
+}
+
+model Wallet {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  balance   Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id])
+  transactions Transaction[]
+}
+
+model Transaction {
+  id                  String            @id @default(uuid())
+  walletId            String
+  amount              Int
+  type                TransactionType
+  status              TransactionStatus @default(PENDING)
+  reference           String?           @unique
+  description         String?
+  paidPrice           String?
+  receiptUrl          String?
+  payerName           String?
+  payerPhone          String?
+  payerEmail          String?
+  jobId               String?
+  paymentMethod       PaymentMethod?
+  providerReference   String?
+  phoneNumber         String?
+  isSystemTransaction Boolean           @default(false)
+  createdAt           DateTime          @default(now())
+
+  wallet       Wallet        @relation(fields: [walletId], references: [id])
+  payment      Payment?
+  coinPurchase CoinPurchase?
+
+  @@index([walletId, status])
+  @@index([walletId, createdAt])
+}
+
+model Payment {
+  id                String        @id @default(uuid())
+  userId            String
+  transactionId     String?       @unique
+  amount            Int
+  coins             Int
+  paymentMethod     PaymentMethod
+  providerReference String?       @unique
+  status            PaymentStatus @default(PENDING)
+  phoneNumber       String
+  providerPayload   Json?
+  failureReason     String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id])
+  transaction  Transaction?  @relation(fields: [transactionId], references: [id])
+  coinPurchase CoinPurchase?
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@index([paymentMethod, createdAt])
+}
+
+model CoinPurchase {
+  id                String        @id @default(uuid())
+  userId            String
+  paymentId         String        @unique
+  transactionId     String?       @unique
+  amount            Int
+  coins             Int
+  paymentMethod     PaymentMethod
+  providerReference String?
+  status            PaymentStatus @default(PENDING)
+  phoneNumber       String
+  createdAt         DateTime      @default(now())
+
+  user        User         @relation(fields: [userId], references: [id])
+  payment     Payment      @relation(fields: [paymentId], references: [id])
+  transaction Transaction? @relation(fields: [transactionId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}
+
+model Conversation {
+  id            String   @id @default(uuid())
+  lastMessageAt DateTime @default(now()) @db.Timestamp(3)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  participants ConversationParticipant[]
+  messages     Message[]
+  support      SupportConversation?
+
+  @@index([lastMessageAt])
+  @@index([updatedAt])
+  @@index([createdAt])
+}
+
+model ConversationParticipant {
+  id             String   @id @default(uuid())
+  conversationId String
+  userId         String
+  unreadCount    Int      @default(0)
+  joinedAt       DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+  user         User         @relation(fields: [userId], references: [id])
+
+  @@unique([conversationId, userId])
+  @@index([userId, conversationId]) // For finding conversations by user
+  @@index([conversationId]) // For finding participants by conversation
+}
+
+model Message {
+  id             String      @id @default(uuid())
+  conversationId String
+  senderId       String
+  type           MessageType @default(TEXT)
+  content        String
+  mediaUrl       String?
+  isRead         Boolean     @default(false)
+  deliveredAt    DateTime?
+  readAt         DateTime?
+  createdAt      DateTime    @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+  sender       User         @relation("SentMessages", fields: [senderId], references: [id])
+
+  @@index([conversationId, createdAt]) // For fetching messages in a conversation
+  @@index([senderId]) // For finding messages by sender
+}
+
+model SupportConversation {
+  id              String                    @id @default(uuid())
+  conversationId  String                    @unique
+  userId          String
+  assignedAdminId String?
+  status          SupportConversationStatus @default(OPEN)
+  lastReadAt      DateTime?
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+  user         User         @relation(fields: [userId], references: [id])
+
+  @@index([userId, status])
+  @@index([status, updatedAt])
+}
+
+model Booking {
+  id              String        @id @default(uuid())
+  clientId        String
+  providerId      String
+  taskId          String?
+  bookingDate     DateTime
+  bookingTime     String
+  bookingDuration String        @default("DAY")
+  urgencyLevel    String        @default("NORMAL")
+  coinCost        Int           @default(1)
+  status          BookingStatus @default(PENDING)
+  budget          Float
+  counterBudget   Float?
+  counterNotes    String?
+  location        String
+  notes           String?
+  paymentStatus   PaymentStatus @default(PENDING)
+  requiresDiagnosis Boolean     @default(false)
+  diagnosisStatus  String?
+  materialsList    Json?
+  materialsStatus  String?
+  materialsVersion Int          @default(1)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  client     User                 @relation("ClientBookings", fields: [clientId], references: [id])
+  provider   User                 @relation("ProviderBookings", fields: [providerId], references: [id])
+  task       Job?                 @relation(fields: [taskId], references: [id])
+  reviews    Review[]
+  agreements AgreementAmendment[]
+  disputes   Dispute[]
+  serviceAgreements ServiceAgreement[]
+
+  @@index([clientId, createdAt])
+  @@index([providerId, createdAt])
+  @@index([status, bookingDate])
+  @@index([clientId, status])
+  @@index([providerId, status])
+  @@index([clientId, updatedAt])
+}
+
+model CallSession {
+  id         String    @id @default(uuid())
+  callerId   String
+  receiverId String
+  type       String    @default("AUDIO") // AUDIO or VIDEO
+  status     String    @default("PENDING") // PENDING, ONGOING, ENDED, MISSED
+  startTime  DateTime?
+  endTime    DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([callerId, createdAt])
+  @@index([receiverId, createdAt])
+}
+
+model Notification {
+  id         String    @id @default(uuid())
+  userId     String
+  title      String
+  body       String
+  data       Json?
+  isRead     Boolean   @default(false)
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+}
+
+model Review {
+  id           String   @id @default(uuid())
+  jobId        String?
+  bookingId    String?
+  reviewerId   String
+  targetUserId String
+  rating       Int
+  comment      String?
+  createdAt    DateTime @default(now())
+
+  job        Job?     @relation(fields: [jobId], references: [id])
+  booking    Booking? @relation(fields: [bookingId], references: [id])
+  reviewer   User @relation("SentReviews", fields: [reviewerId], references: [id])
+  targetUser User @relation("TargetReviews", fields: [targetUserId], references: [id])
+}
+
+model VerificationDocument {
+  id         String             @id @default(uuid())
+  providerId String
+  type       String
+  url        String
+  status     VerificationStatus @default(PENDING)
+  createdAt  DateTime           @default(now())
+
+  provider ProviderProfile @relation(fields: [providerId], references: [id])
+}
+
+model ClientFavoriteProvider {
+  id         String   @id @default(uuid())
+  clientId   String
+  providerId String
+  createdAt  DateTime @default(now())
+
+  client   User            @relation("ClientFavoriteProviders", fields: [clientId], references: [id], onDelete: Cascade)
+  provider ProviderProfile @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, providerId])
+  @@index([clientId])
+  @@index([providerId])
+}
+
+model Feedback {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String
+  message   String
+  type      String   @default("GENERAL") // GENERAL, BUG, FEATURE_REQUEST, COMPLAINT
+  status    String   @default("NEW") // NEW, READ, RESOLVED
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AdminMessage {
+  id            String    @id @default(uuid())
+  recipientId   String? // NULL means broadcast to all
+  recipientRole String? // NULL means all, or "CLIENT", "PROVIDER", "BOTH"
+  subject       String
+  content       String
+  isRead        Boolean   @default(false)
+  readAt        DateTime?
+  sentCount     Int       @default(0)
+  status        String    @default("SENT")
+  createdAt     DateTime  @default(now())
+}
+
+model Settings {
+  id                 String   @id @default("global")
+  platformName       String   @default("Fixam")
+  supportEmail       String   @default("support@fixam.cm")
+  serviceFee         Float    @default(10.0)
+  defaultLanguage    String   @default("English")
+  baseCurrency       String   @default("XAF")
+  apiEndpoint        String   @default("https://api.fixam.cm/v1")
+  adminSecret               String   @default("secret")
+  appMaintenanceEnabled     Boolean  @default(false)
+  webMaintenanceEnabled     Boolean  @default(false)
+  maintenanceMessage        String   @default("We are improving Fixam for you. Back soon!")
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+}
+
+model Report {
+  id           String   @id @default(uuid())
+  reporterId   String
+  targetUserId String
+  reason       String
+  description  String?
+  status       String   @default("PENDING") // PENDING, RESOLVED, DISMISSED
+  createdAt    DateTime @default(now())
+}
+
+model UnlockedProvider {
+  id         String   @id @default(uuid())
+  clientId   String
+  providerId String
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime?
+
+  client   User            @relation("ClientUnlocks", fields: [clientId], references: [id])
+  provider ProviderProfile @relation("ProviderUnlocks", fields: [providerId], references: [id])
+
+  @@unique([clientId, providerId])
+  @@index([clientId])
+  @@index([providerId])
+}
+
+// --- CAREERPATH MODELS ---
+
+model CareerpathEnrollment {
+  id           String    @id @default(uuid())
+  userId       String
+  categoryKey  String    
+  status       String    @default("ACTIVE") // ACTIVE, COMPLETED, DROPPED
+  progress     Float     @default(0.0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user         User      @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([categoryKey])
+}
+
+model CareerpathModuleProgress {
+  id           String    @id @default(uuid())
+  userId       String
+  categoryKey  String
+  moduleId     String
+  isCompleted  Boolean   @default(false)
+  score        Float?
+  completedAt  DateTime?
+  
+  user         User      @relation(fields: [userId], references: [id])
+
+  @@unique([userId, categoryKey, moduleId])
+}
+
+model CareerpathCertificate {
+  id             String    @id @default(uuid())
+  userId         String
+  categoryKey    String
+  issuedAt       DateTime  @default(now())
+  certificateUrl String?
+  
+  user           User      @relation(fields: [userId], references: [id])
+
+  @@unique([userId, categoryKey])
+}
+
+// --- ANALYTICS MODELS ---
+
+model PageView {
+  id            String    @id @default(uuid())
+  path          String
+  domain        String    
+  ipAddress     String?
+  userAgent     String?
+  userId        String?
+  duration      Int?      
+  cookieConsent String?
+  isLoggedIn    Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+
+  @@index([domain, path])
+  @@index([createdAt])
+  @@index([cookieConsent])
+}
+
+model SecurityLog {
+  id           String    @id @default(uuid())
+  eventType    String    
+  ipAddress    String?
+  details      Json?
+  createdAt    DateTime  @default(now())
+
+  @@index([eventType])
+  @@index([createdAt])
+}
+
+model CareerpathBookmark {
+  id          String   @id @default(uuid())
+  userId      String
+  categoryKey String
+  createdAt   DateTime @default(now())
+  
+  user        User     @relation(fields: [userId], references: [id])
+  
+  @@unique([userId, categoryKey])
+}
+
+// Persistent OTP storage replacing in-memory Map
+// Crash-safe and horizontally-scalable across multiple server instances
+model PendingVerification {
+  id         String   @id @default(uuid())
+  identifier String               // email or phone
+  otpHash    String               // bcrypt hash of the OTP
+  type       String               // 'registration' | 'login' | 'reset' | '2fa'
+  payload    Json?                // registration payload (for deferred user creation)
+  attempts   Int      @default(0) // Track failed attempts for per-record lockout
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  @@index([identifier])
+  @@index([expiresAt])
+}
+
+model AgreementAmendment {
+  id               String   @id @default(uuid())
+  bookingId        String?
+  jobId            String?
+  type             String   @default("MATERIALS") // "MATERIALS", "PRICE", "SCOPE"
+  version          Int      @default(1)
+  status           String   @default("AGREED") // "PENDING", "AGREED", "REJECTED"
+  proposedByUserId String
+  acceptedByUserId String?
+  materials        Json?
+  price            Float?
+  notes            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  booking Booking? @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  job     Job?     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId, version])
+  @@index([jobId, version])
+}
+
+model Dispute {
+  id                String         @id @default(uuid())
+  bookingId         String
+  clientId          String
+  providerId        String
+  category          String
+  description       String
+  status            String         @default("OPEN") // OPEN, AWAITING_PROVIDER_RESPONSE, AWAITING_CLIENT_RESPONSE, CORRECTION_REQUESTED, CORRECTION_COMPLETED, UNDER_REVIEW, AWAITING_MORE_EVIDENCE, RESOLVED, CLOSED
+  clientEvidence    Json?
+  providerEvidence  Json?
+  clientResponse    String?
+  providerResponse  String?
+  correctionDetails String?
+  resolution        String?
+  resolutionReason  String?
+  assignedAdminId   String?
+  resolvedAt        DateTime?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  booking       Booking        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  client        User           @relation("ClientDisputes", fields: [clientId], references: [id])
+  provider      User           @relation("ProviderDisputes", fields: [providerId], references: [id])
+  assignedAdmin User?          @relation("AdminDisputes", fields: [assignedAdminId], references: [id])
+  events        DisputeEvent[]
+
+  @@index([bookingId])
+  @@index([clientId])
+  @@index([providerId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model DisputeEvent {
+  id          String   @id @default(uuid())
+  disputeId   String
+  actorId     String
+  actorType   String   // CLIENT, PROVIDER, ADMIN, SYSTEM
+  eventType   String   // DISPUTE_CREATED, CLIENT_EVIDENCE_ADDED, PROVIDER_NOTIFIED, PROVIDER_RESPONDED, PROVIDER_EVIDENCE_ADDED, CLIENT_RESPONDED, ADMIN_ASSIGNED, ADMIN_REQUESTED_EVIDENCE, CORRECTION_REQUESTED, CORRECTION_COMPLETED, DISPUTE_ESCALATED, DISPUTE_RESOLVED, DISPUTE_CLOSED
+  description String
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  dispute Dispute @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+
+  @@index([disputeId])
+  @@index([createdAt])
+}
+
+model ServiceAgreement {
+  id                    String    @id @default(uuid())
+  publicAgreementNumber String    @unique
+  sourceType            String    @default("BOOKING") // BOOKING or TASK
+  bookingId             String?
+  taskId                String?
+  clientId              String
+  providerId            String
+  version               Int       @default(1)
+  status                String    @default("PENDING_ACCEPTANCE") // DRAFT, PENDING_ACCEPTANCE, PARTIALLY_ACCEPTED, ACTIVE, AMENDMENT_PENDING, COMPLETED, CANCELLED, SUPERSEDED
+  terms                 Json
+  clientAcceptance      Json?
+  providerAcceptance    Json?
+  pdfReference          String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  activatedAt           DateTime?
+  completedAt           DateTime?
+  supersededAt          DateTime?
+
+  booking  Booking? @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  task     Job?     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  client   User     @relation("ClientAgreements", fields: [clientId], references: [id])
+  provider User     @relation("ProviderAgreements", fields: [providerId], references: [id])
+
+  @@index([bookingId, version])
+  @@index([taskId, version])
+  @@index([clientId, status])
+  @@index([providerId, status])
+  @@index([publicAgreementNumber])
+  @@index([createdAt])
+}
+
+
