@@ -246,21 +246,100 @@ const updateFcmToken = async (req, res, next) => {
 
 const deleteAccount = async (req, res, next) => {
   try {
-    const { password } = req.body;
-    if (!password) {
-      return res.status(400).json({ success: false, message: 'Password is required to delete account' });
-    }
+    const userId = req.user.id;
+    const { password, confirmation } = req.body;
 
-    const isCurrentPasswordValid = await bcrypt.compare(password, req.user.password || '');
-    if (!isCurrentPasswordValid) {
-      return res.status(401).json({ success: false, message: 'Incorrect password' });
-    }
-
-    await prisma.user.delete({
-      where: { id: req.user.id }
+    // Check if user has a password set in DB
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, password: true }
     });
 
-    res.status(200).json({ success: true, message: 'Account deleted successfully' });
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    if (user.password) {
+      if (!password) {
+        return res.status(400).json({ success: false, message: 'Password is required to delete account' });
+      }
+      const isCurrentPasswordValid = await bcrypt.compare(password, user.password);
+      if (!isCurrentPasswordValid) {
+        return res.status(401).json({ success: false, message: 'Incorrect password' });
+      }
+    } else {
+      // User registered via phone OTP or social login without a password
+      const isConfirmed = confirmation === 'DELETE' || confirmation === 'SUPPRIMER' || confirmation === true || password === 'DELETE';
+      if (!isConfirmed) {
+        return res.status(400).json({ success: false, message: 'Confirmation required to delete account' });
+      }
+    }
+
+    // Cascade delete related records to prevent foreign-key constraints
+    await prisma.notification.deleteMany({ where: { userId } }).catch(() => {});
+    await prisma.review.deleteMany({ where: { OR: [{ reviewerId: userId }, { targetUserId: userId }] } }).catch(() => {});
+    await prisma.message.deleteMany({ where: { senderId: userId } }).catch(() => {});
+    await prisma.conversationParticipant.deleteMany({ where: { userId } }).catch(() => {});
+    await prisma.supportConversation.deleteMany({ where: { userId } }).catch(() => {});
+    await prisma.payment.deleteMany({ where: { userId } }).catch(() => {});
+    await prisma.coinPurchase.deleteMany({ where: { userId } }).catch(() => {});
+
+    // Wallets & Transactions
+    const wallets = await prisma.wallet.findMany({ where: { userId }, select: { id: true } });
+    const walletIds = wallets.map(w => w.id);
+    if (walletIds.length > 0) {
+      await prisma.transaction.deleteMany({ where: { walletId: { in: walletIds } } }).catch(() => {});
+      await prisma.wallet.deleteMany({ where: { id: { in: walletIds } } }).catch(() => {});
+    }
+
+    // Provider profile and associated records
+    const provider = await prisma.providerProfile.findUnique({ where: { userId }, select: { id: true } });
+    if (provider) {
+      await prisma.verificationDocument.deleteMany({ where: { providerId: provider.id } }).catch(() => {});
+      await prisma.providerMonthlyStats.deleteMany({ where: { providerId: provider.id } }).catch(() => {});
+      await prisma.providerReport.deleteMany({ where: { providerId: provider.id } }).catch(() => {});
+      await prisma.clientFavoriteProvider.deleteMany({ where: { providerId: provider.id } }).catch(() => {});
+      await prisma.unlockedProvider.deleteMany({ where: { providerId: provider.id } }).catch(() => {});
+      await prisma.jobAssignment.deleteMany({ where: { providerId: provider.id } }).catch(() => {});
+      await prisma.providerProfile.delete({ where: { id: provider.id } }).catch(() => {});
+    }
+
+    // Client relations
+    await prisma.clientFavoriteProvider.deleteMany({ where: { clientId: userId } }).catch(() => {});
+    await prisma.unlockedProvider.deleteMany({ where: { clientId: userId } }).catch(() => {});
+
+    // Bookings
+    await prisma.booking.deleteMany({ where: { OR: [{ clientId: userId }, { providerId: userId }] } }).catch(() => {});
+
+    // Jobs and assignments
+    const jobs = await prisma.job.findMany({ where: { clientId: userId }, select: { id: true } });
+    const jobIds = jobs.map(j => j.id);
+    if (jobIds.length > 0) {
+      await prisma.jobAssignment.deleteMany({ where: { jobId: { in: jobIds } } }).catch(() => {});
+      await prisma.job.deleteMany({ where: { id: { in: jobIds } } }).catch(() => {});
+    }
+
+    // Disputes & Service Agreements
+    await prisma.dispute.deleteMany({ where: { OR: [{ clientId: userId }, { providerId: userId }, { assignedAdminId: userId }] } }).catch(() => {});
+    await prisma.serviceAgreement.deleteMany({ where: { OR: [{ clientId: userId }, { providerId: userId }] } }).catch(() => {});
+
+    // Careerpath
+    await prisma.careerpathBookmark.deleteMany({ where: { userId } }).catch(() => {});
+    await prisma.careerpathCertificate.deleteMany({ where: { userId } }).catch(() => {});
+    await prisma.careerpathModuleProgress.deleteMany({ where: { userId } }).catch(() => {});
+    await prisma.careerpathEnrollment.deleteMany({ where: { userId } }).catch(() => {});
+
+    // Blocked users
+    await prisma.$executeRawUnsafe(`DELETE FROM "_BlockedUsers" WHERE "A" = $1 OR "B" = $1`, userId).catch(() => {});
+
+    // Delete User record
+    await prisma.user.delete({
+      where: { id: userId }
+    });
+
+    clearUserCache(userId);
+
+    res.status(200).json({ success: true, message: 'Account and associated data deleted permanently' });
   } catch (error) {
     next(error);
   }
