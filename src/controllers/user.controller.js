@@ -249,42 +249,67 @@ const deleteAccount = async (req, res, next) => {
     const userId = req.user.id;
     const { password, confirmation } = req.body;
 
-    // Check if user has a password set in DB
+    // Check if user exists
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, password: true }
+      select: { id: true, password: true, email: true, phone: true }
     });
 
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    if (user.password) {
-      if (!password) {
-        return res.status(400).json({ success: false, message: 'Password is required to delete account' });
+    const trimmedConfirmation = typeof confirmation === 'string' ? confirmation.trim().toUpperCase() : '';
+    const trimmedPassword = typeof password === 'string' ? password.trim() : '';
+
+    const isDeleteWordConfirmed = 
+      trimmedConfirmation === 'DELETE' || 
+      trimmedConfirmation === 'SUPPRIMER' || 
+      trimmedPassword.toUpperCase() === 'DELETE' || 
+      trimmedPassword.toUpperCase() === 'SUPPRIMER' ||
+      confirmation === true;
+
+    let isAuthorized = false;
+
+    if (isDeleteWordConfirmed) {
+      // Confirmed via typing the confirmation keyword (DELETE / SUPPRIMER)
+      isAuthorized = true;
+    } else if (user.password && trimmedPassword) {
+      // Confirmed via entering account password
+      isAuthorized = await bcrypt.compare(trimmedPassword, user.password);
+      if (!isAuthorized) {
+        return res.status(400).json({ success: false, message: 'Incorrect password. Please enter your valid password or type DELETE to confirm.' });
       }
-      const isCurrentPasswordValid = await bcrypt.compare(password, user.password);
-      if (!isCurrentPasswordValid) {
-        return res.status(401).json({ success: false, message: 'Incorrect password' });
-      }
-    } else {
-      // User registered via phone OTP or social login without a password
-      const isConfirmed = confirmation === 'DELETE' || confirmation === 'SUPPRIMER' || confirmation === true || password === 'DELETE';
-      if (!isConfirmed) {
-        return res.status(400).json({ success: false, message: 'Confirmation required to delete account' });
-      }
+    } else if (!user.password && isDeleteWordConfirmed) {
+      isAuthorized = true;
     }
 
-    // Cascade delete related records to prevent foreign-key constraints
+    if (!isAuthorized) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Please enter your password or type DELETE to confirm account deletion.' 
+      });
+    }
+
+    console.log(`[Account Deletion] Initiating complete cascade purge for user ${userId} (${user.email || user.phone})`);
+
+    // Cascade delete related records to prevent foreign-key constraint violations
+    // 1. Notifications
     await prisma.notification.deleteMany({ where: { userId } }).catch(() => {});
+
+    // 2. Reviews (sent or received)
     await prisma.review.deleteMany({ where: { OR: [{ reviewerId: userId }, { targetUserId: userId }] } }).catch(() => {});
+
+    // 3. Messages & Conversations
     await prisma.message.deleteMany({ where: { senderId: userId } }).catch(() => {});
     await prisma.conversationParticipant.deleteMany({ where: { userId } }).catch(() => {});
     await prisma.supportConversation.deleteMany({ where: { userId } }).catch(() => {});
+
+    // 4. Payments & Coin Purchases
     await prisma.payment.deleteMany({ where: { userId } }).catch(() => {});
     await prisma.coinPurchase.deleteMany({ where: { userId } }).catch(() => {});
 
-    // Wallets & Transactions
+    // 5. Wallets & Transactions
     const wallets = await prisma.wallet.findMany({ where: { userId }, select: { id: true } });
     const walletIds = wallets.map(w => w.id);
     if (walletIds.length > 0) {
@@ -292,7 +317,7 @@ const deleteAccount = async (req, res, next) => {
       await prisma.wallet.deleteMany({ where: { id: { in: walletIds } } }).catch(() => {});
     }
 
-    // Provider profile and associated records
+    // 6. Provider profile and all associated records
     const provider = await prisma.providerProfile.findUnique({ where: { userId }, select: { id: true } });
     if (provider) {
       await prisma.verificationDocument.deleteMany({ where: { providerId: provider.id } }).catch(() => {});
@@ -304,43 +329,58 @@ const deleteAccount = async (req, res, next) => {
       await prisma.providerProfile.delete({ where: { id: provider.id } }).catch(() => {});
     }
 
-    // Client relations
+    // 7. Client relations
     await prisma.clientFavoriteProvider.deleteMany({ where: { clientId: userId } }).catch(() => {});
     await prisma.unlockedProvider.deleteMany({ where: { clientId: userId } }).catch(() => {});
 
-    // Bookings
+    // 8. Bookings
     await prisma.booking.deleteMany({ where: { OR: [{ clientId: userId }, { providerId: userId }] } }).catch(() => {});
 
-    // Jobs and assignments
+    // 9. Jobs, JobAssignments, and Job-related agreements
     const jobs = await prisma.job.findMany({ where: { clientId: userId }, select: { id: true } });
     const jobIds = jobs.map(j => j.id);
     if (jobIds.length > 0) {
+      await prisma.agreementAmendment.deleteMany({ where: { jobId: { in: jobIds } } }).catch(() => {});
+      await prisma.serviceAgreement.deleteMany({ where: { jobId: { in: jobIds } } }).catch(() => {});
       await prisma.jobAssignment.deleteMany({ where: { jobId: { in: jobIds } } }).catch(() => {});
+      await prisma.booking.deleteMany({ where: { jobId: { in: jobIds } } }).catch(() => {});
+      await prisma.review.deleteMany({ where: { jobId: { in: jobIds } } }).catch(() => {});
       await prisma.job.deleteMany({ where: { id: { in: jobIds } } }).catch(() => {});
     }
 
-    // Disputes & Service Agreements
+    // 10. Disputes & Service Agreements
     await prisma.dispute.deleteMany({ where: { OR: [{ clientId: userId }, { providerId: userId }, { assignedAdminId: userId }] } }).catch(() => {});
     await prisma.serviceAgreement.deleteMany({ where: { OR: [{ clientId: userId }, { providerId: userId }] } }).catch(() => {});
+    await prisma.agreementAmendment.deleteMany({ where: { OR: [{ proposedByUserId: userId }, { acceptedByUserId: userId }] } }).catch(() => {});
 
-    // Careerpath
+    // 11. Feedbacks, Reports, PageViews
+    await prisma.feedback.deleteMany({ where: { userId } }).catch(() => {});
+    await prisma.report.deleteMany({ where: { OR: [{ reporterId: userId }, { targetUserId: userId }] } }).catch(() => {});
+    await prisma.pageView.deleteMany({ where: { userId } }).catch(() => {});
+
+    // 12. Careerpath
     await prisma.careerpathBookmark.deleteMany({ where: { userId } }).catch(() => {});
     await prisma.careerpathCertificate.deleteMany({ where: { userId } }).catch(() => {});
     await prisma.careerpathModuleProgress.deleteMany({ where: { userId } }).catch(() => {});
     await prisma.careerpathEnrollment.deleteMany({ where: { userId } }).catch(() => {});
 
-    // Blocked users
+    // 13. Blocked users
     await prisma.$executeRawUnsafe(`DELETE FROM "_BlockedUsers" WHERE "A" = $1 OR "B" = $1`, userId).catch(() => {});
 
-    // Delete User record
+    // 14. Referrals clean-up
+    await prisma.user.updateMany({ where: { referredBy: userId }, data: { referredBy: null } }).catch(() => {});
+
+    // 15. Finally Delete User record
     await prisma.user.delete({
       where: { id: userId }
     });
 
     clearUserCache(userId);
 
-    res.status(200).json({ success: true, message: 'Account and associated data deleted permanently' });
+    console.log(`[Account Deletion] User ${userId} successfully purged.`);
+    return res.status(200).json({ success: true, message: 'Account and associated data deleted permanently' });
   } catch (error) {
+    console.error('[Account Deletion Error]:', error);
     next(error);
   }
 };
