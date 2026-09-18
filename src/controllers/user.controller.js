@@ -247,7 +247,7 @@ const updateFcmToken = async (req, res, next) => {
 const deleteAccount = async (req, res, next) => {
   try {
     const userId = req.user.id;
-    const { password, confirmation } = req.body;
+    const { password } = req.body;
 
     // Check if user exists
     const user = await prisma.user.findUnique({
@@ -259,39 +259,31 @@ const deleteAccount = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    const trimmedConfirmation = typeof confirmation === 'string' ? confirmation.trim().toUpperCase() : '';
     const trimmedPassword = typeof password === 'string' ? password.trim() : '';
 
-    const isDeleteWordConfirmed = 
-      trimmedConfirmation === 'DELETE' || 
-      trimmedConfirmation === 'SUPPRIMER' || 
-      trimmedPassword.toUpperCase() === 'DELETE' || 
-      trimmedPassword.toUpperCase() === 'SUPPRIMER' ||
-      confirmation === true;
-
-    let isAuthorized = false;
-
-    if (isDeleteWordConfirmed) {
-      // Confirmed via typing the confirmation keyword (DELETE / SUPPRIMER)
-      isAuthorized = true;
-    } else if (user.password && trimmedPassword) {
-      // Confirmed via entering account password
-      isAuthorized = await bcrypt.compare(trimmedPassword, user.password);
-      if (!isAuthorized) {
-        return res.status(400).json({ success: false, message: 'Incorrect password. Please enter your valid password or type DELETE to confirm.' });
-      }
-    } else if (!user.password && isDeleteWordConfirmed) {
-      isAuthorized = true;
-    }
-
-    if (!isAuthorized) {
+    if (!trimmedPassword) {
       return res.status(400).json({ 
         success: false, 
-        message: 'Please enter your password or type DELETE to confirm account deletion.' 
+        message: 'Password is required to delete your account.' 
       });
     }
 
-    console.log(`[Account Deletion] Initiating complete cascade purge for user ${userId} (${user.email || user.phone})`);
+    if (!user.password) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'No password found for this account.' 
+      });
+    }
+
+    const isCurrentPasswordValid = await bcrypt.compare(trimmedPassword, user.password);
+    if (!isCurrentPasswordValid) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Incorrect password. Please enter your correct password and try again.' 
+      });
+    }
+
+    console.log(`[Account Deletion] Password verified. Initiating complete cascade purge for user ${userId} (${user.email || user.phone})`);
 
     // Cascade delete related records to prevent foreign-key constraint violations
     // 1. Notifications
