@@ -35,9 +35,9 @@ const createBooking = async (req, res, next) => {
       where: {
         OR: [
           { id: providerId },
-          { providerProfile: { id: providerId } }
-        ],
-        role: 'PROVIDER'
+          { providerProfile: { id: providerId } },
+          { providerProfile: { userId: providerId } }
+        ]
       },
       include: { providerProfile: true },
     });
