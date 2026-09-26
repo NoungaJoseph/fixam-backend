@@ -89,9 +89,38 @@ const authorize = (...roles) => {
   };
 };
 
+const optionalAuth = async (req, res, next) => {
+  let token;
+  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+    token = req.headers.authorization.split(' ')[1];
+  } else if (req.cookies) {
+    token = req.cookies.jwt || req.cookies.token;
+  } else if (req.query?.token) {
+    token = req.query.token;
+  }
+
+  if (token) {
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const userId = decoded.id || decoded.userId;
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: { wallet: true, providerProfile: true }
+      });
+      if (user && !user.isBlocked) {
+        req.user = user;
+      }
+    } catch (_) {
+      // Ignore token verification errors for optional authentication
+    }
+  }
+  next();
+};
+
 const clearUserCache = (userId) => {
   userCache.delete(userId);
   debugLog('Cleared session cache for user:', userId);
 };
 
-module.exports = { protect, authorize, clearUserCache };
+module.exports = { protect, optionalAuth, authorize, clearUserCache };
+

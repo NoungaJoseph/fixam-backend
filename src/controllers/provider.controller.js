@@ -239,8 +239,13 @@ const getNearbyProviders = async (req, res, next) => {
 
 const getProviderById = async (req, res, next) => {
   try {
-    const provider = await prisma.providerProfile.findUnique({
-      where: { id: req.params.providerId },
+    const provider = await prisma.providerProfile.findFirst({
+      where: {
+        OR: [
+          { id: req.params.providerId },
+          { userId: req.params.providerId }
+        ]
+      },
       include: {
         user: {
           select: {
