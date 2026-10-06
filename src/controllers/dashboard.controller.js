@@ -90,13 +90,21 @@ const getDashboardData = async (req, res, next) => {
           status: 'PENDING',
           approvalStatus: 'APPROVED',
           OR: [
-            { isRemote: true },
+            { expiryDate: null },
+            { expiryDate: { gt: new Date() } }
+          ],
+          AND: [
             {
-              isRemote: false,
-              country: userCountry
-            },
-            { isRemote: false, country: null },
-            { isRemote: false, country: '' }
+              OR: [
+                { isRemote: true },
+                {
+                  isRemote: false,
+                  country: userCountry
+                },
+                { isRemote: false, country: null },
+                { isRemote: false, country: '' }
+              ]
+            }
           ]
         },
         include: {

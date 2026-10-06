@@ -37,6 +37,18 @@ router.post('/disputes/:id/resolve', disputeController.adminResolveDispute);
 router.get('/agreements', agreementController.getAdminAgreements);
 router.get('/agreements/:id', agreementController.getAgreementById);
 
+// External Job Listings
+const externalJobController = require('../controllers/externalJob.controller');
+router.get('/external-jobs', externalJobController.getAdminExternalJobs);
+router.post('/external-jobs', externalJobController.createExternalJob);
+router.get('/external-jobs/settings', externalJobController.getExternalJobSettings);
+router.put('/external-jobs/settings', externalJobController.updateExternalJobSettings);
+router.get('/external-jobs/applications', externalJobController.getApplicationsLog);
+router.get('/external-jobs/:id', externalJobController.getAdminExternalJobById);
+router.put('/external-jobs/:id', externalJobController.updateExternalJob);
+router.delete('/external-jobs/:id', externalJobController.deleteExternalJob);
+router.post('/external-jobs/:id/reverify', externalJobController.reverifyExternalJob);
+
 router.post('/verify-provider', adminController.verifyProvider);
 router.post('/approve-transaction', adminController.approveTransaction);
 router.post('/messages', adminController.sendAdminMessage);
@@ -51,3 +63,4 @@ router.put('/settings', adminController.updateSettings);
 router.post('/wallet/wire-coins', adminController.wireCoins);
 
 module.exports = router;
+

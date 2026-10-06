@@ -13,6 +13,7 @@ const createJobSchema = z.object({
     budgetMax: z.number().positive().optional().nullable(),
     providersNeeded: z.number().int().positive().optional(),
     scheduledTime: z.string().optional().nullable(),
+    expiryDate: z.string().optional().nullable(),
     isRemote: z.boolean().optional().nullable(),
     importantDetails: z.string().optional().nullable(),
     whatNeedsDone: z.string().optional().nullable(),

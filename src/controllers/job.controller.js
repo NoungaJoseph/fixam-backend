@@ -169,6 +169,7 @@ const createJob = async (req, res, next) => {
           status: 'PENDING',
           approvalStatus: 'PENDING_APPROVAL',  // New jobs require admin approval
           scheduledTime: validatedData.scheduledTime ? new Date(validatedData.scheduledTime) : null,
+          expiryDate: validatedData.expiryDate ? new Date(validatedData.expiryDate) : null,
           isRemote,
           country: clientUser.country || 'Cameroon',
           requiresDiagnosis: isDiagnosisReq,
@@ -382,11 +383,21 @@ const getAvailableJobsForProvider = async (req, res, next) => {
     const { page = 1, limit = 10, search = '', location = '', sortBy = 'newest', budgetMin, budgetMax, jobType = '', tab = '', filter = '', appliedOnly = '' } = req.query;
     const skip = (page - 1) * limit;
 
+    const now = new Date();
+
     // Build where clause for filtering
     const whereClause = {
       clientId: { not: req.user.id }, // Exclude own tasks
       status: 'PENDING',
       approvalStatus: 'APPROVED',  // Only show approved jobs
+      AND: [
+        {
+          OR: [
+            { expiryDate: null },
+            { expiryDate: { gt: now } }
+          ]
+        }
+      ]
     };
 
     if (tab === 'applied' || filter === 'applied' || appliedOnly === 'true') {
@@ -1137,7 +1148,7 @@ const updateJob = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Completed or cancelled jobs cannot be edited' });
     }
 
-    const allowed = ['category', 'title', 'description', 'location', 'latitude', 'longitude', 'budget', 'budgetMin', 'budgetMax', 'scheduledTime'];
+    const allowed = ['category', 'title', 'description', 'location', 'latitude', 'longitude', 'budget', 'budgetMin', 'budgetMax', 'scheduledTime', 'expiryDate'];
     const data = {};
 
     allowed.forEach((field) => {
@@ -1152,6 +1163,7 @@ const updateJob = async (req, res, next) => {
       data.coinCost = calculateJobCoinCost(budgetRange.budgetMax);
     }
     if (data.scheduledTime !== undefined) data.scheduledTime = data.scheduledTime ? new Date(data.scheduledTime) : null;
+    if (data.expiryDate !== undefined) data.expiryDate = data.expiryDate ? new Date(data.expiryDate) : null;
 
     const job = await prisma.job.update({
       where: { id: jobId },

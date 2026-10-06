@@ -64,6 +64,58 @@ async function updatePendingTasksToInProgress() {
         }
     }
 
+    // Auto-expire regular jobs where expiryDate has passed
+    const expiredJobs = await prisma.job.findMany({
+      where: {
+        status: 'PENDING',
+        expiryDate: { lte: now }
+      },
+      select: { id: true, title: true }
+    });
+
+    if (expiredJobs.length > 0) {
+      console.log(`[JobUpdater] Expiring ${expiredJobs.length} passed-deadline regular jobs`);
+      await prisma.job.updateMany({
+        where: {
+          status: 'PENDING',
+          expiryDate: { lte: now }
+        },
+        data: { status: 'CANCELLED' }
+      });
+    }
+
+    // Auto-expire External Jobs
+    try {
+      const expiredExtResult = await prisma.externalJob.updateMany({
+        where: {
+          status: { not: 'EXPIRED' },
+          expiryDate: { lte: now }
+        },
+        data: { status: 'EXPIRED' }
+      });
+      if (expiredExtResult.count > 0) {
+        console.log(`[JobUpdater] Marked ${expiredExtResult.count} external jobs as EXPIRED`);
+      }
+
+      // Flag External Jobs that need re-verification
+      const needsRecheckResult = await prisma.externalJob.updateMany({
+        where: {
+          status: 'ACTIVE',
+          reverifyAt: { lte: now },
+          expiryDate: { gt: now }
+        },
+        data: { status: 'NEEDS_RECHECK' }
+      });
+      if (needsRecheckResult.count > 0) {
+        console.log(`[JobUpdater] Flagged ${needsRecheckResult.count} external jobs as NEEDS_RECHECK`);
+      }
+    } catch (extJobErr) {
+      // ExternalJob table might not be migrated yet in some dev environments
+      if (!extJobErr.message?.includes('does not exist')) {
+        console.warn('[JobUpdater] External jobs update notice:', extJobErr.message);
+      }
+    }
+
   } catch (error) {
     console.error('[JobUpdater] Error updating task statuses:', error.message);
   }
@@ -76,3 +128,4 @@ function startStatusUpdater() {
 }
 
 module.exports = { startStatusUpdater };
+

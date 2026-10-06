@@ -135,7 +135,23 @@ const register = async (req, res, next) => {
     if (phone) phone = normalizePhoneWithCountry(phone, selectedCountry);
     const validation = registerSchema.safeParse({ fullName, email, phone, password, role });
     if (!validation.success) {
-      return res.status(400).json({ success: false, message: 'Full name, valid email, valid phone number and password are required.' });
+      const isFr = (language || '').toLowerCase().startsWith('fr');
+      const passIssue = validation.error.issues.find(i => i.path.includes('password'));
+      let msg = isFr ? 'Le nom complet, un email valide, un numéro de téléphone valide et un mot de passe sont requis.' : 'Full name, valid email, valid phone number and password are required.';
+      if (passIssue) {
+        if (passIssue.code === 'too_small') {
+          msg = isFr ? 'Le mot de passe doit comporter au moins 6 caractères.' : 'Password must be at least 6 characters long.';
+        } else if (passIssue.message?.includes('uppercase') || passIssue.message?.includes('regex')) {
+          msg = isFr ? 'Le mot de passe doit contenir au moins une lettre majuscule (A-Z).' : 'Password must contain at least one uppercase letter (A-Z).';
+        } else if (passIssue.message?.includes('number')) {
+          msg = isFr ? 'Le mot de passe doit contenir au moins un chiffre (0-9).' : 'Password must contain at least one number (0-9).';
+        } else {
+          msg = passIssue.message;
+        }
+      } else if (validation.error.issues?.[0]?.message) {
+        msg = validation.error.issues[0].message;
+      }
+      return res.status(400).json({ success: false, message: msg });
     }
     
     const existing = await prisma.user.findFirst({

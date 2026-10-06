@@ -166,6 +166,10 @@ model User {
   clientAgreements        ServiceAgreement[]        @relation("ClientAgreements")
   providerAgreements      ServiceAgreement[]        @relation("ProviderAgreements")
 
+  cvUrl                   String?
+  cvName                  String?
+  externalApplications    ExternalJobApplication[]
+
   @@index([role])
 }
 
@@ -278,6 +282,7 @@ model Job {
   materialsList        Json?
   materialsStatus      String?
   materialsVersion     Int               @default(1)
+  expiryDate           DateTime?
   createdAt            DateTime          @default(now())
   updatedAt            DateTime          @updatedAt
 
@@ -617,6 +622,7 @@ model Settings {
   appMaintenanceEnabled     Boolean  @default(false)
   webMaintenanceEnabled     Boolean  @default(false)
   maintenanceMessage        String   @default("We are improving Fixam for you. Back soon!")
+  externalJobRecheckDays    Int      @default(14)
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
 }
@@ -848,6 +854,62 @@ model ServiceAgreement {
   @@index([providerId, status])
   @@index([publicAgreementNumber])
   @@index([createdAt])
+}
+
+model ExternalJob {
+  id                String                   @id @default(uuid())
+  title             String
+  companyName       String
+  description       String
+  requirements      String?
+  destinationEmail  String
+  source            String?
+  verifiedBy        String?
+  verifiedAt        DateTime                 @default(now())
+  expiryDate        DateTime
+  reverifyAt        DateTime?
+  status            String                   @default("ACTIVE") // ACTIVE, NEEDS_RECHECK, EXPIRED, ARCHIVED
+  category          String?                  @default("General Service")
+  location          String?
+  isRemote          Boolean                  @default(false)
+  country           String?                  @default("Cameroon")
+  salary            String?
+  currency          String?                  @default("XAF")
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+
+  applications      ExternalJobApplication[]
+
+  @@index([status])
+  @@index([expiryDate])
+  @@index([verifiedAt])
+  @@index([createdAt])
+}
+
+model ExternalJobApplication {
+  id                String       @id @default(uuid())
+  externalJobId     String
+  userId            String
+  applicantName     String
+  applicantEmail    String
+  applicantPhone    String?
+  destinationEmail  String
+  coverLetter       String?
+  cvUrl             String?
+  cvName            String?
+  status            String       @default("SENT") // SENT, DELIVERED, FAILED, BOUNCED
+  resendEmailId     String?
+  errorMessage      String?
+  sentAt            DateTime     @default(now())
+
+  job               ExternalJob  @relation(fields: [externalJobId], references: [id], onDelete: Cascade)
+  user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([externalJobId])
+  @@index([userId])
+  @@index([destinationEmail])
+  @@index([sentAt])
+  @@index([status])
 }
 
 
