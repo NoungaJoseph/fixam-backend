@@ -58,15 +58,22 @@ const createExternalJob = async (req, res, next) => {
       });
     }
 
+    const cleanDestinationEmail = destinationEmail.trim().toLowerCase();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(destinationEmail.trim())) {
+    if (!emailRegex.test(cleanDestinationEmail)) {
       return res.status(400).json({
         success: false,
         message: 'Please provide a valid destination application email address.'
       });
     }
 
-    const parsedExpiry = new Date(expiryDate);
+    let parsedExpiry;
+    if (typeof expiryDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(expiryDate.trim())) {
+      parsedExpiry = new Date(`${expiryDate.trim()}T23:59:59.999Z`);
+    } else {
+      parsedExpiry = new Date(expiryDate);
+    }
+
     if (isNaN(parsedExpiry.getTime())) {
       return res.status(400).json({
         success: false,
@@ -78,6 +85,7 @@ const createExternalJob = async (req, res, next) => {
     const now = new Date();
     const reverifyAt = new Date(now.getTime() + recheckDays * 24 * 60 * 60 * 1000);
     const verifierName = req.user?.fullName || req.user?.phone || req.user?.email || 'Admin Staff';
+    const isExpired = parsedExpiry <= now;
 
     const job = await prisma.externalJob.create({
       data: {
@@ -85,13 +93,13 @@ const createExternalJob = async (req, res, next) => {
         companyName: companyName.trim(),
         description: description.trim(),
         requirements: requirements ? requirements.trim() : null,
-        destinationEmail: destinationEmail.trim().toLowerCase(),
+        destinationEmail: cleanDestinationEmail,
         source: source ? source.trim() : null,
         verifiedBy: verifierName,
         verifiedAt: now,
         expiryDate: parsedExpiry,
         reverifyAt,
-        status: parsedExpiry <= now ? 'EXPIRED' : 'ACTIVE',
+        status: isExpired ? 'EXPIRED' : 'ACTIVE',
         category: category?.trim() || 'General Service',
         location: location ? location.trim() : (isRemote ? 'Remote' : 'Cameroon'),
         isRemote: Boolean(isRemote),
@@ -324,12 +332,18 @@ const updateExternalJob = async (req, res, next) => {
     }
     if (source !== undefined) updateData.source = source ? source.trim() : null;
     if (expiryDate) {
-      const parsed = new Date(expiryDate);
+      let parsed;
+      if (typeof expiryDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(expiryDate.trim())) {
+        parsed = new Date(`${expiryDate.trim()}T23:59:59.999Z`);
+      } else {
+        parsed = new Date(expiryDate);
+      }
+
       if (isNaN(parsed.getTime())) {
         return res.status(400).json({ success: false, message: 'Invalid expiry date.' });
       }
       updateData.expiryDate = parsed;
-      if (parsed > new Date() && existing.status === 'EXPIRED') {
+      if (parsed > new Date()) {
         updateData.status = 'ACTIVE';
       }
     }
@@ -534,7 +548,7 @@ const getActiveExternalJobs = async (req, res, next) => {
     const now = new Date();
 
     const where = {
-      status: 'ACTIVE',
+      status: { in: ['ACTIVE', 'NEEDS_RECHECK'] },
       expiryDate: { gt: now }
     };
 
@@ -646,7 +660,7 @@ const getExternalJobById = async (req, res, next) => {
       }
     });
 
-    if (!job || job.status !== 'ACTIVE' || job.expiryDate <= now) {
+    if (!job || job.status === 'EXPIRED' || job.status === 'ARCHIVED' || job.expiryDate <= now) {
       return res.status(404).json({
         success: false,
         message: 'This job opportunity is expired or no longer available.'
@@ -705,15 +719,23 @@ const applyForExternalJob = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'User profile not found.' });
     }
 
-    const applicantName = user.fullName || 'Candidate';
-    const applicantEmail = user.email || req.body.applicantEmail;
-    const applicantPhone = user.phone || req.body.applicantPhone || '';
+    const applicantName = (req.body.applicantName && req.body.applicantName.trim()) || user.fullName || 'Candidate';
+    const applicantEmail = (req.body.applicantEmail && req.body.applicantEmail.trim().toLowerCase()) || user.email;
+    const applicantPhone = (req.body.applicantPhone && req.body.applicantPhone.trim()) || user.phone || '';
 
     if (!applicantEmail) {
       return res.status(400).json({
         success: false,
-        message: 'Your account does not have an email address configured. Please add an email address in profile settings to apply.'
+        message: 'Please provide your email address so recruiters can reply directly to your application.'
       });
+    }
+
+    // If user account had no email yet, save it
+    if (!user.email && applicantEmail) {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { email: applicantEmail }
+      }).catch(() => {});
     }
 
     // 3. Handle CV (uploaded photo/PDF file, Google Sheets/Drive link, or saved profile CV)

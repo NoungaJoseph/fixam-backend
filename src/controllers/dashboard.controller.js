@@ -390,6 +390,48 @@ const getDashboardData = async (req, res, next) => {
       };
     });
 
+    if (role === 'PROVIDER') {
+      try {
+        const activeExternalJobs = await prisma.externalJob.findMany({
+          where: {
+            status: { in: ['ACTIVE', 'NEEDS_RECHECK'] },
+            expiryDate: { gt: new Date() }
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 20
+        });
+
+        if (activeExternalJobs && activeExternalJobs.length > 0) {
+          const formattedExt = activeExternalJobs.map(ext => ({
+            id: ext.id,
+            title: ext.title,
+            companyName: ext.companyName,
+            description: ext.description,
+            requirements: ext.requirements,
+            category: ext.category || 'General Service',
+            serviceCategory: ext.category || 'General Service',
+            location: ext.location || (ext.isRemote ? 'Remote' : 'Cameroon'),
+            isRemote: ext.isRemote,
+            country: ext.country || 'Cameroon',
+            budget: ext.salary,
+            salary: ext.salary,
+            currency: ext.currency || 'XAF',
+            createdAt: ext.createdAt,
+            expiryDate: ext.expiryDate,
+            isExternal: true,
+            status: 'PENDING',
+            approvalStatus: 'APPROVED',
+            type: 'EXTERNAL_OPPORTUNITY',
+            hasApplied: false,
+            assignments: []
+          }));
+          finalJobs = [...formattedExt, ...finalJobs];
+        }
+      } catch (extErr) {
+        // ExternalJob table might not be migrated yet or connection issue
+      }
+    }
+
     res.status(200).json({
       success: true,
       data: {
