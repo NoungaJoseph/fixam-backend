@@ -283,6 +283,10 @@ model Job {
   materialsStatus      String?
   materialsVersion     Int               @default(1)
   expiryDate           DateTime?
+  isPinned             Boolean           @default(false)
+  pinnedExpiresAt      DateTime?
+  forwardToEmail       Boolean           @default(false)
+  hiringEmail          String?
   createdAt            DateTime          @default(now())
   updatedAt            DateTime          @updatedAt
 
@@ -316,6 +320,9 @@ model JobAssignment {
   proposedBudget Float?
   proposalMedia Json?
   materialsList Json?
+  cvUrl         String?
+  cvName        String?
+  cvViewedAt    DateTime?
 
   job      Job             @relation(fields: [jobId], references: [id])
   provider ProviderProfile @relation(fields: [providerId], references: [id])
@@ -897,10 +904,15 @@ model ExternalJobApplication {
   coverLetter       String?
   cvUrl             String?
   cvName            String?
-  status            String       @default("SENT") // SENT, DELIVERED, FAILED, BOUNCED
+  status            String       @default("SENT") // SENT, DELIVERED, FAILED, BOUNCED, VIEWED
   resendEmailId     String?
   errorMessage      String?
   sentAt            DateTime     @default(now())
+  isPriority        Boolean      @default(false)
+  coinsSpent        Int          @default(0)
+  cvViewedAt        DateTime?
+  cvViewCount       Int          @default(0)
+  viewToken         String?
 
   job               ExternalJob  @relation(fields: [externalJobId], references: [id], onDelete: Cascade)
   user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)

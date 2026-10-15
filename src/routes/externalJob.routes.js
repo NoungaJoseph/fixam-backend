@@ -30,6 +30,10 @@ const upload = multer({
 // ==========================================
 // Public / authenticated feed of external jobs
 router.get('/', externalJobController.getActiveExternalJobs);
+
+// Track CV view by external employer (Dual notification to candidate + redirect)
+router.get('/track/cv-view', externalJobController.trackCvView);
+
 router.get('/:id', externalJobController.getExternalJobById);
 
 // Apply via Fixam (One-Tap Apply)

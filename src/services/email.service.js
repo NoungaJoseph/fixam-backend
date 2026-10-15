@@ -230,6 +230,7 @@ const sendExternalJobApplication = async ({
   companyName,
   coverLetter,
   cvLink,
+  isPriority = false,
   attachments = []
 }) => {
   try {
@@ -241,12 +242,13 @@ const sendExternalJobApplication = async ({
     const cleanName = (applicantName || 'Applicant').replace(/[<>"']/g, '').trim();
     const fromAddress = `"${cleanName} (via Fixam)" <${senderEmail}>`;
 
-    const subject = `Application for ${jobTitle} - ${cleanName}`;
+    const subjectPrefix = isPriority ? '[RECOMMENDED TOP CANDIDATE] ' : '';
+    const subject = `${subjectPrefix}Application for ${jobTitle} - ${cleanName}`;
     const safeCoverLetter = coverLetter && coverLetter.trim()
       ? coverLetter.trim()
       : 'Please find my application and CV attached for your review.';
 
-    const textBody = `Dear Hiring Team at ${companyName || 'the Organization'},
+    const textBody = `${isPriority ? 'PRIORITY CANDIDATE APPLICATION (FIXAM RECOMMENDED)\n\n' : ''}Dear Hiring Team at ${companyName || 'the Organization'},
 
 I am writing to submit my application for the position of ${jobTitle}.
 
@@ -256,7 +258,7 @@ Applicant Contact Details:
 - Name: ${cleanName}
 - Email: ${applicantEmail}
 ${applicantPhone ? `- Phone: ${applicantPhone}` : ''}
-${cvLink ? `- CV / Document: ${cvLink}` : ''}
+${cvLink ? `- View & Download CV: ${cvLink}` : ''}
 ${attachments && attachments.length > 0 ? `- Attachment: ${attachments.map(a => a.filename).join(', ')}` : ''}
 
 Thank you for your time and consideration. You can reply directly to this email to reach me.
@@ -266,8 +268,30 @@ ${cleanName}
 
 (Submitted via Fixam Platform. Hitting reply emails the applicant directly at ${applicantEmail})`;
 
+    const priorityBannerHtml = isPriority ? `
+        <div style="background-color: #fefce8; border: 1.5px solid #eab308; border-radius: 8px; padding: 14px 18px; margin-bottom: 24px;">
+          <p style="margin: 0; color: #854d0e; font-weight: 750; font-size: 13px; letter-spacing: 0.5px; text-transform: uppercase;">
+            Fixam Recommended &bull; Priority Candidate
+          </p>
+          <p style="margin: 4px 0 0 0; color: #a16207; font-size: 13px; line-height: 1.5;">
+            This candidate boosted their application with Fixam Coins. Their verified qualifications and credentials are ready for priority consideration.
+          </p>
+        </div>
+    ` : '';
+
+    const cvActionHtml = cvLink ? `
+        <div style="margin: 22px 0; padding: 16px 20px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+          <p style="margin: 0 0 8px 0; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #475569;">Candidate Curriculum Vitae (CV)</p>
+          <a href="${cvLink}" target="_blank" rel="noopener noreferrer" style="display: inline-block; background-color: #2563eb; color: #ffffff; padding: 10px 22px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 14px; margin-top: 4px;">
+            Open Candidate CV &rarr;
+          </a>
+          <p style="margin: 8px 0 0 0; font-size: 12px; color: #64748b;">Click to view the candidate's complete resume.</p>
+        </div>
+    ` : '';
+
     const htmlBody = `
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 620px; color: #111827; line-height: 1.6; font-size: 15px;">
+        ${priorityBannerHtml}
         <h2 style="color: #0f172a; font-size: 20px; font-weight: 700; margin: 0 0 4px 0;">Job Application: ${jobTitle}</h2>
         <p style="color: #64748b; font-size: 14px; margin: 0 0 24px 0;">Submitted to <strong>${companyName}</strong> via Fixam</p>
 
@@ -279,12 +303,14 @@ ${cleanName}
 ${safeCoverLetter}
         </div>
 
+        ${cvActionHtml}
+
         <div style="margin: 28px 0 16px 0; padding-top: 16px; border-top: 1px solid #e5e7eb;">
           <p style="font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #6b7280; margin: 0 0 10px 0;">Applicant Contact Details</p>
           <p style="margin: 4px 0;"><strong>Name:</strong> ${cleanName}</p>
           <p style="margin: 4px 0;"><strong>Email:</strong> <a href="mailto:${applicantEmail}" style="color: #2563eb; text-decoration: underline;">${applicantEmail}</a></p>
           ${applicantPhone ? `<p style="margin: 4px 0;"><strong>Phone:</strong> <a href="tel:${applicantPhone}" style="color: #2563eb; text-decoration: underline;">${applicantPhone}</a></p>` : ''}
-          ${cvLink ? `<p style="margin: 8px 0;"><strong>CV / Document:</strong> <a href="${cvLink}" target="_blank" rel="noopener noreferrer" style="color: #2563eb; font-weight: 600; text-decoration: underline;">${cvLink}</a> (Google Sheets / Drive / Web document)</p>` : ''}
+          ${cvLink ? `<p style="margin: 8px 0;"><strong>CV Link:</strong> <a href="${cvLink}" target="_blank" rel="noopener noreferrer" style="color: #2563eb; font-weight: 600; text-decoration: underline;">${cvLink}</a></p>` : ''}
           ${attachments && attachments.length > 0 ? `<p style="margin: 4px 0;"><strong>Attached File:</strong> 📎 ${attachments.map(a => a.filename).join(', ')}</p>` : ''}
         </div>
 

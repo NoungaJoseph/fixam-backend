@@ -791,6 +791,37 @@ const applyForExternalJob = async (req, res, next) => {
       }
     }
 
+    const isPriorityBoost = Boolean(req.body.isPriority === true || req.body.isPriority === 'true');
+    let userWallet = null;
+
+    if (isPriorityBoost) {
+      userWallet = await prisma.wallet.findUnique({ where: { userId } });
+      if (!userWallet || userWallet.balance < 2) {
+        return res.status(400).json({
+          success: false,
+          message: `Insufficient Fixam Coins. Priority application boost requires 2 coins, but your current balance is ${userWallet ? userWallet.balance : 0} coins.`,
+          code: 'INSUFFICIENT_COINS',
+          requiredCoins: 2,
+          currentBalance: userWallet ? userWallet.balance : 0
+        });
+      }
+
+      await prisma.wallet.update({
+        where: { id: userWallet.id },
+        data: { balance: { decrement: 2 } }
+      });
+
+      await prisma.transaction.create({
+        data: {
+          walletId: userWallet.id,
+          amount: -2,
+          type: 'DEDUCTION',
+          status: 'SUCCESS',
+          description: `Priority Application Boost: ${job.title} at ${job.companyName}`
+        }
+      });
+    }
+
     const attachments = [];
     if (cvBuffer) {
       attachments.push({
@@ -799,20 +830,8 @@ const applyForExternalJob = async (req, res, next) => {
       });
     }
 
-    // 4. Send email via Resend (sent from submit@fixam.net, reply-to applicant)
-    const emailResult = await sendExternalJobApplication({
-      to: job.destinationEmail,
-      applicantName,
-      applicantEmail,
-      applicantPhone,
-      jobTitle: job.title,
-      companyName: job.companyName,
-      coverLetter,
-      cvLink: cvUrl,
-      attachments
-    });
-
-    // 5. Log application in ExternalJobApplication table
+    // 4. Create application log first to get ID for tracked CV link
+    const viewToken = require('crypto').randomBytes(16).toString('hex');
     const applicationLog = await prisma.externalJobApplication.create({
       data: {
         externalJobId: job.id,
@@ -824,10 +843,39 @@ const applyForExternalJob = async (req, res, next) => {
         coverLetter: coverLetter ? coverLetter.trim() : null,
         cvUrl: cvUrl || null,
         cvName: cvFileName || null,
+        status: 'PENDING',
+        isPriority: isPriorityBoost,
+        coinsSpent: isPriorityBoost ? 2 : 0,
+        viewToken,
+        sentAt: new Date()
+      }
+    });
+
+    const apiBase = process.env.API_URL || (process.env.NODE_ENV === 'production' ? 'https://api.usefixam.com' : 'http://localhost:5000');
+    const trackedCvLink = cvUrl
+      ? `${apiBase}/api/external-jobs/track/cv-view?appId=${applicationLog.id}`
+      : null;
+
+    // 5. Send email via Resend (sent from submit@fixam.net, reply-to applicant)
+    const emailResult = await sendExternalJobApplication({
+      to: job.destinationEmail,
+      applicantName,
+      applicantEmail,
+      applicantPhone,
+      jobTitle: job.title,
+      companyName: job.companyName,
+      coverLetter,
+      cvLink: trackedCvLink || cvUrl,
+      isPriority: isPriorityBoost,
+      attachments
+    });
+
+    await prisma.externalJobApplication.update({
+      where: { id: applicationLog.id },
+      data: {
         status: emailResult.success ? 'SENT' : 'FAILED',
         resendEmailId: emailResult.data?.id || null,
-        errorMessage: emailResult.error || null,
-        sentAt: new Date()
+        errorMessage: emailResult.error || null
       }
     });
 
@@ -847,11 +895,139 @@ const applyForExternalJob = async (req, res, next) => {
         companyName: job.companyName,
         jobTitle: job.title,
         destinationEmail: job.destinationEmail,
+        isPriority: isPriorityBoost,
         sentAt: applicationLog.sentAt
       }
     });
   } catch (error) {
     next(error);
+  }
+};
+
+// GET /api/external-jobs/track/cv-view?appId=...
+const trackCvView = async (req, res, next) => {
+  try {
+    const { appId } = req.query;
+    if (!appId) {
+      return res.redirect('https://usefixam.com');
+    }
+
+    const application = await prisma.externalJobApplication.findUnique({
+      where: { id: String(appId) },
+      include: {
+        job: true,
+        user: true
+      }
+    });
+
+    if (!application) {
+      return res.redirect('https://usefixam.com');
+    }
+
+    const isFirstView = !application.cvViewedAt;
+    const now = new Date();
+
+    await prisma.externalJobApplication.update({
+      where: { id: application.id },
+      data: {
+        cvViewedAt: application.cvViewedAt || now,
+        cvViewCount: { increment: 1 },
+        status: 'VIEWED'
+      }
+    }).catch(err => console.warn('[TrackCV] DB update error:', err.message));
+
+    if (isFirstView) {
+      const jobTitle = application.job?.title || 'Job listing';
+      const companyName = application.job?.companyName || 'The hiring employer';
+      const candidateUserId = application.userId;
+      const candidateEmail = application.applicantEmail;
+      const candidateName = application.applicantName || 'Candidate';
+
+      const notifTitle = `CV Consulté ! / CV Viewed!`;
+      const notifBody = `Bonne nouvelle ! Votre CV pour "${jobTitle}" chez ${companyName} vient d'être ouvert et consulté par le recruteur.`;
+
+      // 1. In-app notification in database
+      await prisma.notification.create({
+        data: {
+          userId: candidateUserId,
+          title: 'Votre CV a été ouvert par le recruteur !',
+          body: `L'équipe de recrutement de ${companyName} vient d'ouvrir et de consulter votre CV pour le poste "${jobTitle}".`,
+          data: {
+            type: 'CV_VIEWED',
+            applicationId: application.id,
+            jobTitle,
+            companyName
+          }
+        }
+      }).catch(err => console.warn('[TrackCV] In-app notif failed:', err.message));
+
+      // 2. Push Notification via Firebase
+      try {
+        const { sendPushNotification } = require('../services/notification.service');
+        await sendPushNotification(candidateUserId, notifTitle, notifBody, {
+          type: 'CV_VIEWED',
+          applicationId: application.id,
+          jobTitle,
+          companyName
+        });
+      } catch (pushErr) {
+        console.warn('[TrackCV] Push notification failed:', pushErr.message);
+      }
+
+      // 3. Email Notification to candidate
+      if (candidateEmail) {
+        const { sendEmail } = require('../services/email.service');
+        const emailHtml = `
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; color: #111827; line-height: 1.6; font-size: 15px;">
+            <div style="background-color: #eff6ff; border: 1.5px solid #3b82f6; border-radius: 8px; padding: 14px 18px; margin-bottom: 24px;">
+              <p style="margin: 0; color: #1d4ed8; font-weight: 750; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">
+                CV Ouvert par le Recruteur / CV Viewed by Employer
+              </p>
+              <p style="margin: 4px 0 0 0; color: #1e40af; font-size: 13px;">
+                L'employeur examine actuellement votre dossier de candidature.
+              </p>
+            </div>
+
+            <h2 style="color: #0f172a; font-size: 20px; font-weight: 700; margin: 0 0 12px 0;">
+              Bonne nouvelle, ${candidateName} !
+            </h2>
+
+            <p style="margin: 0 0 16px 0;">
+              Votre CV pour le poste de <strong>${jobTitle}</strong> chez <strong>${companyName}</strong> vient d'être ouvert et examiné par l'équipe de recrutement.
+            </p>
+
+            <div style="margin: 20px 0; padding: 16px 20px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+              <p style="margin: 4px 0;"><strong>Entreprise :</strong> ${companyName}</p>
+              <p style="margin: 4px 0;"><strong>Poste :</strong> ${jobTitle}</p>
+              <p style="margin: 4px 0;"><strong>Date d'examen :</strong> ${now.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+            </div>
+
+            <p style="margin: 20px 0 0 0;">
+              Restez attentif à votre boîte mail et votre téléphone : le recruteur vous contactera directement en cas d'intérêt pour un entretien.
+            </p>
+
+            <p style="margin: 28px 0 0 0; padding-top: 16px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #9ca3af;">
+              Fixam Careers &bull; <a href="https://usefixam.com" style="color: #2563eb;">usefixam.com</a>
+            </p>
+          </div>
+        `;
+
+        await sendEmail({
+          to: candidateEmail,
+          subject: `Votre CV pour "${jobTitle}" a été ouvert par ${companyName} !`,
+          html: emailHtml
+        }).catch(err => console.warn('[TrackCV] Candidate email notif failed:', err.message));
+      }
+    }
+
+    if (application.cvUrl) {
+      return res.redirect(application.cvUrl);
+    }
+
+    return res.redirect('https://usefixam.com');
+  } catch (error) {
+    console.error('[TrackCV] Error:', error.message);
+    return res.redirect('https://usefixam.com');
   }
 };
 
@@ -911,5 +1087,6 @@ module.exports = {
   getActiveExternalJobs,
   getExternalJobById,
   applyForExternalJob,
+  trackCvView,
   uploadUserCV
 };

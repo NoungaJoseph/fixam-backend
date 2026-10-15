@@ -20,6 +20,9 @@ const createJobSchema = z.object({
   preferences: z.array(z.string()).optional(),
   priority: z.string().optional(),
   requiresDiagnosis: z.boolean().optional(),
+  isPinned: z.boolean().optional(),
+  forwardToEmail: z.boolean().optional(),
+  hiringEmail: z.string().optional().nullable(),
   materialsList: z.array(
     z.object({
       id: z.string().optional().nullable(),

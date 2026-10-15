@@ -113,15 +113,36 @@ const createJob = async (req, res, next) => {
       });
     }
 
-    // 3. Client job creation is 100% free
-    const providersNeeded = validatedData.providersNeeded || 1;
-    const coinCost = 0; // Free for clients
+    // 3. Client job creation is standard free, plus optional premium add-ons:
+    // - Featured Pin (7 days): 5 coins
+    // - Direct Candidate Email Forwarding: 3 coins
+    const isPinned = Boolean(req.body.isPinned || validatedData.isPinned);
+    const forwardToEmail = Boolean(req.body.forwardToEmail || validatedData.forwardToEmail);
+    const hiringEmail = (req.body.hiringEmail || validatedData.hiringEmail || clientUser.email || '').trim().toLowerCase();
+
+    let extraCoinCost = 0;
+    if (isPinned) extraCoinCost += 5;
+    if (forwardToEmail) extraCoinCost += 3;
+
     let clientWallet = clientUser?.wallet;
     if (!clientWallet) {
       clientWallet = await prisma.wallet.create({
         data: { userId: clientUser.id, balance: 0 }
       });
     }
+
+    if (extraCoinCost > 0 && clientWallet.balance < extraCoinCost) {
+      return res.status(400).json({
+        success: false,
+        message: `Insufficient Fixam Coins. Selected options require ${extraCoinCost} coins (${isPinned ? '5 coins for Featured Pin' : ''}${isPinned && forwardToEmail ? ' + ' : ''}${forwardToEmail ? '3 coins for Email Forwarding' : ''}), but your current balance is ${clientWallet.balance} coins.`,
+        code: 'INSUFFICIENT_COINS',
+        requiredCoins: extraCoinCost,
+        currentBalance: clientWallet.balance
+      });
+    }
+
+    const providersNeeded = validatedData.providersNeeded || 1;
+    const coinCost = extraCoinCost;
 
     // 4. Create job in a transaction
     const job = await prisma.$transaction(async (tx) => {
@@ -131,15 +152,29 @@ const createJob = async (req, res, next) => {
           data: { balance: { decrement: coinCost } }
         });
 
-        await tx.transaction.create({
-          data: {
-            walletId: clientWallet.id,
-            amount: -coinCost,
-            type: 'DEDUCTION',
-            status: 'SUCCESS',
-            description: `Posted job: ${validatedData.title}`
-          }
-        });
+        if (isPinned) {
+          await tx.transaction.create({
+            data: {
+              walletId: clientWallet.id,
+              amount: -5,
+              type: 'DEDUCTION',
+              status: 'SUCCESS',
+              description: `Featured Job Pin (7 Days): ${validatedData.title}`
+            }
+          });
+        }
+
+        if (forwardToEmail) {
+          await tx.transaction.create({
+            data: {
+              walletId: clientWallet.id,
+              amount: -3,
+              type: 'DEDUCTION',
+              status: 'SUCCESS',
+              description: `Direct Candidate Email Forwarding: ${validatedData.title}`
+            }
+          });
+        }
       }
 
       const finalCategory = (validatedData.category && validatedData.category.toLowerCase() !== 'general' && validatedData.category.toLowerCase() !== 'general service')
@@ -170,6 +205,10 @@ const createJob = async (req, res, next) => {
           approvalStatus: 'PENDING_APPROVAL',  // New jobs require admin approval
           scheduledTime: validatedData.scheduledTime ? new Date(validatedData.scheduledTime) : null,
           expiryDate: validatedData.expiryDate ? new Date(validatedData.expiryDate) : null,
+          isPinned,
+          pinnedExpiresAt: isPinned ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) : null,
+          forwardToEmail,
+          hiringEmail: forwardToEmail ? hiringEmail : null,
           isRemote,
           country: clientUser.country || 'Cameroon',
           requiresDiagnosis: isDiagnosisReq,
@@ -455,14 +494,26 @@ const getAvailableJobsForProvider = async (req, res, next) => {
       ];
     }
 
-    // Determine sort order
-    let orderBy = { createdAt: 'desc' }; // newest by default
+    // Determine sort order (pinned jobs float to top)
+    let orderBy = [
+      { isPinned: 'desc' },
+      { createdAt: 'desc' }
+    ];
     if (sortBy === 'price_high') {
-      orderBy = { budget: 'desc' };
+      orderBy = [
+        { isPinned: 'desc' },
+        { budget: 'desc' }
+      ];
     } else if (sortBy === 'price_low') {
-      orderBy = { budget: 'asc' };
+      orderBy = [
+        { isPinned: 'desc' },
+        { budget: 'asc' }
+      ];
     } else if (sortBy === 'oldest') {
-      orderBy = { createdAt: 'asc' };
+      orderBy = [
+        { isPinned: 'desc' },
+        { createdAt: 'asc' }
+      ];
     }
 
     // Get total count for pagination
@@ -767,6 +818,27 @@ const applyForJob = async (req, res, next) => {
       );
     } catch (pushErr) {
       console.error('[Push Error] Application push failed:', pushErr.message);
+    }
+
+    // Direct forwarding to client's hiring inbox if enabled
+    if (job.forwardToEmail && job.hiringEmail) {
+      try {
+        const { sendExternalJobApplication } = require('../services/email.service');
+        await sendExternalJobApplication({
+          to: job.hiringEmail,
+          applicantName: req.user.fullName || 'Candidate',
+          applicantEmail: req.user.email || 'noreply@fixam.net',
+          applicantPhone: req.user.phone || '',
+          jobTitle: job.title,
+          companyName: job.title,
+          coverLetter: coverLetter || '',
+          cvLink: req.user.cvUrl || null,
+          isPriority: boostCoinsAmount > 0,
+          attachments: []
+        });
+      } catch (forwardErr) {
+        console.error('[Job Apply] Direct email forwarding error:', forwardErr.message);
+      }
     }
 
     res.status(200).json({ success: true, data: assignment, applicationCount, message: 'Application submitted successfully!' });
