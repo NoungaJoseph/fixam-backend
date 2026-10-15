@@ -1,6 +1,21 @@
 const { Resend } = require('resend');
 
-const resend = new Resend(process.env.RESEND_API_KEY || process.env.EMAIL_PASS);
+let _resendClient = null;
+const getResendClient = () => {
+  if (_resendClient) return _resendClient;
+  const apiKey = (process.env.RESEND_API_KEY || process.env.EMAIL_PASS || '').trim();
+  if (!apiKey) {
+    console.warn('[EmailService] RESEND_API_KEY / EMAIL_PASS is not set in environment.');
+    return null;
+  }
+  try {
+    _resendClient = new Resend(apiKey);
+    return _resendClient;
+  } catch (err) {
+    console.error('[EmailService] Resend initialization failed:', err.message);
+    return null;
+  }
+};
 
 /**
  * Clean default send helper
@@ -25,7 +40,13 @@ const sendEmail = async (options) => {
       payload.attachments = options.attachments;
     }
 
-    const { error, data } = await resend.emails.send(payload);
+    const client = getResendClient();
+    if (!client) {
+      console.warn('[EmailService] Resend is unconfigured; skipping email delivery.');
+      return { success: false, error: 'Email service not configured' };
+    }
+
+    const { error, data } = await client.emails.send(payload);
 
     if (error) {
       console.warn('[EmailService] Resend API Warning:', error.message);
@@ -341,7 +362,13 @@ ${safeCoverLetter}
       sendPayload.attachments = attachments;
     }
 
-    const { error, data } = await resend.emails.send(sendPayload);
+    const client = getResendClient();
+    if (!client) {
+      console.warn('[EmailService] Resend is unconfigured; skipping job application email delivery.');
+      return { success: false, error: 'Email service not configured' };
+    }
+
+    const { error, data } = await client.emails.send(sendPayload);
 
     if (error) {
       console.error('[EmailService] Resend API Error on job application:', error);
