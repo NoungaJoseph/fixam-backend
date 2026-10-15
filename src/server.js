@@ -68,8 +68,77 @@ async function startServer() {
       await prisma.$executeRawUnsafe(`ALTER TABLE "Job" ADD COLUMN IF NOT EXISTS "materialsList" JSONB`);
       await prisma.$executeRawUnsafe(`ALTER TABLE "Job" ADD COLUMN IF NOT EXISTS "materialsStatus" TEXT`);
       await prisma.$executeRawUnsafe(`ALTER TABLE "Job" ADD COLUMN IF NOT EXISTS "materialsVersion" INTEGER DEFAULT 1`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "Job" ADD COLUMN IF NOT EXISTS "expiryDate" TIMESTAMPTZ`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "Job" ADD COLUMN IF NOT EXISTS "isPinned" BOOLEAN NOT NULL DEFAULT false`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "Job" ADD COLUMN IF NOT EXISTS "pinnedExpiresAt" TIMESTAMP(3)`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "Job" ADD COLUMN IF NOT EXISTS "forwardToEmail" BOOLEAN NOT NULL DEFAULT false`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "Job" ADD COLUMN IF NOT EXISTS "hiringEmail" TEXT`);
+
+      await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "cvUrl" TEXT`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "cvName" TEXT`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "Settings" ADD COLUMN IF NOT EXISTS "externalJobRecheckDays" INTEGER NOT NULL DEFAULT 14`);
 
       await prisma.$executeRawUnsafe(`ALTER TABLE "JobAssignment" ADD COLUMN IF NOT EXISTS "materialsList" JSONB`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "JobAssignment" ADD COLUMN IF NOT EXISTS "cvUrl" TEXT`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "JobAssignment" ADD COLUMN IF NOT EXISTS "cvName" TEXT`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "JobAssignment" ADD COLUMN IF NOT EXISTS "cvViewedAt" TIMESTAMP(3)`);
+
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "ExternalJob" (
+          "id"                TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+          "title"             TEXT NOT NULL,
+          "companyName"       TEXT NOT NULL,
+          "description"       TEXT NOT NULL,
+          "requirements"      TEXT,
+          "destinationEmail"  TEXT NOT NULL,
+          "source"            TEXT,
+          "verifiedBy"        TEXT,
+          "verifiedAt"        TIMESTAMPTZ NOT NULL DEFAULT now(),
+          "expiryDate"        TIMESTAMPTZ NOT NULL,
+          "reverifyAt"        TIMESTAMPTZ,
+          "status"            TEXT NOT NULL DEFAULT 'ACTIVE',
+          "category"          TEXT DEFAULT 'General Service',
+          "location"          TEXT,
+          "isRemote"          BOOLEAN NOT NULL DEFAULT false,
+          "country"           TEXT DEFAULT 'Cameroon',
+          "salary"            TEXT,
+          "currency"          TEXT DEFAULT 'XAF',
+          "createdAt"         TIMESTAMPTZ NOT NULL DEFAULT now(),
+          "updatedAt"         TIMESTAMPTZ NOT NULL DEFAULT now(),
+          CONSTRAINT "ExternalJob_pkey" PRIMARY KEY ("id")
+        )
+      `);
+
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "ExternalJobApplication" (
+          "id"                TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+          "externalJobId"     TEXT NOT NULL,
+          "userId"            TEXT NOT NULL,
+          "applicantName"     TEXT NOT NULL,
+          "applicantEmail"    TEXT NOT NULL,
+          "applicantPhone"    TEXT,
+          "destinationEmail"  TEXT NOT NULL,
+          "coverLetter"       TEXT,
+          "cvUrl"             TEXT,
+          "cvName"            TEXT,
+          "status"            TEXT NOT NULL DEFAULT 'SENT',
+          "resendEmailId"     TEXT,
+          "errorMessage"      TEXT,
+          "sentAt"            TIMESTAMPTZ NOT NULL DEFAULT now(),
+          "isPriority"        BOOLEAN NOT NULL DEFAULT false,
+          "coinsSpent"        INTEGER NOT NULL DEFAULT 0,
+          "cvViewedAt"        TIMESTAMP(3),
+          "cvViewCount"       INTEGER NOT NULL DEFAULT 0,
+          "viewToken"         TEXT,
+          CONSTRAINT "ExternalJobApplication_pkey" PRIMARY KEY ("id")
+        )
+      `);
+
+      await prisma.$executeRawUnsafe(`ALTER TABLE "ExternalJobApplication" ADD COLUMN IF NOT EXISTS "isPriority" BOOLEAN NOT NULL DEFAULT false`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "ExternalJobApplication" ADD COLUMN IF NOT EXISTS "coinsSpent" INTEGER NOT NULL DEFAULT 0`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "ExternalJobApplication" ADD COLUMN IF NOT EXISTS "cvViewedAt" TIMESTAMP(3)`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "ExternalJobApplication" ADD COLUMN IF NOT EXISTS "cvViewCount" INTEGER NOT NULL DEFAULT 0`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "ExternalJobApplication" ADD COLUMN IF NOT EXISTS "viewToken" TEXT`);
 
       await prisma.$executeRawUnsafe(`
         CREATE TABLE IF NOT EXISTS "AgreementAmendment" (
