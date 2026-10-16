@@ -26,6 +26,16 @@ const normalizePhoneWithCountry = (phone, country = 'Cameroon') => {
   return prefix + cleaned;
 };
 
+// A client may send either its selected country or a complete international
+// number. Prefer the recognised country prefix already present in the number
+// so an account created in one supported country can still be found reliably.
+const resolvePhoneCountry = (phone, country = 'Cameroon') => {
+  const cleaned = (phone || '').replace(/\D/g, '');
+  const matchedCountry = Object.entries(countryDialCodes)
+    .find(([, dialCode]) => cleaned.startsWith(dialCode))?.[0];
+  return matchedCountry || country;
+};
+
 const formatPhone = (phone, country = 'Cameroon') => {
   const cleaned = phone.replace(/\s+/g, '').replace(/-/g, '').replace('+', '');
   const prefix = countryDialCodes[country] || '237';
@@ -214,7 +224,7 @@ const login = async (req, res, next) => {
     let { email, phone, password, country } = req.body;
     
     if (email) email = email.trim().toLowerCase();
-    if (phone) phone = normalizePhoneWithCountry(phone, country || 'Cameroon');
+    if (phone) phone = normalizePhoneWithCountry(phone, resolvePhoneCountry(phone, country || 'Cameroon'));
     
     const cleaned = phone ? phone.replace(/\D/g, '') : '';
     const user = await prisma.user.findFirst({
@@ -366,7 +376,10 @@ const requestOTP = async (req, res, next) => {
 const verifyOTP = async (req, res, next) => {
   try {
     const { email, phone, otp, country } = req.body;
-    const normalizedPhone = phone ? normalizePhoneWithCountry(phone, country || 'Cameroon') : null;
+    const normalizedPhone = phone
+      ? normalizePhoneWithCountry(phone, resolvePhoneCountry(phone, country || 'Cameroon'))
+      : null;
+    const cleaned = normalizedPhone ? normalizedPhone.replace(/\D/g, '') : '';
     const identifier = email || normalizedPhone;
 
     const isTestOTP = process.env.NODE_ENV !== 'production' &&
