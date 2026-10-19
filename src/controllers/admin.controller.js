@@ -1,5 +1,6 @@
 const prisma = require('../config/prisma');
 const cacheMiddleware = require('../middlewares/cache.middleware');
+const { createSignedUrlForStoredFile } = require('../services/storage.service');
 const getSupportConversations = async (req, res, next) => {
   try {
     const conversations = await prisma.conversation.findMany({
@@ -704,7 +705,40 @@ const getProviders = async (req, res, next) => {
       orderBy: { user: { createdAt: 'desc' } },
       take: 50
     });
-    res.status(200).json({ success: true, data: providers });
+    // The dashboard currently renders document URLs directly.  Replace each
+    // stored URL with a short-lived URL from the real storage bucket so old
+    // `/rest/v1/storage/...` links remain usable without a dashboard release.
+    const providersWithAccessibleDocuments = await Promise.all(providers.map(async (provider) => ({
+      ...provider,
+      documents: await Promise.all(provider.documents.map(async (document) => {
+        try {
+          return { ...document, url: await createSignedUrlForStoredFile(document.url) };
+        } catch (error) {
+          console.warn(`[Admin] Could not sign verification document ${document.id}:`, error.message);
+          return document;
+        }
+      }))
+    })));
+    res.status(200).json({ success: true, data: providersWithAccessibleDocuments });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Verification documents are private.  The dashboard requests a short-lived
+// URL only after the authenticated ADMIN has explicitly chosen to open one.
+const getVerificationDocumentUrl = async (req, res, next) => {
+  try {
+    const document = await prisma.verificationDocument.findUnique({
+      where: { id: req.params.documentId },
+      select: { id: true, url: true }
+    });
+    if (!document) {
+      return res.status(404).json({ success: false, message: 'Document not found' });
+    }
+
+    const url = await createSignedUrlForStoredFile(document.url);
+    res.status(200).json({ success: true, data: { url } });
   } catch (error) {
     next(error);
   }
@@ -1828,6 +1862,7 @@ module.exports = {
   getUserDetails,
   updateUserStatus,
   getProviders,
+  getVerificationDocumentUrl,
   getPendingTransactions,
   getTransactions,
   getFinancialStats,

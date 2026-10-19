@@ -15,6 +15,7 @@ router.get('/broadcasts', adminController.getBroadcasts);
 router.get('/users', adminController.getUsers);
 router.get('/users/:id', adminController.getUserDetails);
 router.get('/providers', adminController.getProviders);
+router.get('/verification-documents/:documentId/url', adminController.getVerificationDocumentUrl);
 router.get('/pending-transactions', adminController.getPendingTransactions);
 router.get('/transactions', adminController.getTransactions);
 router.get('/reports', adminController.getReports);
@@ -63,4 +64,3 @@ router.put('/settings', adminController.updateSettings);
 router.post('/wallet/wire-coins', adminController.wireCoins);
 
 module.exports = router;
-
