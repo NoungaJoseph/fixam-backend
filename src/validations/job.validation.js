@@ -17,6 +17,11 @@ const createJobSchema = z.object({
     isRemote: z.boolean().optional().nullable(),
     importantDetails: z.string().optional().nullable(),
     whatNeedsDone: z.string().optional().nullable(),
+    details: z.array(z.object({
+      key: z.string().min(1),
+      label: z.string().min(1),
+      content: z.string().min(1)
+    })).optional().nullable(),
     taskScope: z.string().optional().nullable(),
     preferences: z.array(z.string()).optional(),
     priority: z.string().optional(),

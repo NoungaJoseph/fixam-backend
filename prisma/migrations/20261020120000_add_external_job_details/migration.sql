@@ -1,0 +1,1 @@
+ALTER TABLE "ExternalJob" ADD COLUMN IF NOT EXISTS "details" JSONB;

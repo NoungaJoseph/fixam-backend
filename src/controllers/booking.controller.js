@@ -19,6 +19,7 @@ const includeBooking = {
   task: true,
   reviews: { select: { id: true, reviewerId: true, targetUserId: true, rating: true, createdAt: true } },
   agreements: { orderBy: { version: 'asc' } },
+  revisions: { orderBy: { version: 'desc' } },
 };
 
 const createBooking = async (req, res, next) => {
@@ -26,7 +27,7 @@ const createBooking = async (req, res, next) => {
     console.log('[Booking] Request body:', JSON.stringify(req.body));
     console.log('[Booking] User:', req.user.id);
 
-    const { providerId, taskId, bookingDate, bookingTime, budget, location, notes, bookingDuration, urgencyLevel } = req.body;
+    const { providerId, taskId, bookingDate, bookingTime, budget, location, notes, bookingDuration, urgencyLevel, budgetType, paymentPreference } = req.body;
     if (!providerId || !bookingDate || !bookingTime || budget === undefined || budget === null) {
       return res.status(400).json({ success: false, message: 'Provider, date, time and budget are required.' });
     }
@@ -135,6 +136,8 @@ const createBooking = async (req, res, next) => {
           materialsList: formattedMaterials,
           materialsStatus: materialsStatus,
           materialsVersion: 1,
+          budgetType: budgetType || 'FIXED_BUDGET',
+          paymentPreference: paymentPreference || 'AGREE_WITH_PROVIDER',
         },
         include: includeBooking,
       });
@@ -199,6 +202,96 @@ const createBooking = async (req, res, next) => {
       code: error.code || 'BOOKING_FAILED'
     });
   }
+};
+
+const canViewBooking = (booking, user) => booking && (booking.clientId === user.id || booking.providerId === user.id || user.role === 'ADMIN');
+
+const getBookingRevisions = async (req, res, next) => {
+  try {
+    const booking = await prisma.booking.findUnique({ where: { id: req.params.bookingId } });
+    if (!canViewBooking(booking, req.user)) return res.status(404).json({ success: false, message: 'Booking not found.' });
+    const revisions = await prisma.bookingRevision.findMany({ where: { bookingId: booking.id }, orderBy: { version: 'desc' } });
+    return res.json({ success: true, data: revisions });
+  } catch (error) { next(error); }
+};
+
+const createBookingRevision = async (req, res, next) => {
+  try {
+    const { bookingId } = req.params;
+    const booking = await prisma.booking.findUnique({ where: { id: bookingId }, include: { provider: true, client: true } });
+    if (!booking) return res.status(404).json({ success: false, message: 'Booking not found.' });
+    if (booking.providerId !== req.user.id) return res.status(403).json({ success: false, message: 'Only the provider can send a revised quote.' });
+    if (!['PENDING', 'COUNTER_PROPOSED', 'REVISED_QUOTE_PENDING'].includes(booking.status)) return res.status(400).json({ success: false, message: 'This booking can no longer be revised.' });
+
+    const revision = await prisma.$transaction(async (tx) => {
+      await tx.bookingRevision.updateMany({ where: { bookingId, status: 'PENDING_CLIENT' }, data: { status: 'SUPERSEDED' } });
+      const last = await tx.bookingRevision.aggregate({ where: { bookingId }, _max: { version: true } });
+      const created = await tx.bookingRevision.create({ data: {
+        bookingId, version: (last._max.version || 0) + 1, createdByUserId: req.user.id,
+        reason: req.body.reason, message: req.body.message, budget: req.body.budget,
+        bookingDate: req.body.bookingDate ? new Date(req.body.bookingDate) : null,
+        bookingTime: req.body.bookingTime, bookingDuration: req.body.bookingDuration,
+        scopeSummary: req.body.scopeSummary, materialsList: req.body.materialsList,
+        paymentPreference: req.body.paymentPreference,
+      }});
+      await tx.booking.update({ where: { id: bookingId }, data: { status: 'REVISED_QUOTE_PENDING' } });
+      return created;
+    });
+    const notification = await prisma.notification.create({ data: { userId: booking.clientId, title: 'Revised quote received', body: `${booking.provider?.fullName || 'Your provider'} updated the booking terms for your review.`, data: { type: 'BOOKING_REVISED_QUOTE', bookingId, revisionId: revision.id, status: 'REVISED_QUOTE_PENDING' } } });
+    const updated = await prisma.booking.findUnique({ where: { id: bookingId }, include: includeBooking });
+    emitBooking(updated); try { getIO().to(booking.clientId).emit('notification:new', notification); } catch (_) {}
+    try {
+      await sendPushNotification(booking.clientId, 'Revised quote received', `${booking.provider?.fullName || 'Your provider'} updated the booking terms for your review.`, {
+        type: 'BOOKING_REVISED_QUOTE', bookingId, revisionId: revision.id, screen: 'RevisedQuote',
+      });
+    } catch (pushError) { console.error('[Booking] Revised quote push failed:', pushError.message); }
+    return res.status(201).json({ success: true, data: { booking: updated, revision }, message: 'Revised quote sent.' });
+  } catch (error) { next(error); }
+};
+
+const acceptBookingRevision = async (req, res, next) => {
+  try {
+    const { bookingId, revisionId } = req.params;
+    const booking = await prisma.booking.findUnique({ where: { id: bookingId }, include: { provider: true, client: true } });
+    if (!booking) return res.status(404).json({ success: false, message: 'Booking not found.' });
+    if (booking.clientId !== req.user.id) return res.status(403).json({ success: false, message: 'Only the client can accept a revised quote.' });
+    const revision = await prisma.bookingRevision.findFirst({ where: { id: revisionId, bookingId, status: 'PENDING_CLIENT' } });
+    if (!revision) return res.status(400).json({ success: false, message: 'This revised quote is no longer available.' });
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.bookingRevision.update({ where: { id: revisionId }, data: { status: 'ACCEPTED', respondedAt: new Date() } });
+      await tx.bookingRevision.updateMany({ where: { bookingId, id: { not: revisionId }, status: 'PENDING_CLIENT' }, data: { status: 'SUPERSEDED' } });
+      return tx.booking.update({ where: { id: bookingId }, data: {
+        status: 'ACCEPTED', acceptedRevisionId: revisionId, budget: revision.budget ?? booking.budget,
+        bookingDate: revision.bookingDate ?? booking.bookingDate, bookingTime: revision.bookingTime ?? booking.bookingTime,
+        bookingDuration: revision.bookingDuration ?? booking.bookingDuration, notes: revision.scopeSummary ?? booking.notes,
+        materialsList: revision.materialsList ?? booking.materialsList, paymentPreference: revision.paymentPreference ?? booking.paymentPreference,
+        materialsStatus: 'AGREED'
+      }, include: includeBooking });
+    });
+    agreementService.createOrUpdateAgreement({ sourceType: 'BOOKING', bookingId, clientId: updated.clientId, providerId: updated.providerId, title: updated.task?.title || 'Fixam service booking', category: updated.task?.category || 'Service', scopeOfWork: updated.notes || '', location: updated.location, schedule: { date: new Date(updated.bookingDate).toLocaleDateString(), time: updated.bookingTime, duration: updated.bookingDuration }, price: updated.budget, materialsList: updated.materialsList || [] }).catch(() => {});
+    const notification = await prisma.notification.create({ data: { userId: booking.providerId, title: 'Revised quote accepted', body: `${booking.client?.fullName || 'Your client'} accepted your revised quote.`, data: { type: 'BOOKING_REVISED_QUOTE_ACCEPTED', bookingId, revisionId } } });
+    emitBooking(updated);
+    try { getIO().to(booking.providerId).emit('notification:new', notification); } catch (_) {}
+    try { await sendPushNotification(booking.providerId, 'Revised quote accepted', `${booking.client?.fullName || 'Your client'} accepted your revised quote.`, { type: 'BOOKING_REVISED_QUOTE_ACCEPTED', bookingId, revisionId, screen: 'BookingDetails' }); } catch (pushError) { console.error('[Booking] Accepted quote push failed:', pushError.message); }
+    return res.json({ success: true, data: updated, message: 'Revised quote accepted. Your booking is confirmed.' });
+  } catch (error) { next(error); }
+};
+
+const declineBookingRevision = async (req, res, next) => {
+  try {
+    const { bookingId, revisionId } = req.params;
+    const booking = await prisma.booking.findUnique({ where: { id: bookingId }, include: { client: true } });
+    if (!booking) return res.status(404).json({ success: false, message: 'Booking not found.' });
+    if (booking.clientId !== req.user.id) return res.status(403).json({ success: false, message: 'Only the client can decline a revised quote.' });
+    const revision = await prisma.bookingRevision.findFirst({ where: { id: revisionId, bookingId, status: 'PENDING_CLIENT' } });
+    if (!revision) return res.status(400).json({ success: false, message: 'This revised quote is no longer available.' });
+    await prisma.$transaction([prisma.bookingRevision.update({ where: { id: revisionId }, data: { status: 'DECLINED', respondedAt: new Date(), responseNote: req.body?.responseNote || null } }), prisma.booking.update({ where: { id: bookingId }, data: { status: 'REJECTED' } })]);
+    const updated = await prisma.booking.findUnique({ where: { id: bookingId }, include: includeBooking }); emitBooking(updated);
+    const notification = await prisma.notification.create({ data: { userId: booking.providerId, title: 'Revised quote declined', body: `${booking.client?.fullName || 'Your client'} declined the revised quote.`, data: { type: 'BOOKING_REVISED_QUOTE_DECLINED', bookingId, revisionId } } });
+    try { getIO().to(booking.providerId).emit('notification:new', notification); } catch (_) {}
+    try { await sendPushNotification(booking.providerId, 'Revised quote declined', `${booking.client?.fullName || 'Your client'} declined the revised quote.`, { type: 'BOOKING_REVISED_QUOTE_DECLINED', bookingId, revisionId, screen: 'BookingDetails' }); } catch (pushError) { console.error('[Booking] Declined quote push failed:', pushError.message); }
+    return res.json({ success: true, data: updated, message: 'Revised quote declined.' });
+  } catch (error) { next(error); }
 };
 
 const getMyBookings = async (req, res, next) => {
@@ -274,7 +367,7 @@ const updateBookingStatus = async (req, res, next) => {
     }
 
     if (status === 'ACCEPTED') {
-      if (existing.status === 'COUNTER_PROPOSED') {
+      if (['COUNTER_PROPOSED', 'REVISED_QUOTE_PENDING'].includes(existing.status)) {
         if (!isClient && !isAdmin) {
           return res.status(403).json({ success: false, message: 'Only the client can accept a counter-offer.' });
         }
@@ -419,6 +512,12 @@ const updateBookingStatus = async (req, res, next) => {
 
     if (status === 'ACCEPTED' && existing.status === 'COUNTER_PROPOSED' && existing.counterBudget) {
       updateData.budget = existing.counterBudget;
+    }
+    if (status === 'ACCEPTED' && existing.status === 'REVISED_QUOTE_PENDING') {
+      const revision = await prisma.bookingRevision.findFirst({ where: { bookingId, status: 'PENDING_CLIENT' }, orderBy: { version: 'desc' } });
+      if (!revision) return res.status(400).json({ success: false, message: 'No active revised quote was found.' });
+      Object.assign(updateData, { acceptedRevisionId: revision.id, budget: revision.budget ?? existing.budget, bookingDate: revision.bookingDate ?? existing.bookingDate, bookingTime: revision.bookingTime ?? existing.bookingTime, bookingDuration: revision.bookingDuration ?? existing.bookingDuration, notes: revision.scopeSummary ?? existing.notes, materialsList: revision.materialsList ?? existing.materialsList, paymentPreference: revision.paymentPreference ?? existing.paymentPreference });
+      await prisma.bookingRevision.update({ where: { id: revision.id }, data: { status: 'ACCEPTED', respondedAt: new Date() } });
     }
 
     if (status === 'ACCEPTED') {
@@ -1023,6 +1122,10 @@ module.exports = {
   getMyBookings,
   updateBookingStatus,
   counterBooking,
+  getBookingRevisions,
+  createBookingRevision,
+  acceptBookingRevision,
+  declineBookingRevision,
   checkBooking,
   getBookingById,
   requestReview,
@@ -1031,4 +1134,3 @@ module.exports = {
   getAgreementHistory,
   downloadContractPdf,
 };
-

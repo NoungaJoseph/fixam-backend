@@ -76,6 +76,15 @@ enum BookingStatus {
   CANCELLED
   COMPLETED
   COUNTER_PROPOSED
+  REVISED_QUOTE_PENDING
+}
+
+enum BookingRevisionStatus {
+  PENDING_CLIENT
+  ACCEPTED
+  DECLINED
+  SUPERSEDED
+  EXPIRED
 }
 
 enum SupportConversationStatus {
@@ -274,6 +283,7 @@ model Job {
   country              String?           @default("Cameroon")
   importantDetails     String?
   whatNeedsDone        String?
+  details              Json?
   taskScope            String?
   preferences          String[]
   priority             String            @default("normal")
@@ -503,6 +513,9 @@ model Booking {
   materialsList    Json?
   materialsStatus  String?
   materialsVersion Int          @default(1)
+  paymentPreference String?     @default("AGREE_WITH_PROVIDER")
+  budgetType       String       @default("FIXED_BUDGET")
+  acceptedRevisionId String?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
@@ -513,6 +526,7 @@ model Booking {
   agreements AgreementAmendment[]
   disputes   Dispute[]
   serviceAgreements ServiceAgreement[]
+  revisions BookingRevision[]
 
   @@index([clientId, createdAt])
   @@index([providerId, createdAt])
@@ -520,6 +534,33 @@ model Booking {
   @@index([clientId, status])
   @@index([providerId, status])
   @@index([clientId, updatedAt])
+}
+
+model BookingRevision {
+  id                String                @id @default(uuid())
+  bookingId         String
+  version           Int
+  status            BookingRevisionStatus @default(PENDING_CLIENT)
+  createdByUserId   String
+  reason            String?
+  message           String?
+  budget            Float?
+  bookingDate       DateTime?
+  bookingTime       String?
+  bookingDuration   String?
+  scopeSummary      String?
+  materialsList     Json?
+  paymentPreference String?
+  respondedAt       DateTime?
+  responseNote      String?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@unique([bookingId, version])
+  @@index([bookingId, status])
+  @@index([createdByUserId, createdAt])
 }
 
 model CallSession {
@@ -869,6 +910,7 @@ model ExternalJob {
   companyName       String
   description       String
   requirements      String?
+  details           Json?
   destinationEmail  String
   source            String?
   verifiedBy        String?
@@ -923,5 +965,3 @@ model ExternalJobApplication {
   @@index([sentAt])
   @@index([status])
 }
-
-

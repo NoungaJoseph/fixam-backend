@@ -26,11 +26,27 @@ const getSystemStatus = async (req, res) => {
       webMaintenanceEnabled = false;
     }
 
+    // Release controls are environment based so publishing a new version does
+    // not require a database migration or a new backend deployment. Example:
+    // APP_LATEST_VERSION=1.1.5 APP_MINIMUM_VERSION=1.1.4 APP_UPDATE_REQUIRED=false
+    const latestVersion = process.env.APP_LATEST_VERSION || null;
+    const minimumVersion = process.env.APP_MINIMUM_VERSION || null;
+    const updateRequired = process.env.APP_UPDATE_REQUIRED === 'true';
+    const updateMessage = process.env.APP_UPDATE_MESSAGE || 'A new version of Fixam is ready. Update now for the latest improvements.';
+
     return res.json({
       success: true,
       appMaintenanceEnabled,
       webMaintenanceEnabled,
       message: maintenanceMessage,
+      appUpdate: {
+        latestVersion,
+        minimumVersion,
+        required: updateRequired,
+        message: updateMessage,
+        androidUrl: process.env.APP_ANDROID_STORE_URL || 'https://play.google.com/store/apps/details?id=com.fixam.app.android',
+        iosUrl: process.env.APP_IOS_STORE_URL || 'https://apps.apple.com/cm/app/fixam-pro/id6791191286?l=en-GB'
+      },
       timestamp: new Date().toISOString()
     });
   } catch (error) {
@@ -124,4 +140,3 @@ const getPlatformPublicStats = async (req, res) => {
 };
 
 module.exports = { getSystemStatus, getPlatformPublicStats };
-

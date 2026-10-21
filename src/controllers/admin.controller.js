@@ -644,6 +644,14 @@ const getUserDetails = async (req, res, next) => {
         wallet: { include: { transactions: { orderBy: { createdAt: 'desc' }, take: 25 } } },
         providerProfile: { include: { documents: true } },
         jobsAsClient: { orderBy: { createdAt: 'desc' }, take: 25 },
+        receivedReviews: {
+          orderBy: { createdAt: 'desc' },
+          take: 50,
+          include: {
+            reviewer: { select: { id: true, fullName: true, avatar: true } },
+            job: { select: { id: true, title: true } }
+          }
+        },
         notifications: { orderBy: { createdAt: 'desc' }, take: 25 }
       }
     });

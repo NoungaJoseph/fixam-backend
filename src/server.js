@@ -31,7 +31,7 @@ async function startServer() {
       const newEnums = ['M_PESA', 'AIRTEL_MONEY', 'VODAFONE_CASH', 'MOOV_MONEY', 'WAVE', 'TIGO_PESA', 'ETISALAT_CASH'];
       for (const val of newEnums) {
         try {
-          await prisma.$executeRawUnsafe(`ALTER TYPE "PaymentMethod" ADD VALUE '${val}'`);
+          await prisma.$executeRawUnsafe(`ALTER TYPE "PaymentMethod" ADD VALUE IF NOT EXISTS '${val}'`);
         } catch (e) {
           // Ignore "already exists" errors
           if (!e.message.includes('already exists') && !e.message.includes('labels')) {
@@ -47,7 +47,7 @@ async function startServer() {
       await prisma.$executeRawUnsafe(`ALTER TABLE "PageView" ADD COLUMN IF NOT EXISTS "isLoggedIn" BOOLEAN DEFAULT false`);
 
       try {
-        await prisma.$executeRawUnsafe(`ALTER TYPE "BookingStatus" ADD VALUE 'COUNTER_PROPOSED'`);
+        await prisma.$executeRawUnsafe(`ALTER TYPE "BookingStatus" ADD VALUE IF NOT EXISTS 'COUNTER_PROPOSED'`);
       } catch (e) {
         if (!e.message.includes('already exists') && !e.message.includes('labels')) {
           console.log(`[Migration] BookingStatus Enum warning:`, e.message);
@@ -252,13 +252,13 @@ async function startServer() {
 startServer();
 
 setTimeout(() => {
-  console.log('--- RAILWAY ENV DEBUG ---');
+  console.log('--- EMAIL CONFIGURATION ---');
   console.log('EMAIL_HOST:', process.env.EMAIL_HOST);
   console.log('EMAIL_PORT:', process.env.EMAIL_PORT);
   console.log('EMAIL_USER:', process.env.EMAIL_USER);
   console.log('EMAIL_PASS exists:', !!process.env.EMAIL_PASS);
   console.log('RESEND_API_KEY exists:', !!process.env.RESEND_API_KEY);
-  console.log('-------------------------');
+  console.log('---------------------------');
 }, 3000); // Wait 3 seconds after startup
 
 process.on('unhandledRejection', (err) => {

@@ -3,6 +3,14 @@ const { sendExternalJobApplication } = require('../services/email.service');
 const { uploadFile } = require('../services/storage.service');
 const axios = require('axios');
 
+const normaliseDetails = (details) => {
+  if (!Array.isArray(details)) return null;
+  const allowedKeys = new Set(['description', 'responsibilities', 'requirements', 'skills', 'benefits', 'applicationNotes']);
+  return details
+    .filter((item) => item && allowedKeys.has(item.key) && typeof item.content === 'string' && item.content.trim())
+    .map((item) => ({ key: item.key, label: String(item.label || item.key).trim().slice(0, 80), content: item.content.trim().slice(0, 5000) }));
+};
+
 /**
  * Helper to fetch configurable recheck days from Settings table
  */
@@ -40,6 +48,7 @@ const createExternalJob = async (req, res, next) => {
       companyName,
       description,
       requirements,
+      details,
       destinationEmail,
       source,
       expiryDate,
@@ -87,12 +96,14 @@ const createExternalJob = async (req, res, next) => {
     const verifierName = req.user?.fullName || req.user?.phone || req.user?.email || 'Admin Staff';
     const isExpired = parsedExpiry <= now;
 
+    const jobDetails = normaliseDetails(details);
     const job = await prisma.externalJob.create({
       data: {
         title: title.trim(),
         companyName: companyName.trim(),
         description: description.trim(),
         requirements: requirements ? requirements.trim() : null,
+        details: jobDetails,
         destinationEmail: cleanDestinationEmail,
         source: source ? source.trim() : null,
         verifiedBy: verifierName,
@@ -301,6 +312,7 @@ const updateExternalJob = async (req, res, next) => {
       companyName,
       description,
       requirements,
+      details,
       destinationEmail,
       source,
       expiryDate,
@@ -323,6 +335,7 @@ const updateExternalJob = async (req, res, next) => {
     if (companyName) updateData.companyName = companyName.trim();
     if (description) updateData.description = description.trim();
     if (requirements !== undefined) updateData.requirements = requirements ? requirements.trim() : null;
+    if (details !== undefined) updateData.details = normaliseDetails(details);
     if (destinationEmail) {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(destinationEmail.trim())) {
@@ -591,6 +604,7 @@ const getActiveExternalJobs = async (req, res, next) => {
           companyName: true,
           description: true,
           requirements: true,
+          details: true,
           source: true,
           category: true,
           location: true,
@@ -646,6 +660,7 @@ const getExternalJobById = async (req, res, next) => {
         companyName: true,
         description: true,
         requirements: true,
+        details: true,
         source: true,
         category: true,
         location: true,
@@ -738,10 +753,11 @@ const applyForExternalJob = async (req, res, next) => {
       }).catch(() => {});
     }
 
-    // 3. Handle CV (uploaded photo/PDF file, Google Sheets/Drive link, or saved profile CV)
+    // 3. Handle a CV only when the candidate explicitly chooses one for this application.
+    // A profile CV must never be silently attached to an employer application.
     let cvBuffer = null;
-    let cvFileName = user.cvName || 'Resume';
-    let cvUrl = req.body.cvLink || req.body.cvUrl || user.cvUrl;
+    let cvFileName = req.body.cvName || null;
+    let cvUrl = req.body.cvLink || req.body.cvUrl || null;
     let isWebLink = false;
 
     if (req.file) {

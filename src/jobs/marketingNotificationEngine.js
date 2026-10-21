@@ -260,7 +260,21 @@ async function sendWeeklyClientSkillAlert(options = {}) {
   }
 }
 
-// Weekly Provider Intelligence & Boost Notification (Runs every Wednesday / Sunday)
+function getProviderTrendContent(category, isFr) {
+  const normalized = String(category || '').trim().toLowerCase();
+  const focused = [
+    { matches: ['home tutor', 'tutor', 'teaching'], en: ['Provider demand this week: Home tutors', 'More families are looking for home tutors for their children this week. Keep your subjects, service area and availability up to date so the right clients can find you.'], fr: ['Demande de la semaine : répétiteurs à domicile', 'Cette semaine, davantage de familles recherchent un répétiteur à domicile pour leurs enfants. Mettez à jour vos matières, votre zone d’intervention et vos disponibilités.'] },
+    { matches: ['cleaning', 'cleaner'], en: ['Provider demand this week: Cleaning services', 'More clients are looking for reliable cleaners this week. Make sure your cleaning services, area and availability are clear on your profile.'], fr: ['Demande de la semaine : services de nettoyage', 'Cette semaine, davantage de clients recherchent des agents de nettoyage fiables. Vérifiez vos services, votre zone d’intervention et vos disponibilités.'] },
+    { matches: ['plumb'], en: ['Provider demand this week: Plumbing', 'More clients are looking for plumbers this week. Keep your repair skills and availability current to appear in relevant searches.'], fr: ['Demande de la semaine : plomberie', 'Cette semaine, davantage de clients recherchent des plombiers. Gardez vos compétences et vos disponibilités à jour pour apparaître dans les recherches.'] },
+    { matches: ['electr'], en: ['Provider demand this week: Electrical services', 'More clients are looking for electricians this week. Confirm your services and availability so clients can discover your profile.'], fr: ['Demande de la semaine : services électriques', 'Cette semaine, davantage de clients recherchent des électriciens. Confirmez vos services et vos disponibilités pour être trouvé plus facilement.'] },
+  ].find((item) => item.matches.some((match) => normalized.includes(match)));
+  const copy = focused ? (isFr ? focused.fr : focused.en) : isFr
+    ? ['Demande de services cette semaine', `Cette semaine, davantage de clients recherchent des prestataires en ${category || 'services'}. Mettez à jour vos compétences, votre zone et vos disponibilités pour apparaître dans les résultats.`]
+    : ['Service demand this week', `More clients are looking for ${category || 'professional'} services this week. Keep your skills, service area and availability current so you appear in relevant results.`];
+  return { title: copy[0], body: copy[1] };
+}
+
+// Weekly provider demand signal (runs every Wednesday and Sunday).
 async function sendWeeklyProviderIntelligence() {
   try {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -274,7 +288,7 @@ async function sendWeeklyProviderIntelligence() {
 
     const topCategory = recentJobs.length > 0 && recentJobs[0].category
       ? recentJobs[0].category
-      : 'Home & Professional Services';
+      : getCurrentWeekInfo().skill.category;
 
     const providers = await prisma.user.findMany({
       where: {
@@ -290,30 +304,9 @@ async function sendWeeklyProviderIntelligence() {
 
     console.log(`[Marketing Scheduler] Sending weekly provider marketplace trends to ${providers.length} providers (Top: ${topCategory})`);
 
-    const now = new Date();
-
     for (const provider of providers) {
       const isFr = (provider.preferredLanguage === 'fr' || provider.language === 'fr');
-      const isBoosted = provider.providerProfile?.boostExpiresAt && new Date(provider.providerProfile.boostExpiresAt) > now;
-
-      let title;
-      let body;
-
-      if (!isBoosted) {
-        title = isFr 
-          ? `Tendance de la semaine : ${topCategory} 🚀`
-          : `Market Trend of the Week: ${topCategory} 🚀`;
-        body = isFr
-          ? `La demande pour "${topCategory}" est en forte hausse sur Fixam Pro cette semaine ! Boostez votre profil pour recevoir plus de réservations directes.`
-          : `Demand for "${topCategory}" has surged on Fixam Pro this week! Boost your profile to capture direct client bookings and instant alerts.`;
-      } else {
-        title = isFr 
-          ? `Profil Boosté Actif ⚡` 
-          : `Active Boosted Visibility ⚡`;
-        body = isFr
-          ? `Votre profil boosté est mis en avant auprès des clients cherchant "${topCategory}". Restez disponible pour maximiser vos gains.`
-          : `Your boosted profile is featured to clients searching for "${topCategory}". Keep your status available to maximize bookings.`;
-      }
+      const { title, body } = getProviderTrendContent(topCategory, isFr);
 
       await prisma.notification.create({
         data: {
@@ -323,7 +316,7 @@ async function sendWeeklyProviderIntelligence() {
           data: {
             type: 'MARKETING_PROVIDER_TREND',
             category: topCategory,
-            screen: isBoosted ? 'FindJobs' : 'BoostProfile'
+            screen: 'FindJobs'
           }
         }
       }).catch(() => {});
@@ -335,7 +328,7 @@ async function sendWeeklyProviderIntelligence() {
         {
           type: 'MARKETING_PROVIDER_TREND',
           category: topCategory,
-          screen: isBoosted ? 'FindJobs' : 'BoostProfile'
+          screen: 'FindJobs'
         }
       ).catch(err => console.error('[Push Error] Weekly provider push failed:', provider.id, err.message));
     }
