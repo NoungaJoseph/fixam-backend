@@ -80,7 +80,7 @@ async function updatePendingTasksToInProgress() {
           status: 'PENDING',
           expiryDate: { lte: now }
         },
-        data: { status: 'CANCELLED' }
+        data: { status: 'EXPIRED' }
       });
     }
 
@@ -128,4 +128,3 @@ function startStatusUpdater() {
 }
 
 module.exports = { startStatusUpdater };
-

@@ -288,8 +288,28 @@ const createOrGetConversation = async (requester, participantId) => {
     throw error;
   }
 
-  const existingId = await findDirectConversationId(requester.id, participantId);
-  if (existingId) return formatConversationForUser(existingId, requester.id);
+  const activeBooking = await prisma.booking.findFirst({
+    where: {
+      status: { in: ACTIVE_BOOKING_STATUSES },
+      OR: [
+        { clientId: requester.id, providerId: participantId },
+        { clientId: participantId, providerId: requester.id }
+      ]
+    },
+    select: { id: true },
+    orderBy: { createdAt: 'desc' }
+  });
+
+  if (activeBooking) {
+    const bookingConversation = await prisma.conversation.findUnique({
+      where: { bookingId: activeBooking.id },
+      select: { id: true }
+    });
+    if (bookingConversation) return formatConversationForUser(bookingConversation.id, requester.id);
+  } else {
+    const existingId = await findDirectConversationId(requester.id, participantId);
+    if (existingId) return formatConversationForUser(existingId, requester.id);
+  }
 
   const target = await prisma.user.findUnique({
     where: { id: participantId },
@@ -310,6 +330,7 @@ const createOrGetConversation = async (requester, participantId) => {
 
   const conversation = await prisma.conversation.create({
     data: {
+      bookingId: activeBooking?.id || null,
       participants: {
         create: [
           { userId: requester.id },
@@ -325,10 +346,19 @@ const createOrGetConversation = async (requester, participantId) => {
 
 const getConversations = async (req, res, next) => {
   try {
+    const showArchived = req.query.archived === 'true';
+    const includeArchived = req.query.includeArchived === 'true';
+    const participantVisibility = {
+      userId: req.user.id,
+      deletedAt: null,
+      ...(!includeArchived ? { archivedAt: showArchived ? { not: null } : null } : {})
+    };
     // Optimized query: Get conversations with minimal nested queries
       const conversations = await prisma.conversation.findMany({
         where: {
-          participants: { some: { userId: req.user.id } }
+          participants: {
+            some: participantVisibility
+          }
         },
         take: 20,
       select: {
@@ -340,6 +370,7 @@ const getConversations = async (req, res, next) => {
           select: {
             userId: true,
             unreadCount: true,
+            archivedAt: true,
             user: {
               select: { 
                 id: true,
@@ -374,6 +405,7 @@ const getConversations = async (req, res, next) => {
       participants: conv.participants.filter(p => p.userId !== req.user.id).map(p => p.user),
       lastMessage: conv.messages[0] || null,
       unreadCount: conv.participants.find(p => p.userId === req.user.id)?.unreadCount || 0,
+      isArchived: Boolean(conv.participants.find(p => p.userId === req.user.id)?.archivedAt),
       activeTask: null,
     }));
 
@@ -528,6 +560,33 @@ const createConversation = async (req, res, next) => {
   }
 };
 
+const archiveConversation = async (req, res, next) => {
+  try {
+    const participant = await prisma.conversationParticipant.findUnique({
+      where: { conversationId_userId: { conversationId: req.params.conversationId, userId: req.user.id } },
+      select: { id: true, archivedAt: true }
+    });
+    if (!participant) return res.status(404).json({ success: false, message: 'Conversation not found' });
+    const shouldArchive = req.body.archived !== false;
+    await prisma.conversationParticipant.update({
+      where: { id: participant.id },
+      data: { archivedAt: shouldArchive ? new Date() : null, deletedAt: null }
+    });
+    res.status(200).json({ success: true, data: { archived: shouldArchive } });
+  } catch (error) { next(error); }
+};
+
+const deleteConversationForUser = async (req, res, next) => {
+  try {
+    const result = await prisma.conversationParticipant.updateMany({
+      where: { conversationId: req.params.conversationId, userId: req.user.id },
+      data: { deletedAt: new Date(), archivedAt: null, unreadCount: 0 }
+    });
+    if (!result.count) return res.status(404).json({ success: false, message: 'Conversation not found' });
+    res.status(200).json({ success: true });
+  } catch (error) { next(error); }
+};
+
 const getActiveTaskForChat = async (req, res, next) => {
   try {
     const { conversationId } = req.params;
@@ -640,6 +699,13 @@ const sendMessage = async (req, res, next) => {
     });
 
     if (!supportConversation) {
+      const linkedBooking = await prisma.conversation.findUnique({
+        where: { id: actualConvId },
+        select: { booking: { select: { status: true } } }
+      });
+      if (linkedBooking?.booking && !ACTIVE_BOOKING_STATUSES.includes(linkedBooking.booking.status)) {
+        return res.status(403).json({ success: false, message: 'conversationClosed' });
+      }
       const otherParticipant = await prisma.conversationParticipant.findFirst({
         where: { conversationId: actualConvId, userId: { not: req.user.id } },
         select: { userId: true },
@@ -683,7 +749,7 @@ const sendMessage = async (req, res, next) => {
       }),
       prisma.conversationParticipant.updateMany({
         where: { conversationId: actualConvId, NOT: { userId: req.user.id } },
-        data: { unreadCount: { increment: 1 } }
+        data: { unreadCount: { increment: 1 }, archivedAt: null, deletedAt: null }
       }),
       prisma.supportConversation.updateMany({
         where: { conversationId: actualConvId },
@@ -852,6 +918,8 @@ const getConversationById = async (req, res, next) => {
       },
       select: {
         id: true,
+        bookingId: true,
+        booking: { select: { id: true, status: true } },
         lastMessageAt: true,
         createdAt: true,
         updatedAt: true,
@@ -891,7 +959,9 @@ const getConversationById = async (req, res, next) => {
     const otherParticipant = conversation.participants.find((p) => p.userId !== req.user.id);
     let chatStatus = { active: true, reason: 'ADMIN' };
     if (!conversation.support && otherParticipant?.userId) {
-      chatStatus = await getConversationStatus(req.user.id, otherParticipant.userId);
+      chatStatus = conversation.booking
+        ? { active: ACTIVE_BOOKING_STATUSES.includes(conversation.booking.status), reason: conversation.booking.status, bookingId: conversation.booking.id }
+        : await getConversationStatus(req.user.id, otherParticipant.userId);
     }
 
     const formatted = {
@@ -900,6 +970,7 @@ const getConversationById = async (req, res, next) => {
       createdAt: conversation.createdAt,
       updatedAt: conversation.updatedAt,
       isSystem: Boolean(conversation.support),
+      bookingId: conversation.bookingId,
       chatStatus,
       participants: conversation.participants.map((p) => ({
         userId: p.userId,
@@ -1026,6 +1097,6 @@ module.exports = {
   getUnreadCount,
   checkBooking,
   logContactWarning
+  ,archiveConversation
+  ,deleteConversationForUser
 };
-
-

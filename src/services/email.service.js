@@ -1,5 +1,16 @@
 const { Resend } = require('resend');
 
+const EMAIL_DOMAIN = 'mail.usefixam.com';
+const SENDERS = {
+  support: `Fixam Support <support@${EMAIL_DOMAIN}>`,
+  help: `Fixam Help <help@${EMAIL_DOMAIN}>`,
+  security: `Fixam Security <security@${EMAIL_DOMAIN}>`,
+  updates: `Fixam Updates <updates@${EMAIL_DOMAIN}>`,
+  newsletter: `Fixam Newsletter <newsletter@${EMAIL_DOMAIN}>`,
+  jobs: `Fixam Jobs <jobs@${EMAIL_DOMAIN}>`,
+  applications: `Fixam Applications <applications@${EMAIL_DOMAIN}>`,
+};
+
 let _resendClient = null;
 const getResendClient = () => {
   if (_resendClient) return _resendClient;
@@ -17,12 +28,21 @@ const getResendClient = () => {
   }
 };
 
+// Keep the verified mailbox for delivery while consistently presenting Fixam
+// as the sender name, even when the environment contains only an email address.
+const brandedSender = (configuredSender, fallbackAddress, displayName = 'Fixam') => {
+  const value = String(configuredSender || fallbackAddress).trim();
+  const bracketedAddress = value.match(/<\s*([^>]+)\s*>/);
+  const address = (bracketedAddress?.[1] || value).trim();
+  return `"${displayName}" <${address}>`;
+};
+
 /**
  * Clean default send helper
  */
 const sendEmail = async (options) => {
   try {
-    const fromAddress = options.from || process.env.EMAIL_FROM || 'Fixam <noreply@fixam.net>';
+    const fromAddress = options.from || process.env.EMAIL_SUPPORT_FROM || process.env.EMAIL_FROM || SENDERS.support;
     const payload = {
       from: fromAddress,
       to: options.email || options.to,
@@ -62,7 +82,7 @@ const sendEmail = async (options) => {
 
 /**
  * OTP Verification Email
- * From: security@fixam.net
+ * From: security@mail.usefixam.com
  * Clean text, no background box or colored card containers
  */
 const sendOTP = async (email, otp, language = 'en') => {
@@ -70,8 +90,8 @@ const sendOTP = async (email, otp, language = 'en') => {
   const isFr = language === 'fr';
   const subject = isFr ? 'Fixam - Votre code de vérification' : 'Fixam - Your OTP Verification Code';
   const message = isFr 
-    ? `Votre code de vérification Fixam est : ${otp}. Valide pour 10 minutes.\n\nFixam Security Team - security@fixam.net` 
-    : `Your Fixam verification code is: ${otp}. Valid for 10 minutes.\n\nFixam Security Team - security@fixam.net`;
+    ? `Votre code de vérification Fixam est : ${otp}. Valide pour 10 minutes.\n\nL'équipe Fixam`
+    : `Your Fixam verification code is: ${otp}. Valid for 10 minutes.\n\nThe Fixam Team`;
 
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 540px; color: #111827; line-height: 1.6; font-size: 15px;">
@@ -82,12 +102,12 @@ const sendOTP = async (email, otp, language = 'en') => {
         ${otp}
       </p>
       <p style="font-size: 13px; color: #6b7280; margin: 24px 0 0 0;">${isFr ? "Ce code expire dans 10 minutes. Si vous n'avez pas demandé ce code, ignorez cet e-mail en toute sécurité." : "This code expires in 10 minutes. If you did not request this code, you can safely ignore this email."}</p>
-      <p style="font-size: 13px; color: #9ca3af; margin: 16px 0 0 0;">Fixam Security Team • security@fixam.net</p>
+      <p style="font-size: 13px; color: #9ca3af; margin: 16px 0 0 0;">${isFr ? "L'équipe Fixam" : 'The Fixam Team'}</p>
     </div>
   `;
 
   return sendEmail({
-    from: process.env.EMAIL_SECURITY_FROM || 'Fixam Security <security@fixam.net>',
+    from: brandedSender(process.env.EMAIL_OTP_FROM || process.env.EMAIL_SECURITY_FROM, `security@${EMAIL_DOMAIN}`, 'Fixam Security'),
     email,
     subject,
     message,
@@ -97,15 +117,15 @@ const sendOTP = async (email, otp, language = 'en') => {
 
 /**
  * Welcome Email
- * From: noreply@fixam.net
+ * From: updates@mail.usefixam.com
  * Clean plain layout, no background cards
  */
 const sendWelcomeEmail = async (email, fullName, language = 'en') => {
   const isFr = language === 'fr';
   const subject = isFr ? 'Bienvenue sur Fixam ! 🎉' : 'Welcome to Fixam! 🎉';
   const message = isFr
-    ? `Bonjour ${fullName || 'là'},\n\nBienvenue sur Fixam ! Nous avons crédité votre portefeuille de 1 pièce de bienvenue pour bien commencer.\n\nCordialement,\nL'équipe Fixam\nhttps://usefixam.com • support@fixam.net`
-    : `Hello ${fullName || 'there'},\n\nWelcome to Fixam! We have credited your wallet with 1 welcome coin to get you started.\n\nBest regards,\nThe Fixam Team\nhttps://usefixam.com • support@fixam.net`;
+    ? `Bonjour ${fullName || 'là'},\n\nBienvenue sur Fixam ! Nous avons crédité votre portefeuille de 1 pièce de bienvenue pour bien commencer.\n\nCordialement,\nL'équipe Fixam\nhttps://usefixam.com • support@mail.usefixam.com`
+    : `Hello ${fullName || 'there'},\n\nWelcome to Fixam! We have credited your wallet with 1 welcome coin to get you started.\n\nBest regards,\nThe Fixam Team\nhttps://usefixam.com • support@mail.usefixam.com`;
 
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 540px; color: #111827; line-height: 1.6; font-size: 15px;">
@@ -117,12 +137,12 @@ const sendWelcomeEmail = async (email, fullName, language = 'en') => {
         ${isFr ? 'Cordialement,' : 'Best regards,'}<br/>
         <strong>${isFr ? "L'équipe Fixam" : 'The Fixam Team'}</strong>
       </p>
-      <p style="font-size: 12px; color: #9ca3af; margin: 24px 0 0 0;">Fixam • https://usefixam.com • support@fixam.net</p>
+      <p style="font-size: 12px; color: #9ca3af; margin: 24px 0 0 0;">Fixam • https://usefixam.com • support@mail.usefixam.com</p>
     </div>
   `;
 
   return sendEmail({
-    from: process.env.EMAIL_NOREPLY_FROM || 'Fixam <noreply@fixam.net>',
+    from: process.env.EMAIL_UPDATES_FROM || SENDERS.updates,
     email,
     subject,
     message,
@@ -132,13 +152,13 @@ const sendWelcomeEmail = async (email, fullName, language = 'en') => {
 
 /**
  * Suspicious Login Alert
- * From: security@fixam.net
+ * From: security@mail.usefixam.com
  * Clean plain layout, no red box container
  */
 const sendSuspiciousLoginAlert = async (email, details, language = 'en') => {
   const isFr = language === 'fr';
   const subject = isFr ? 'Alerte de sécurité : Nouvelle connexion détectée' : 'Security Alert: New Login Detected';
-  const message = `${subject}\n\nLocation: ${details.location}\nDevice: ${details.device}\nTime: ${details.time}\n\nIf this was not you, please reset your password immediately at https://usefixam.com\nFixam Security • security@fixam.net`;
+  const message = `${subject}\n\nLocation: ${details.location}\nDevice: ${details.device}\nTime: ${details.time}\n\nIf this was not you, please reset your password immediately at https://usefixam.com\nFixam Security • security@mail.usefixam.com`;
 
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 540px; color: #111827; line-height: 1.6; font-size: 15px;">
@@ -151,12 +171,12 @@ const sendSuspiciousLoginAlert = async (email, details, language = 'en') => {
       <p style="margin: 4px 0;"><strong>${isFr ? 'Heure' : 'Time'}:</strong> ${details.time}</p>
 
       <p style="margin: 20px 0 0 0;">${isFr ? "Si ce n'était pas vous, veuillez changer votre mot de passe immédiatement sur Fixam." : "If this wasn't you, please change your password immediately on Fixam."}</p>
-      <p style="font-size: 12px; color: #9ca3af; margin: 24px 0 0 0;">Fixam Security Team • security@fixam.net</p>
+      <p style="font-size: 12px; color: #9ca3af; margin: 24px 0 0 0;">Fixam Security Team • security@mail.usefixam.com</p>
     </div>
   `;
 
   return sendEmail({
-    from: process.env.EMAIL_SECURITY_FROM || 'Fixam Security <security@fixam.net>',
+    from: process.env.EMAIL_SECURITY_FROM || SENDERS.security,
     email,
     subject,
     message,
@@ -166,7 +186,7 @@ const sendSuspiciousLoginAlert = async (email, details, language = 'en') => {
 
 /**
  * Marketing & Broadcast
- * From: noreply@fixam.net
+ * From: newsletter@mail.usefixam.com
  */
 const sendMarketingBroadcast = async (emails, subject, content) => {
   const html = `
@@ -175,11 +195,11 @@ const sendMarketingBroadcast = async (emails, subject, content) => {
       <div style="font-size: 15px; line-height: 1.6; color: #334155; margin-bottom: 24px;">
         ${content}
       </div>
-      <p style="font-size: 12px; color: #9ca3af; margin: 30px 0 0 0;">You are receiving this email because you are registered on Fixam • support@fixam.net</p>
+      <p style="font-size: 12px; color: #9ca3af; margin: 30px 0 0 0;">You are receiving this email because you are registered on Fixam • support@mail.usefixam.com</p>
     </div>
   `;
   return sendEmail({
-    from: process.env.EMAIL_FROM || 'Fixam <noreply@fixam.net>',
+    from: process.env.EMAIL_NEWSLETTER_FROM || SENDERS.newsletter,
     email: emails,
     subject,
     html
@@ -188,7 +208,7 @@ const sendMarketingBroadcast = async (emails, subject, content) => {
 
 /**
  * Academy completion email
- * From: noreply@fixam.net
+ * From: updates@mail.usefixam.com
  */
 const sendModuleCompletionEmail = async (email, fullName, moduleName, score) => {
   const subject = `Congratulations! You've completed ${moduleName} 🎓`;
@@ -206,7 +226,7 @@ const sendModuleCompletionEmail = async (email, fullName, moduleName, score) => 
     </div>
   `;
   return sendEmail({
-    from: process.env.EMAIL_NOREPLY_FROM || 'Fixam <noreply@fixam.net>',
+    from: process.env.EMAIL_UPDATES_FROM || SENDERS.updates,
     email,
     subject,
     html
@@ -215,7 +235,7 @@ const sendModuleCompletionEmail = async (email, fullName, moduleName, score) => 
 
 /**
  * Security Notice
- * From: security@fixam.net
+ * From: security@mail.usefixam.com
  */
 const sendSecurityNotice = async (emails, issueDetails) => {
   const html = `
@@ -224,11 +244,11 @@ const sendSecurityNotice = async (emails, issueDetails) => {
       <div style="font-size: 15px; line-height: 1.6; color: #1f2937; margin-bottom: 24px;">
         ${issueDetails}
       </div>
-      <p style="font-size: 12px; color: #9ca3af; margin: 30px 0 0 0;">Mandatory security notification from Fixam Security • security@fixam.net</p>
+      <p style="font-size: 12px; color: #9ca3af; margin: 30px 0 0 0;">Mandatory security notification from Fixam Security • security@mail.usefixam.com</p>
     </div>
   `;
   return sendEmail({
-    from: process.env.EMAIL_SECURITY_FROM || 'Fixam Security <security@fixam.net>',
+    from: process.env.EMAIL_SECURITY_FROM || SENDERS.security,
     email: emails,
     subject: 'Important Security Notice from Fixam',
     html
@@ -237,7 +257,7 @@ const sendSecurityNotice = async (emails, issueDetails) => {
 
 /**
  * External Job Application Submission Email
- * From: submit@fixam.net (e.g. "${applicantName} (via Fixam)" <submit@fixam.net>)
+ * From: applications@mail.usefixam.com
  * Reply-To: applicant's direct email
  * Format: Plain, clean, professional letter layout with NO background box/cards
  * Supports: Google Sheets / Drive / Web URL and attached binary files (PDF or Photo)
@@ -252,10 +272,11 @@ const sendExternalJobApplication = async ({
   coverLetter,
   cvLink,
   isPriority = false,
-  attachments = []
+  attachments = [],
+  screeningResponses = []
 }) => {
   try {
-    const rawFrom = process.env.EMAIL_APPLICATIONS_FROM || process.env.EMAIL_JOBS_FROM || 'submit@fixam.net';
+    const rawFrom = process.env.EMAIL_APPLICATIONS_FROM || process.env.EMAIL_JOBS_FROM || `applications@${EMAIL_DOMAIN}`;
     const match = rawFrom.match(/<([^>]+)>/);
     const senderEmail = match ? match[1] : rawFrom.trim();
     
@@ -267,19 +288,37 @@ const sendExternalJobApplication = async ({
     const subject = `${subjectPrefix}Application for ${jobTitle} - ${cleanName}`;
     const safeCoverLetter = coverLetter && coverLetter.trim()
       ? coverLetter.trim()
-      : 'Please find my application and CV attached for your review.';
+      : (cvLink
+        ? 'Please find my application and CV for your review.'
+        : 'Please find my application for your review.');
+    const printableResponses = (Array.isArray(screeningResponses) ? screeningResponses : [])
+      .filter((item) => item && item.answer !== undefined && item.answer !== null && item.answer !== '')
+      .map((item) => ({
+        question: String(item.prompt || ''),
+        answer: Array.isArray(item.answer) ? item.answer.join(', ') : (typeof item.answer === 'boolean' ? (item.answer ? 'Yes' : 'No') : String(item.answer)),
+      }));
+    const textResponses = printableResponses.length
+      ? `\nApplication Questions:\n${printableResponses.map((item) => `- ${item.question}: ${item.answer}`).join('\n')}\n`
+      : '';
+    const escapeHtml = (value) => String(value || '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+    const screeningHtml = printableResponses.length ? `
+        <div style="margin: 28px 0; padding-top: 16px; border-top: 1px solid #e5e7eb;">
+          <p style="font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #6b7280; margin: 0 0 12px 0;">Application Questions</p>
+          ${printableResponses.map((item) => `<div style="margin: 0 0 14px 0;"><p style="margin: 0 0 3px; font-weight: 700; color: #334155;">${escapeHtml(item.question)}</p><p style="margin: 0; color: #111827; white-space: pre-wrap;">${escapeHtml(item.answer)}</p></div>`).join('')}
+        </div>` : '';
 
     const textBody = `${isPriority ? 'PRIORITY CANDIDATE APPLICATION (FIXAM RECOMMENDED)\n\n' : ''}Dear Hiring Team at ${companyName || 'the Organization'},
 
 I am writing to submit my application for the position of ${jobTitle}.
 
 ${safeCoverLetter}
+${textResponses}
 
 Applicant Contact Details:
 - Name: ${cleanName}
 - Email: ${applicantEmail}
 ${applicantPhone ? `- Phone: ${applicantPhone}` : ''}
-${cvLink ? `- View & Download CV: ${cvLink}` : ''}
+${cvLink ? '- CV: Use the View / Download CV button in the HTML version of this email.' : ''}
 ${attachments && attachments.length > 0 ? `- Attachment: ${attachments.map(a => a.filename).join(', ')}` : ''}
 
 Thank you for your time and consideration. You can reply directly to this email to reach me.
@@ -304,7 +343,7 @@ ${cleanName}
         <div style="margin: 22px 0; padding: 16px 20px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
           <p style="margin: 0 0 8px 0; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #475569;">Candidate Curriculum Vitae (CV)</p>
           <a href="${cvLink}" target="_blank" rel="noopener noreferrer" style="display: inline-block; background-color: #2563eb; color: #ffffff; padding: 10px 22px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 14px; margin-top: 4px;">
-            Open Candidate CV &rarr;
+            View / Download Candidate CV &rarr;
           </a>
           <p style="margin: 8px 0 0 0; font-size: 12px; color: #64748b;">Click to view the candidate's complete resume.</p>
         </div>
@@ -325,13 +364,13 @@ ${safeCoverLetter}
         </div>
 
         ${cvActionHtml}
+        ${screeningHtml}
 
         <div style="margin: 28px 0 16px 0; padding-top: 16px; border-top: 1px solid #e5e7eb;">
           <p style="font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #6b7280; margin: 0 0 10px 0;">Applicant Contact Details</p>
           <p style="margin: 4px 0;"><strong>Name:</strong> ${cleanName}</p>
           <p style="margin: 4px 0;"><strong>Email:</strong> <a href="mailto:${applicantEmail}" style="color: #2563eb; text-decoration: underline;">${applicantEmail}</a></p>
           ${applicantPhone ? `<p style="margin: 4px 0;"><strong>Phone:</strong> <a href="tel:${applicantPhone}" style="color: #2563eb; text-decoration: underline;">${applicantPhone}</a></p>` : ''}
-          ${cvLink ? `<p style="margin: 8px 0;"><strong>CV Link:</strong> <a href="${cvLink}" target="_blank" rel="noopener noreferrer" style="color: #2563eb; font-weight: 600; text-decoration: underline;">${cvLink}</a></p>` : ''}
           ${attachments && attachments.length > 0 ? `<p style="margin: 4px 0;"><strong>Attached File:</strong> 📎 ${attachments.map(a => a.filename).join(', ')}</p>` : ''}
         </div>
 

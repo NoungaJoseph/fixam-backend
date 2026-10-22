@@ -9,6 +9,8 @@ router.get('/conversations', chatController.getConversations);
 router.get('/conversations/:conversationId', chatController.getConversationById);
 router.get('/unread-count', chatController.getUnreadCount);
 router.post('/conversations', chatController.createConversation);
+router.patch('/conversations/:conversationId/archive', chatController.archiveConversation);
+router.delete('/conversations/:conversationId', chatController.deleteConversationForUser);
 router.get('/check-booking/:providerId', chatController.checkBooking);
 router.post('/support', chatController.openSupportConversation);
 router.get('/:conversationId/active-task', chatController.getActiveTaskForChat);

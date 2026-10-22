@@ -1,0 +1,2 @@
+ALTER TABLE "BookingRevision" ADD COLUMN IF NOT EXISTS "coinCharged" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "BookingRevision" ADD COLUMN IF NOT EXISTS "coinRefundedAt" TIMESTAMP(3);

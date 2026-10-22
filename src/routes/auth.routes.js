@@ -6,10 +6,12 @@ const { protect } = require('../middlewares/auth.middleware');
 const validate = require('../middlewares/validate.middleware');
 const { registerSchema, loginSchema, forgotPasswordSchema } = require('../validations/auth.validation');
 
-router.use(authLimiter);
-
+// Cloudflare handles abuse protection for these two routes. Keep the backend
+// auth limiter on every other auth endpoint, including OTP and password reset.
 router.post('/register', validate(registerSchema), authController.register);
 router.post('/login', validate(loginSchema), authController.login);
+router.get('/detect-country', authController.detectCountry);
+router.use(authLimiter);
 // OTP endpoints use the strict limiter (5 attempts per 15 min) to prevent brute-force
 router.post('/request-otp', otpLimiter, authController.requestOTP);
 router.post('/verify-otp', otpLimiter, authController.verifyOTP);

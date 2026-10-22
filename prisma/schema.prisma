@@ -20,6 +20,7 @@ enum JobStatus {
   IN_PROGRESS
   COMPLETED
   CANCELLED
+  EXPIRED
 }
 
 enum JobApprovalStatus {
@@ -297,6 +298,7 @@ model Job {
   pinnedExpiresAt      DateTime?
   forwardToEmail       Boolean           @default(false)
   hiringEmail          String?
+  applicationQuestions Json?
   createdAt            DateTime          @default(now())
   updatedAt            DateTime          @updatedAt
 
@@ -333,6 +335,7 @@ model JobAssignment {
   cvUrl         String?
   cvName        String?
   cvViewedAt    DateTime?
+  screeningAnswers Json?
 
   job      Job             @relation(fields: [jobId], references: [id])
   provider ProviderProfile @relation(fields: [providerId], references: [id])
@@ -427,6 +430,7 @@ model CoinPurchase {
 
 model Conversation {
   id            String   @id @default(uuid())
+  bookingId     String?  @unique
   lastMessageAt DateTime @default(now()) @db.Timestamp(3)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -434,6 +438,7 @@ model Conversation {
   participants ConversationParticipant[]
   messages     Message[]
   support      SupportConversation?
+  booking      Booking? @relation(fields: [bookingId], references: [id])
 
   @@index([lastMessageAt])
   @@index([updatedAt])
@@ -446,12 +451,15 @@ model ConversationParticipant {
   userId         String
   unreadCount    Int      @default(0)
   joinedAt       DateTime @default(now())
+  archivedAt     DateTime?
+  deletedAt      DateTime?
 
   conversation Conversation @relation(fields: [conversationId], references: [id])
   user         User         @relation(fields: [userId], references: [id])
 
   @@unique([conversationId, userId])
   @@index([userId, conversationId]) // For finding conversations by user
+  @@index([userId, archivedAt])
   @@index([conversationId]) // For finding participants by conversation
 }
 
@@ -527,6 +535,7 @@ model Booking {
   disputes   Dispute[]
   serviceAgreements ServiceAgreement[]
   revisions BookingRevision[]
+  conversation Conversation?
 
   @@index([clientId, createdAt])
   @@index([providerId, createdAt])
@@ -553,6 +562,8 @@ model BookingRevision {
   paymentPreference String?
   respondedAt       DateTime?
   responseNote      String?
+  coinCharged       Boolean               @default(false)
+  coinRefundedAt    DateTime?
   createdAt         DateTime              @default(now())
   updatedAt         DateTime              @updatedAt
 
@@ -924,6 +935,7 @@ model ExternalJob {
   country           String?                  @default("Cameroon")
   salary            String?
   currency          String?                  @default("XAF")
+  applicationQuestions Json?
   createdAt         DateTime                 @default(now())
   updatedAt         DateTime                 @updatedAt
 
@@ -955,6 +967,7 @@ model ExternalJobApplication {
   cvViewedAt        DateTime?
   cvViewCount       Int          @default(0)
   viewToken         String?
+  screeningAnswers  Json?
 
   job               ExternalJob  @relation(fields: [externalJobId], references: [id], onDelete: Cascade)
   user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)

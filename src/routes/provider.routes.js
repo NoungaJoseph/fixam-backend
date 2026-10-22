@@ -12,10 +12,10 @@ router.get('/reports/all', protect, authorize('PROVIDER'), providerController.ge
 router.post('/reports/generate', protect, authorize('PROVIDER'), providerController.generateProviderReport);
 
 // Cache public provider lists for 5 minutes
-router.get('/', cacheMiddleware(300), providerController.getProviders);
-router.get('/top-of-month', cacheMiddleware(300), providerController.getProvidersOfTheMonth);
+router.get('/', optionalAuth, providerController.getProviders);
+router.get('/top-of-month', optionalAuth, providerController.getProvidersOfTheMonth);
 router.get('/favorites', protect, providerController.getFavoriteProviders);
-router.get('/nearby', providerController.getNearbyProviders);
+router.get('/nearby', optionalAuth, providerController.getNearbyProviders);
 router.post('/boost', protect, authorize('PROVIDER'), providerController.boostProviderProfile);
 router.post('/claim-setup-bonus', protect, authorize('PROVIDER'), providerController.claimSetupBonus);
 router.put('/status', protect, authorize('PROVIDER'), providerController.updateProviderStatus);

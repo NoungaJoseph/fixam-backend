@@ -71,6 +71,20 @@ const toNumber = (val) => {
   return isNaN(num) ? 0 : num;
 };
 
+const SUPPORTED_MARKETS = [
+  { country: 'Cameroon', label: 'Cameroon', currency: 'XAF' },
+  { country: 'Nigeria', label: 'Nigeria', currency: 'NGN' },
+  { country: 'Ivory Coast', label: 'Côte d’Ivoire', currency: 'XOF' },
+  { country: 'Ghana', label: 'Ghana', currency: 'GHS' },
+  { country: 'Senegal', label: 'Senegal', currency: 'XOF' },
+  { country: 'Kenya', label: 'Kenya', currency: 'KES' },
+  { country: 'Uganda', label: 'Uganda', currency: 'UGX' },
+  { country: 'Tanzania', label: 'Tanzania', currency: 'TZS' },
+  { country: 'Rwanda', label: 'Rwanda', currency: 'RWF' },
+  { country: 'South Africa', label: 'South Africa', currency: 'ZAR' },
+  { country: 'Egypt', label: 'Egypt', currency: 'EGP' }
+];
+
 const giveWelcomeCoins = async (userId, coins, reason) => {
   try {
     let wallet = await prisma.wallet.findUnique({ where: { userId } });
@@ -269,6 +283,7 @@ const verifyProvider = async (req, res, next) => {
 
     if (profile.user.email) {
       sendEmail({
+        from: process.env.EMAIL_SUPPORT_FROM || 'Fixam Support <support@mail.usefixam.com>',
         email: profile.user.email,
         subject: `Fixam - ${titleEn} | ${titleFr}`,
         message: `${bodyEn}\n\n${bodyFr}`,
@@ -1021,7 +1036,11 @@ const getAnalytics = async (req, res, next) => {
       avgRating,
       topProviders,
       completedJobs,
-      activeUsers
+      activeUsers,
+      countryRows,
+      verifiedCountryRows,
+      countryRevenueRows,
+      countryJobRows
     ] = await Promise.all([
       prisma.$queryRaw`
         SELECT
@@ -1064,7 +1083,27 @@ const getAnalytics = async (req, res, next) => {
         include: { user: { select: { fullName: true, avatar: true } } }
       }),
       prisma.job.count({ where: { status: 'COMPLETED' } }),
-      prisma.user.count({ where: { lastSeen: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } } })
+      prisma.user.count({ where: { lastSeen: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } } }),
+      prisma.user.groupBy({ by: ['country', 'role'], _count: { _all: true } }),
+      prisma.$queryRaw`SELECT COALESCE(u.country, 'Cameroon') AS country, COUNT(*) AS count FROM "ProviderProfile" p JOIN "User" u ON u.id = p."userId" WHERE p.verification = 'VERIFIED' GROUP BY COALESCE(u.country, 'Cameroon')`,
+      prisma.$queryRaw`
+        SELECT COALESCE(u.country, 'Cameroon') AS country,
+          COALESCE(SUM(NULLIF(regexp_replace(t."paidPrice", '[^0-9.]', '', 'g'), '')::float), 0) AS revenue,
+          COALESCE(SUM(t.amount), 0) AS coins
+        FROM "Transaction" t
+        JOIN "Wallet" w ON w.id = t."walletId"
+        JOIN "User" u ON u.id = w."userId"
+        WHERE t.type = 'PURCHASE' AND t.status = 'SUCCESS'
+        GROUP BY COALESCE(u.country, 'Cameroon')
+      `,
+      prisma.$queryRaw`
+        SELECT COALESCE(country, 'Cameroon') AS country,
+          COUNT(*) AS posted,
+          COUNT(*) FILTER (WHERE status = 'COMPLETED') AS completed,
+          COUNT(*) FILTER (WHERE "isRemote" = true) AS remote
+        FROM "Job"
+        GROUP BY COALESCE(country, 'Cameroon')
+      `
     ]);
 
     const monthLabel = (value) => new Date(value).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
@@ -1144,7 +1183,32 @@ const getAnalytics = async (req, res, next) => {
           avgJobCompletionRate: totalJobs ? Math.round((completedJobs / totalJobs) * 100) : 100,
           avgProviderResponseTime: '15 mins',
           totalActiveUsers: Math.max(1, activeUsers)
-        }
+        },
+        countryStats: SUPPORTED_MARKETS.map((market) => {
+          const matchingUsers = countryRows.filter(row => (row.country || 'Cameroon') === market.country);
+          const revenue = countryRevenueRows.find(row => row.country === market.country);
+          const jobs = countryJobRows.find(row => row.country === market.country);
+          return matchingUsers.reduce((stats, row) => {
+            const count = toNumber(row._count._all);
+            stats.totalUsers += count;
+            if (row.role === 'CLIENT') stats.clients += count;
+            if (row.role === 'PROVIDER') stats.providers += count;
+            return stats;
+          }, {
+            country: market.country,
+            label: market.label,
+            currency: market.currency,
+            totalUsers: 0,
+            clients: 0,
+            providers: 0,
+            verifiedProviders: toNumber(verifiedCountryRows.find(item => item.country === market.country)?.count),
+            revenue: toNumber(revenue?.revenue),
+            coins: toNumber(revenue?.coins),
+            jobsPosted: toNumber(jobs?.posted),
+            jobsCompleted: toNumber(jobs?.completed),
+            remoteJobs: toNumber(jobs?.remote)
+          });
+        }).sort((a, b) => b.totalUsers - a.totalUsers)
       }
     });
   } catch (error) {

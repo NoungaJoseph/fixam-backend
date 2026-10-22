@@ -1,5 +1,6 @@
 const prisma = require('../config/prisma');
 const { sendExternalJobApplication } = require('../services/email.service');
+const { normalizeQuestions, validateAnswers, pairQuestionsAndAnswers } = require('../utils/screeningQuestions');
 const { uploadFile } = require('../services/storage.service');
 const axios = require('axios');
 
@@ -58,6 +59,7 @@ const createExternalJob = async (req, res, next) => {
       country,
       salary,
       currency
+      , applicationQuestions
     } = req.body;
 
     if (!title || !companyName || !description || !destinationEmail || !expiryDate) {
@@ -117,6 +119,7 @@ const createExternalJob = async (req, res, next) => {
         country: country?.trim() || 'Cameroon',
         salary: salary ? salary.trim() : null,
         currency: currency?.trim() || 'XAF'
+        , applicationQuestions: normalizeQuestions(applicationQuestions || [])
       }
     });
 
@@ -323,6 +326,7 @@ const updateExternalJob = async (req, res, next) => {
       country,
       salary,
       currency
+      , applicationQuestions
     } = req.body;
 
     const existing = await prisma.externalJob.findUnique({ where: { id } });
@@ -367,6 +371,7 @@ const updateExternalJob = async (req, res, next) => {
     if (country) updateData.country = country.trim();
     if (salary !== undefined) updateData.salary = salary ? salary.trim() : null;
     if (currency) updateData.currency = currency.trim();
+    if (applicationQuestions !== undefined) updateData.applicationQuestions = normalizeQuestions(applicationQuestions);
 
     const updated = await prisma.externalJob.update({
       where: { id },
@@ -460,7 +465,8 @@ const getApplicationsLog = async (req, res, next) => {
               title: true,
               companyName: true,
               destinationEmail: true,
-              category: true
+              category: true,
+              applicationQuestions: true
             }
           },
           user: {
@@ -564,6 +570,14 @@ const getActiveExternalJobs = async (req, res, next) => {
       status: { in: ['ACTIVE', 'NEEDS_RECHECK'] },
       expiryDate: { gt: now }
     };
+
+    const viewerCountry = req.user?.country;
+    if (viewerCountry && isRemote !== 'true') {
+      where.AND = [
+        ...(where.AND || []),
+        { OR: [{ isRemote: true }, { country: viewerCountry }, { country: null }, { country: '' }] }
+      ];
+    }
 
     if (category && category !== 'All' && category !== 'all') {
       where.category = { contains: category, mode: 'insensitive' };
@@ -682,6 +696,10 @@ const getExternalJobById = async (req, res, next) => {
       });
     }
 
+    if (!job.isRemote && req.user?.country && job.country && job.country !== req.user.country) {
+      return res.status(403).json({ success: false, message: 'This local opportunity is not available in your country.' });
+    }
+
     res.status(200).json({
       success: true,
       data: {
@@ -737,6 +755,7 @@ const applyForExternalJob = async (req, res, next) => {
     const applicantName = (req.body.applicantName && req.body.applicantName.trim()) || user.fullName || 'Candidate';
     const applicantEmail = (req.body.applicantEmail && req.body.applicantEmail.trim().toLowerCase()) || user.email;
     const applicantPhone = (req.body.applicantPhone && req.body.applicantPhone.trim()) || user.phone || '';
+    const screeningAnswers = validateAnswers(job.applicationQuestions || [], req.body.screeningAnswers);
 
     if (!applicantEmail) {
       return res.status(400).json({
@@ -767,14 +786,6 @@ const applyForExternalJob = async (req, res, next) => {
 
       try {
         cvUrl = await uploadFile(req.file, 'cv-resumes');
-        // Update user profile so they have this CV saved permanently
-        await prisma.user.update({
-          where: { id: userId },
-          data: {
-            cvUrl,
-            cvName: cvFileName
-          }
-        });
       } catch (uploadErr) {
         console.warn('[ApplyExternalJob] Cloud upload failed, using in-memory buffer:', uploadErr.message);
       }
@@ -783,13 +794,6 @@ const applyForExternalJob = async (req, res, next) => {
       cvUrl = (req.body.cvLink || req.body.cvUrl).trim();
       cvFileName = req.body.cvName || (cvUrl.includes('docs.google.com/spreadsheets') ? 'Google Sheets Document' : 'Online Document / Link');
       isWebLink = true;
-      await prisma.user.update({
-        where: { id: userId },
-        data: {
-          cvUrl,
-          cvName: cvFileName
-        }
-      }).catch(() => {});
     } else if (cvUrl) {
       const lower = cvUrl.toLowerCase();
       if (lower.includes('docs.google.com') || lower.includes('drive.google.com') || lower.includes('sheet') || (!lower.match(/\.(pdf|png|jpg|jpeg|webp)$/) && !cvUrl.includes('/uploads/'))) {
@@ -864,6 +868,7 @@ const applyForExternalJob = async (req, res, next) => {
         coinsSpent: isPriorityBoost ? 2 : 0,
         viewToken,
         sentAt: new Date()
+        , screeningAnswers
       }
     });
 
@@ -872,7 +877,7 @@ const applyForExternalJob = async (req, res, next) => {
       ? `${apiBase}/api/external-jobs/track/cv-view?appId=${applicationLog.id}`
       : null;
 
-    // 5. Send email via Resend (sent from submit@fixam.net, reply-to applicant)
+    // 5. Send email via Resend (sent from applications@mail.usefixam.com, reply-to applicant)
     const emailResult = await sendExternalJobApplication({
       to: job.destinationEmail,
       applicantName,
@@ -884,6 +889,7 @@ const applyForExternalJob = async (req, res, next) => {
       cvLink: trackedCvLink || cvUrl,
       isPriority: isPriorityBoost,
       attachments
+      , screeningResponses: pairQuestionsAndAnswers(job.applicationQuestions || [], screeningAnswers)
     });
 
     await prisma.externalJobApplication.update({
@@ -1029,6 +1035,7 @@ const trackCvView = async (req, res, next) => {
         `;
 
         await sendEmail({
+          from: process.env.EMAIL_JOBS_FROM || 'Fixam Jobs <jobs@mail.usefixam.com>',
           to: candidateEmail,
           subject: `Votre CV pour "${jobTitle}" a été ouvert par ${companyName} !`,
           html: emailHtml

@@ -15,6 +15,21 @@ const countryDialCodes = {
   'Tanzania': '255',
   'Egypt': '20',
   'Nigeria': '234'
+  ,'Senegal': '221'
+  ,'Uganda': '256'
+  ,'Rwanda': '250'
+  ,'South Africa': '27'
+};
+
+const countryByCode = {
+  CM: 'Cameroon', KE: 'Kenya', GH: 'Ghana', CI: 'Ivory Coast', TZ: 'Tanzania',
+  EG: 'Egypt', NG: 'Nigeria', SN: 'Senegal', UG: 'Uganda', RW: 'Rwanda', ZA: 'South Africa'
+};
+
+const detectCountry = (req, res) => {
+  const rawCode = String(req.headers['cf-ipcountry'] || req.headers['x-vercel-ip-country'] || '').toUpperCase();
+  const country = countryByCode[rawCode] || 'Cameroon';
+  res.status(200).json({ success: true, data: { country, countryCode: Object.keys(countryByCode).find(code => countryByCode[code] === country) || 'CM' } });
 };
 
 const normalizePhoneWithCountry = (phone, country = 'Cameroon') => {
@@ -900,4 +915,5 @@ module.exports = {
   verifyEmailOTP,
   logout,
   me
+  ,detectCountry
 };

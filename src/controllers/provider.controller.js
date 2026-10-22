@@ -567,54 +567,72 @@ const boostProviderProfile = async (req, res, next) => {
     const cost = duration === '1_WEEK' ? 3 : 10;
     const durationMs = duration === '1_WEEK' ? 7 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000;
 
-    const profile = await prisma.providerProfile.findUnique({
-      where: { userId: req.user.id }
-    });
+    const result = await prisma.$transaction(async (tx) => {
+      const [profile, wallet] = await Promise.all([
+        tx.providerProfile.findUnique({ where: { userId: req.user.id } }),
+        tx.wallet.findUnique({ where: { userId: req.user.id } }),
+      ]);
+      if (!profile) {
+        const error = new Error('Provider profile not found');
+        error.statusCode = 404;
+        throw error;
+      }
+      if (!wallet || wallet.balance < cost) {
+        const error = new Error('Insufficient coins in wallet');
+        error.statusCode = 400;
+        error.code = 'INSUFFICIENT_COINS';
+        throw error;
+      }
 
-    if (!profile) {
-      return res.status(404).json({ success: false, message: 'Provider profile not found' });
-    }
+      const deducted = await tx.wallet.updateMany({
+        where: { id: wallet.id, balance: { gte: cost } },
+        data: { balance: { decrement: cost } },
+      });
+      if (deducted.count !== 1) {
+        const error = new Error('Insufficient coins in wallet');
+        error.statusCode = 400;
+        error.code = 'INSUFFICIENT_COINS';
+        throw error;
+      }
 
-    const wallet = await prisma.wallet.findUnique({
-      where: { userId: req.user.id }
-    });
-
-    if (!wallet || wallet.balance < cost) {
-      return res.status(400).json({ success: false, message: 'Insufficient coins in wallet' });
-    }
-
-    await prisma.$transaction([
-      prisma.wallet.update({
-        where: { id: wallet.id },
-        data: { balance: { decrement: cost } }
-      }),
-      prisma.transaction.create({
+      await tx.transaction.create({
         data: {
           walletId: wallet.id,
           amount: cost,
           type: 'DEDUCTION',
           status: 'SUCCESS',
-          reference: `BOOST-${Date.now()}`,
-          description: `Provider profile boost for ${duration === '1_WEEK' ? '1 Week' : '1 Month'}`
-        }
-      })
-    ]);
+          reference: `BOOST-${req.user.id.substring(0, 8)}-${Date.now()}`,
+          description: `Provider profile boost for ${duration === '1_WEEK' ? '1 Week' : '1 Month'}`,
+        },
+      });
 
-    const currentExpiry = profile.boostExpiresAt ? new Date(profile.boostExpiresAt) : new Date();
-    const baseDate = currentExpiry > new Date() ? currentExpiry : new Date();
-    const newExpiry = new Date(baseDate.getTime() + durationMs);
-
-    const updatedProfile = await prisma.providerProfile.update({
-      where: { id: profile.id },
-      data: { boostExpiresAt: newExpiry }
+      const now = new Date();
+      const currentExpiry = profile.boostExpiresAt ? new Date(profile.boostExpiresAt) : now;
+      const baseDate = currentExpiry > now ? currentExpiry : now;
+      const updatedProfile = await tx.providerProfile.update({
+        where: { id: profile.id },
+        data: { boostExpiresAt: new Date(baseDate.getTime() + durationMs) },
+      });
+      const updatedWallet = await tx.wallet.findUnique({ where: { id: wallet.id } });
+      return { updatedProfile, updatedWallet };
     });
+
+    cacheMiddleware.clearCache();
+    try {
+      const { getIO } = require('../services/socket.service');
+      getIO().to(req.user.id).emit('wallet:update', { balance: result.updatedWallet.balance });
+      getIO().emit('provider:boost-updated', { providerId: result.updatedProfile.id, boostExpiresAt: result.updatedProfile.boostExpiresAt });
+    } catch (_) {}
 
     res.status(200).json({
       success: true,
       message: 'Profile boosted successfully',
-      data: updatedProfile
+      data: { profile: result.updatedProfile, wallet: result.updatedWallet }
     });
   } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message, code: error.code });
+    }
     next(error);
   }
 };

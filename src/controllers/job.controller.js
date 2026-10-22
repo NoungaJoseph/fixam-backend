@@ -2,6 +2,7 @@ const prisma = require('../config/prisma');
 const { createJobSchema } = require('../validators/job.validator');
 const { calculateProviderStats } = require('../utils/providerStats');
 const agreementService = require('../services/agreement.service');
+const { normalizeQuestions, validateAnswers, pairQuestionsAndAnswers } = require('../utils/screeningQuestions');
 
 const calculateJobCoinCost = (providersCount) => {
   return 0; // Job creation is currently free for clients
@@ -94,6 +95,7 @@ const addTimingMetadata = (job) => {
 const createJob = async (req, res, next) => {
   try {
     const validatedData = createJobSchema.parse(req.body);
+    validatedData.applicationQuestions = normalizeQuestions(validatedData.applicationQuestions || []);
     const budgetRange = normalizeBudgetRange(validatedData);
 
     // 1. Fetch latest user profile to ensure up-to-date verification & wallet states
@@ -204,7 +206,8 @@ const createJob = async (req, res, next) => {
           status: 'PENDING',
           approvalStatus: 'PENDING_APPROVAL',  // New jobs require admin approval
           scheduledTime: validatedData.scheduledTime ? new Date(validatedData.scheduledTime) : null,
-          expiryDate: validatedData.expiryDate ? new Date(validatedData.expiryDate) : null,
+          // Every listing expires. Clients may choose a date; otherwise use 14 days.
+          expiryDate: validatedData.expiryDate ? new Date(validatedData.expiryDate) : new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
           isPinned,
           pinnedExpiresAt: isPinned ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) : null,
           forwardToEmail,
@@ -674,7 +677,7 @@ const applyForJob = async (req, res, next) => {
     }
 
     const job = await prisma.job.findUnique({ where: { id: jobId }, include: { client: true } });
-    if (!job || job.status !== 'PENDING' || job.approvalStatus !== 'APPROVED') {
+    if (!job || job.status !== 'PENDING' || job.approvalStatus !== 'APPROVED' || (job.expiryDate && job.expiryDate <= new Date())) {
       return res.status(400).json({ success: false, message: 'Job not available' });
     }
 
@@ -769,6 +772,13 @@ const applyForJob = async (req, res, next) => {
     const materialsList = req.body.materialsList;
     const proposedBudget = req.body.proposedBudget !== undefined && req.body.proposedBudget !== null ? Number(req.body.proposedBudget) : null;
     const proposalMedia = req.body.proposalMedia || null;
+    // CVs are application-specific and opt-in. Never fall back to the user's
+    // profile CV unless the client explicitly sent that URL for this proposal.
+    const applicationCvUrl = typeof req.body.cvUrl === 'string' && req.body.cvUrl.trim() ? req.body.cvUrl.trim() : null;
+    const applicationCvName = applicationCvUrl && typeof req.body.cvName === 'string' && req.body.cvName.trim()
+      ? req.body.cvName.trim()
+      : (applicationCvUrl ? 'Application CV' : null);
+    const screeningAnswers = validateAnswers(job.applicationQuestions || [], req.body.screeningAnswers);
 
     const assignment = await prisma.jobAssignment.create({
       data: { 
@@ -779,7 +789,10 @@ const applyForJob = async (req, res, next) => {
         coverLetter: coverLetter || null,
         proposedBudget: (proposedBudget !== null && !isNaN(proposedBudget)) ? proposedBudget : null,
         proposalMedia: proposalMedia,
-        materialsList: Array.isArray(materialsList) ? materialsList : null
+        materialsList: Array.isArray(materialsList) ? materialsList : null,
+        cvUrl: applicationCvUrl,
+        cvName: applicationCvName,
+        screeningAnswers
       }
     });
 
@@ -827,12 +840,13 @@ const applyForJob = async (req, res, next) => {
         await sendExternalJobApplication({
           to: job.hiringEmail,
           applicantName: req.user.fullName || 'Candidate',
-          applicantEmail: req.user.email || 'noreply@fixam.net',
+          applicantEmail: req.user.email || 'support@mail.usefixam.com',
           applicantPhone: req.user.phone || '',
           jobTitle: job.title,
           companyName: job.title,
           coverLetter: coverLetter || '',
-          cvLink: req.user.cvUrl || null,
+          cvLink: applicationCvUrl,
+          screeningResponses: pairQuestionsAndAnswers(job.applicationQuestions || [], screeningAnswers),
           isPriority: boostCoinsAmount > 0,
           attachments: []
         });
@@ -1216,7 +1230,7 @@ const updateJob = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Not allowed to update this job' });
     }
 
-    if (existing.status === 'COMPLETED' || existing.status === 'CANCELLED') {
+    if (existing.status === 'COMPLETED' || existing.status === 'CANCELLED' || existing.status === 'EXPIRED') {
       return res.status(400).json({ success: false, message: 'Completed or cancelled jobs cannot be edited' });
     }
 
@@ -1236,6 +1250,7 @@ const updateJob = async (req, res, next) => {
     }
     if (data.scheduledTime !== undefined) data.scheduledTime = data.scheduledTime ? new Date(data.scheduledTime) : null;
     if (data.expiryDate !== undefined) data.expiryDate = data.expiryDate ? new Date(data.expiryDate) : null;
+    if (req.body.applicationQuestions !== undefined) data.applicationQuestions = normalizeQuestions(req.body.applicationQuestions);
 
     const job = await prisma.job.update({
       where: { id: jobId },
@@ -1664,4 +1679,3 @@ module.exports = {
   markProposalViewed,
   markProposalInterviewing
 };
-

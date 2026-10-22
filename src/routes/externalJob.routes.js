@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const externalJobController = require('../controllers/externalJob.controller');
-const { protect, authorize } = require('../middlewares/auth.middleware');
+const { protect, optionalAuth, authorize } = require('../middlewares/auth.middleware');
 
 const storage = multer.memoryStorage();
 const upload = multer({
@@ -29,12 +29,12 @@ const upload = multer({
 // USER-FACING ROUTES
 // ==========================================
 // Public / authenticated feed of external jobs
-router.get('/', externalJobController.getActiveExternalJobs);
+router.get('/', optionalAuth, externalJobController.getActiveExternalJobs);
 
 // Track CV view by external employer (Dual notification to candidate + redirect)
 router.get('/track/cv-view', externalJobController.trackCvView);
 
-router.get('/:id', externalJobController.getExternalJobById);
+router.get('/:id', optionalAuth, externalJobController.getExternalJobById);
 
 // Apply via Fixam (One-Tap Apply)
 router.post(

@@ -221,10 +221,27 @@ const createBookingRevision = async (req, res, next) => {
     const booking = await prisma.booking.findUnique({ where: { id: bookingId }, include: { provider: true, client: true } });
     if (!booking) return res.status(404).json({ success: false, message: 'Booking not found.' });
     if (booking.providerId !== req.user.id) return res.status(403).json({ success: false, message: 'Only the provider can send a revised quote.' });
-    if (!['PENDING', 'COUNTER_PROPOSED', 'REVISED_QUOTE_PENDING'].includes(booking.status)) return res.status(400).json({ success: false, message: 'This booking can no longer be revised.' });
+    if (!['PENDING', 'COUNTER_PROPOSED'].includes(booking.status)) return res.status(400).json({ success: false, message: 'A revised quote is already waiting for the client. You cannot submit another one yet.' });
+
+    const activeRevision = await prisma.bookingRevision.findFirst({ where: { bookingId, status: 'PENDING_CLIENT' } });
+    if (activeRevision) return res.status(409).json({ success: false, message: 'A revised quote is already waiting for the client.' });
 
     const revision = await prisma.$transaction(async (tx) => {
-      await tx.bookingRevision.updateMany({ where: { bookingId, status: 'PENDING_CLIENT' }, data: { status: 'SUPERSEDED' } });
+      const wallet = await tx.wallet.findUnique({ where: { userId: req.user.id } });
+      if (!wallet || wallet.balance < 1) {
+        const error = new Error('You need at least 1 coin to send a revised offer. It will be refunded if the client declines.');
+        error.statusCode = 403;
+        error.code = 'INSUFFICIENT_COINS';
+        throw error;
+      }
+      const deducted = await tx.wallet.updateMany({ where: { userId: req.user.id, balance: { gte: 1 } }, data: { balance: { decrement: 1 } } });
+      if (deducted.count !== 1) {
+        const error = new Error('You need at least 1 coin to send a revised offer.');
+        error.statusCode = 403;
+        error.code = 'INSUFFICIENT_COINS';
+        throw error;
+      }
+      await tx.transaction.create({ data: { walletId: wallet.id, amount: 1, type: 'DEDUCTION', status: 'SUCCESS', reference: `REVISION-${bookingId.substring(0, 8)}-${Date.now()}`, description: `Coin reserved for revised booking offer: ${bookingId.substring(0, 8)}` } });
       const last = await tx.bookingRevision.aggregate({ where: { bookingId }, _max: { version: true } });
       const created = await tx.bookingRevision.create({ data: {
         bookingId, version: (last._max.version || 0) + 1, createdByUserId: req.user.id,
@@ -232,7 +249,7 @@ const createBookingRevision = async (req, res, next) => {
         bookingDate: req.body.bookingDate ? new Date(req.body.bookingDate) : null,
         bookingTime: req.body.bookingTime, bookingDuration: req.body.bookingDuration,
         scopeSummary: req.body.scopeSummary, materialsList: req.body.materialsList,
-        paymentPreference: req.body.paymentPreference,
+        paymentPreference: req.body.paymentPreference, coinCharged: true,
       }});
       await tx.booking.update({ where: { id: bookingId }, data: { status: 'REVISED_QUOTE_PENDING' } });
       return created;
@@ -240,6 +257,7 @@ const createBookingRevision = async (req, res, next) => {
     const notification = await prisma.notification.create({ data: { userId: booking.clientId, title: 'Revised quote received', body: `${booking.provider?.fullName || 'Your provider'} updated the booking terms for your review.`, data: { type: 'BOOKING_REVISED_QUOTE', bookingId, revisionId: revision.id, status: 'REVISED_QUOTE_PENDING' } } });
     const updated = await prisma.booking.findUnique({ where: { id: bookingId }, include: includeBooking });
     emitBooking(updated); try { getIO().to(booking.clientId).emit('notification:new', notification); } catch (_) {}
+    try { getIO().to(req.user.id).emit('wallet:update'); } catch (_) {}
     try {
       await sendPushNotification(booking.clientId, 'Revised quote received', `${booking.provider?.fullName || 'Your provider'} updated the booking terms for your review.`, {
         type: 'BOOKING_REVISED_QUOTE', bookingId, revisionId: revision.id, screen: 'RevisedQuote',
@@ -258,7 +276,18 @@ const acceptBookingRevision = async (req, res, next) => {
     const revision = await prisma.bookingRevision.findFirst({ where: { id: revisionId, bookingId, status: 'PENDING_CLIENT' } });
     if (!revision) return res.status(400).json({ success: false, message: 'This revised quote is no longer available.' });
     const updated = await prisma.$transaction(async (tx) => {
-      await tx.bookingRevision.update({ where: { id: revisionId }, data: { status: 'ACCEPTED', respondedAt: new Date() } });
+      if (!revision.coinCharged) {
+        const wallet = await tx.wallet.findUnique({ where: { userId: booking.providerId } });
+        if (!wallet || wallet.balance < 1) {
+          const error = new Error('The provider no longer has the 1 coin required to accept this booking.');
+          error.statusCode = 409;
+          error.code = 'INSUFFICIENT_COINS';
+          throw error;
+        }
+        await tx.wallet.update({ where: { userId: booking.providerId }, data: { balance: { decrement: 1 } } });
+        await tx.transaction.create({ data: { walletId: wallet.id, amount: 1, type: 'DEDUCTION', status: 'SUCCESS', reference: `REVISION-ACCEPT-${bookingId.substring(0, 8)}-${Date.now()}`, description: `Coin used for accepted revised booking: ${bookingId.substring(0, 8)}` } });
+      }
+      await tx.bookingRevision.update({ where: { id: revisionId }, data: { status: 'ACCEPTED', respondedAt: new Date(), coinCharged: true } });
       await tx.bookingRevision.updateMany({ where: { bookingId, id: { not: revisionId }, status: 'PENDING_CLIENT' }, data: { status: 'SUPERSEDED' } });
       return tx.booking.update({ where: { id: bookingId }, data: {
         status: 'ACCEPTED', acceptedRevisionId: revisionId, budget: revision.budget ?? booking.budget,
@@ -285,7 +314,17 @@ const declineBookingRevision = async (req, res, next) => {
     if (booking.clientId !== req.user.id) return res.status(403).json({ success: false, message: 'Only the client can decline a revised quote.' });
     const revision = await prisma.bookingRevision.findFirst({ where: { id: revisionId, bookingId, status: 'PENDING_CLIENT' } });
     if (!revision) return res.status(400).json({ success: false, message: 'This revised quote is no longer available.' });
-    await prisma.$transaction([prisma.bookingRevision.update({ where: { id: revisionId }, data: { status: 'DECLINED', respondedAt: new Date(), responseNote: req.body?.responseNote || null } }), prisma.booking.update({ where: { id: bookingId }, data: { status: 'REJECTED' } })]);
+    await prisma.$transaction(async (tx) => {
+      if (revision.coinCharged && !revision.coinRefundedAt) {
+        const wallet = await tx.wallet.findUnique({ where: { userId: booking.providerId } });
+        if (wallet) {
+          await tx.wallet.update({ where: { userId: booking.providerId }, data: { balance: { increment: 1 } } });
+          await tx.transaction.create({ data: { walletId: wallet.id, amount: 1, type: 'REFUND', status: 'SUCCESS', reference: `REVISION-REFUND-${bookingId.substring(0, 8)}-${Date.now()}`, description: `Refund for declined revised booking: ${bookingId.substring(0, 8)}` } });
+        }
+      }
+      await tx.bookingRevision.update({ where: { id: revisionId }, data: { status: 'DECLINED', respondedAt: new Date(), responseNote: req.body?.responseNote || null, coinRefundedAt: revision.coinCharged ? new Date() : null } });
+      await tx.booking.update({ where: { id: bookingId }, data: { status: 'REJECTED' } });
+    });
     const updated = await prisma.booking.findUnique({ where: { id: bookingId }, include: includeBooking }); emitBooking(updated);
     const notification = await prisma.notification.create({ data: { userId: booking.providerId, title: 'Revised quote declined', body: `${booking.client?.fullName || 'Your client'} declined the revised quote.`, data: { type: 'BOOKING_REVISED_QUOTE_DECLINED', bookingId, revisionId } } });
     try { getIO().to(booking.providerId).emit('notification:new', notification); } catch (_) {}
@@ -436,6 +475,19 @@ const updateBookingStatus = async (req, res, next) => {
     }).catch(() => {});
 
     if (status === 'CANCELLED') {
+      // Return a coin reserved by a still-pending revised offer.
+      const pendingRevision = await prisma.bookingRevision.findFirst({ where: { bookingId, status: 'PENDING_CLIENT', coinCharged: true, coinRefundedAt: null } });
+      if (pendingRevision) {
+        const providerWallet = await prisma.wallet.findUnique({ where: { userId: existing.providerId } });
+        if (providerWallet) {
+          await prisma.$transaction([
+            prisma.wallet.update({ where: { userId: existing.providerId }, data: { balance: { increment: 1 } } }),
+            prisma.transaction.create({ data: { walletId: providerWallet.id, amount: 1, type: 'REFUND', status: 'SUCCESS', reference: `REVISION-CANCEL-${bookingId.substring(0, 8)}-${Date.now()}`, description: `Refund for cancelled revised booking: ${bookingId.substring(0, 8)}` } }),
+            prisma.bookingRevision.update({ where: { id: pendingRevision.id }, data: { status: 'EXPIRED', coinRefundedAt: new Date(), respondedAt: new Date() } })
+          ]);
+        }
+      }
+
       // 1. If coins were deducted from client, refund client
       if (existing.coinCost && existing.coinCost > 0) {
         const clientWallet = await prisma.wallet.findUnique({ where: { userId: existing.clientId } });
