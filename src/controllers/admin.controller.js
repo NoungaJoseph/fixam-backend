@@ -1,6 +1,7 @@
 const prisma = require('../config/prisma');
 const cacheMiddleware = require('../middlewares/cache.middleware');
 const { createSignedUrlForStoredFile } = require('../services/storage.service');
+const { notifyMatchingProviders } = require('../services/job-alert.service');
 const getSupportConversations = async (req, res, next) => {
   try {
     const conversations = await prisma.conversation.findMany({
@@ -1523,8 +1524,10 @@ const approveJob = async (req, res, next) => {
         }
       });
 
+      await notifyMatchingProviders(job);
       const now = new Date();
-      const matchingProviders = providers.filter(provider => {
+      const matchingProviders = []; // Smart alerts above replace the legacy broad proximity broadcast.
+      /* const matchingProviders = providers.filter(provider => {
         const profile = provider.providerProfile;
         if (!profile) return false;
         const isBoosted = profile.boostExpiresAt && new Date(profile.boostExpiresAt) > now;
@@ -1536,7 +1539,7 @@ const approveJob = async (req, res, next) => {
         
         // Non-boosted providers match location as well
         return matchesLocation(profile.serviceArea, job.location);
-      });
+      }); */
 
       console.log(`[Proximity Alert] Found ${matchingProviders.length} matching providers (including boosted) for category "${job.category}" and location "${job.location}"`);
 

@@ -376,7 +376,10 @@ const getDashboardData = async (req, res, next) => {
     }
 
     finalJobs = finalJobs.map(job => {
-      const myAssignment = job.assignments?.find(a => a.provider?.userId === userId) || null;
+      const myAssignment = job.assignments?.find(a => (
+        a.provider?.userId === userId ||
+        a.providerId === req.user.providerProfile?.id
+      )) || null;
       const hasApplied = Boolean(myAssignment);
       const myBoostCoins = myAssignment?.boostCoins || 0;
       return {

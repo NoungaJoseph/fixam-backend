@@ -210,6 +210,7 @@ model ProviderProfile {
   profileScore      Int                @default(0)
   skillRank         String             @default("Newcomer")
   boostExpiresAt    DateTime?
+  jobAlertPreferences Json?
   
   user        User                     @relation(fields: [userId], references: [id])
   assignments JobAssignment[]

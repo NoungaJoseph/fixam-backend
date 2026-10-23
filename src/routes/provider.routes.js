@@ -18,6 +18,8 @@ router.get('/favorites', protect, providerController.getFavoriteProviders);
 router.get('/nearby', optionalAuth, providerController.getNearbyProviders);
 router.post('/boost', protect, authorize('PROVIDER'), providerController.boostProviderProfile);
 router.post('/claim-setup-bonus', protect, authorize('PROVIDER'), providerController.claimSetupBonus);
+router.get('/job-alert-preferences', protect, authorize('PROVIDER'), providerController.getJobAlertPreferences);
+router.put('/job-alert-preferences', protect, authorize('PROVIDER'), providerController.updateJobAlertPreferences);
 router.put('/status', protect, authorize('PROVIDER'), providerController.updateProviderStatus);
 router.post('/status', protect, authorize('PROVIDER'), providerController.updateProviderStatus);
 router.put('/profile', protect, authorize('PROVIDER'), validate(updateProviderProfileSchema), providerController.updateProviderProfile);

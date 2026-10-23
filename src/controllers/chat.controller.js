@@ -5,7 +5,9 @@ const debugLog = (...args) => {
 };
 
 const ACTIVE_JOB_STATUSES = ['PENDING', 'ASSIGNED', 'IN_PROGRESS'];
-const ACTIVE_BOOKING_STATUSES = ['PENDING', 'ACCEPTED', 'IN_PROGRESS'];
+// A booking request is private until the provider accepts it. Pending bookings
+// must not create or activate a direct conversation.
+const ACTIVE_BOOKING_STATUSES = ['ACCEPTED', 'IN_PROGRESS', 'COMPLETED'];
 
 const findDirectConversationId = async (userId, participantId) => {
   const existing = await prisma.$queryRaw`

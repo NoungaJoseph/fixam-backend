@@ -3,6 +3,7 @@ const { setupProviderSchema } = require('../validators/provider.validator');
 const { calculateProviderStats, enrichProvidersWithStats } = require('../utils/providerStats');
 const { isRemoteSkill } = require('../utils/skillClassifier');
 const cacheMiddleware = require('../middlewares/cache.middleware');
+const { getPreferences } = require('../services/job-alert.service');
 
 const maskProvidersPhone = (providers) => providers.map(p => {
   if (!p.user || !p.user.phone) return p;
@@ -87,6 +88,46 @@ const updateProviderProfile = async (req, res, next) => {
 
     cacheMiddleware.clearCache();
     res.status(200).json({ success: true, data: profile });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const getJobAlertPreferences = async (req, res, next) => {
+  try {
+    const profile = await prisma.providerProfile.upsert({
+      where: { userId: req.user.id },
+      update: {},
+      create: { userId: req.user.id, skills: [], profileMode: 'WORK' },
+    });
+    res.status(200).json({ success: true, data: getPreferences(profile) });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const updateJobAlertPreferences = async (req, res, next) => {
+  try {
+    const current = await prisma.providerProfile.upsert({
+      where: { userId: req.user.id },
+      update: {},
+      create: { userId: req.user.id, skills: [], profileMode: 'WORK' },
+    });
+    const incoming = req.body || {};
+    const preferences = {
+      ...getPreferences(current),
+      enabled: incoming.enabled !== false,
+      categories: Array.isArray(incoming.categories) ? incoming.categories.slice(0, 20).map(String).map(value => value.trim()).filter(Boolean) : [],
+      locations: Array.isArray(incoming.locations) ? incoming.locations.slice(0, 20).map(String).map(value => value.trim()).filter(Boolean) : [],
+      includeRemote: incoming.includeRemote !== false,
+      minimumBudget: incoming.minimumBudget === null || incoming.minimumBudget === '' ? null : Math.max(0, Number(incoming.minimumBudget) || 0),
+      frequency: incoming.frequency === 'DAILY' ? 'DAILY' : 'INSTANT',
+      matchMode: incoming.matchMode === 'MORE_OPPORTUNITIES' ? 'MORE_OPPORTUNITIES' : 'BEST_MATCHES',
+      dailyLimit: Math.min(20, Math.max(1, Number(incoming.dailyLimit) || 10)),
+    };
+    const profile = await prisma.providerProfile.update({ where: { userId: req.user.id }, data: { jobAlertPreferences: preferences } });
+    cacheMiddleware.clearCache();
+    res.status(200).json({ success: true, data: getPreferences(profile) });
   } catch (error) {
     next(error);
   }
@@ -1061,4 +1102,6 @@ module.exports = {
   getProviderReports,
   generateProviderReport,
   getProviderStatsSummary,
+  getJobAlertPreferences,
+  updateJobAlertPreferences,
 };
