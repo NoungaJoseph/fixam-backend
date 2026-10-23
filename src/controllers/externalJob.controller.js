@@ -638,10 +638,21 @@ const getActiveExternalJobs = async (req, res, next) => {
       prisma.externalJob.count({ where })
     ]);
 
+    let userAppliedIds = new Set();
+    if (req.user?.id && jobs.length > 0) {
+      const jobIds = jobs.map(j => j.id);
+      const applied = await prisma.externalJobApplication.findMany({
+        where: { externalJobId: { in: jobIds }, userId: req.user.id },
+        select: { externalJobId: true }
+      });
+      userAppliedIds = new Set(applied.map(a => a.externalJobId));
+    }
+
     // Map each item with isExternal marker and formatting
     const formatted = jobs.map(j => ({
       ...j,
       isExternal: true,
+      hasApplied: userAppliedIds.has(j.id),
       budget: j.salary,
       type: 'EXTERNAL_OPPORTUNITY'
     }));
@@ -702,11 +713,21 @@ const getExternalJobById = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'This local opportunity is not available in your country.' });
     }
 
+    let hasApplied = false;
+    if (req.user?.id) {
+      const existingApplication = await prisma.externalJobApplication.findFirst({
+        where: { externalJobId: id, userId: req.user.id },
+        select: { id: true }
+      });
+      hasApplied = Boolean(existingApplication);
+    }
+
     res.status(200).json({
       success: true,
       data: {
         ...job,
-        isExternal: true
+        isExternal: true,
+        hasApplied
       }
     });
   } catch (error) {
@@ -739,6 +760,17 @@ const applyForExternalJob = async (req, res, next) => {
       return res.status(400).json({
         success: false,
         message: 'Destination recruiter email is missing for this listing.'
+      });
+    }
+
+    const existingApplication = await prisma.externalJobApplication.findFirst({
+      where: { externalJobId: id, userId }
+    });
+    if (existingApplication) {
+      return res.status(400).json({
+        success: false,
+        message: 'You have already submitted an application for this position.',
+        code: 'ALREADY_APPLIED'
       });
     }
 
