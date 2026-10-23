@@ -58,7 +58,8 @@ const createExternalJob = async (req, res, next) => {
       isRemote,
       country,
       salary,
-      currency
+      currency,
+      providersNeeded
       , applicationQuestions
     } = req.body;
 
@@ -118,7 +119,8 @@ const createExternalJob = async (req, res, next) => {
         isRemote: Boolean(isRemote),
         country: country?.trim() || 'Cameroon',
         salary: salary ? salary.trim() : null,
-        currency: currency?.trim() || 'XAF'
+        currency: currency?.trim() || 'XAF',
+        providersNeeded: Math.max(1, parseInt(providersNeeded, 10) || 1)
         , applicationQuestions: normalizeQuestions(applicationQuestions || [])
       }
     });
@@ -325,8 +327,9 @@ const updateExternalJob = async (req, res, next) => {
       isRemote,
       country,
       salary,
-      currency
-      , applicationQuestions
+      currency,
+      providersNeeded,
+      applicationQuestions
     } = req.body;
 
     const existing = await prisma.externalJob.findUnique({ where: { id } });
@@ -371,6 +374,7 @@ const updateExternalJob = async (req, res, next) => {
     if (country) updateData.country = country.trim();
     if (salary !== undefined) updateData.salary = salary ? salary.trim() : null;
     if (currency) updateData.currency = currency.trim();
+    if (providersNeeded !== undefined) updateData.providersNeeded = Math.max(1, parseInt(providersNeeded, 10) || 1);
     if (applicationQuestions !== undefined) updateData.applicationQuestions = normalizeQuestions(applicationQuestions);
 
     const updated = await prisma.externalJob.update({
@@ -626,6 +630,7 @@ const getActiveExternalJobs = async (req, res, next) => {
           country: true,
           salary: true,
           currency: true,
+          providersNeeded: true,
           expiryDate: true,
           verifiedAt: true,
           createdAt: true,
@@ -654,7 +659,8 @@ const getActiveExternalJobs = async (req, res, next) => {
       isExternal: true,
       hasApplied: userAppliedIds.has(j.id),
       budget: j.salary,
-      type: 'EXTERNAL_OPPORTUNITY'
+      type: 'EXTERNAL_OPPORTUNITY',
+      providersNeeded: j.providersNeeded || 1
     }));
 
     res.status(200).json({
@@ -694,6 +700,7 @@ const getExternalJobById = async (req, res, next) => {
         country: true,
         salary: true,
         currency: true,
+        providersNeeded: true,
         expiryDate: true,
         verifiedAt: true,
         createdAt: true,
@@ -727,7 +734,8 @@ const getExternalJobById = async (req, res, next) => {
       data: {
         ...job,
         isExternal: true,
-        hasApplied
+        hasApplied,
+        providersNeeded: job.providersNeeded || 1
       }
     });
   } catch (error) {

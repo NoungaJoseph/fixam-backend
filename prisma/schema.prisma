@@ -936,6 +936,7 @@ model ExternalJob {
   salary            String?
   currency          String?                  @default("XAF")
   applicationQuestions Json?
+  providersNeeded   Int                      @default(1)
   createdAt         DateTime                 @default(now())
   updatedAt         DateTime                 @updatedAt
 

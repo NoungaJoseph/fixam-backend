@@ -146,6 +146,7 @@ async function startServer() {
       await prisma.$executeRawUnsafe(`ALTER TABLE "ExternalJobApplication" ADD COLUMN IF NOT EXISTS "viewToken" TEXT`);
       await prisma.$executeRawUnsafe(`ALTER TABLE "ExternalJob" ADD COLUMN IF NOT EXISTS "applicationQuestions" JSONB`);
       await prisma.$executeRawUnsafe(`ALTER TABLE "ExternalJobApplication" ADD COLUMN IF NOT EXISTS "screeningAnswers" JSONB`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "ExternalJob" ADD COLUMN IF NOT EXISTS "providersNeeded" INTEGER NOT NULL DEFAULT 1`);
 
       await prisma.$executeRawUnsafe(`
         CREATE TABLE IF NOT EXISTS "AgreementAmendment" (
