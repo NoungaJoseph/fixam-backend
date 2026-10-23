@@ -893,31 +893,6 @@ const selectProviderForJob = async (req, res, next) => {
     }
 
     const updated = await prisma.$transaction(async (tx) => {
-      const selectedUserId = selected.provider?.userId;
-      const providerWallet = selectedUserId ? await tx.wallet.findUnique({ where: { userId: selectedUserId } }) : null;
-      if (!providerWallet || providerWallet.balance < job.coinCost) {
-        const error = new Error(`This provider does not have the ${job.coinCost} coin${job.coinCost > 1 ? 's' : ''} required for this task.`);
-        error.statusCode = 403;
-        throw error;
-      }
-
-      // Deduct base task coin cost from selected provider
-      await tx.wallet.update({
-        where: { id: providerWallet.id },
-        data: { balance: { decrement: job.coinCost } }
-      });
-
-      await tx.transaction.create({
-        data: {
-          walletId: providerWallet.id,
-          amount: -job.coinCost,
-          type: 'DEDUCTION',
-          status: 'SUCCESS',
-          jobId,
-          description: `Selected for task: ${job.title}`
-        }
-      });
-
       const assignment = await tx.jobAssignment.update({
         where: { id: assignmentId },
         data: { status: 'ACCEPTED', selectedAt: new Date() },
@@ -1092,7 +1067,7 @@ const selectProviderForJob = async (req, res, next) => {
       }
     }
 
-    res.status(200).json({ success: true, data: updated.job, message: 'Provider selected successfully. Provider coins were deducted.' });
+    res.status(200).json({ success: true, data: updated.job, message: 'Provider selected successfully. No hiring coins were charged.' });
   } catch (error) {
     next(error);
   }
