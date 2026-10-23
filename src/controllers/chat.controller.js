@@ -119,7 +119,7 @@ const getConversationStatus = async (userId, otherUserId) => {
   if (jobOrConditions.length > 0) {
     const activeJob = await prisma.job.findFirst({
       where: {
-        status: { in: ['PENDING', 'ASSIGNED', 'IN_PROGRESS'] },
+        status: { in: ['ASSIGNED', 'IN_PROGRESS'] },
         OR: jobOrConditions
       }
     });
@@ -130,7 +130,7 @@ const getConversationStatus = async (userId, otherUserId) => {
   if (user1ProviderId && user2ProviderId) {
     const sharedMultiJob = await prisma.job.findFirst({
       where: {
-        status: { in: ['PENDING', 'ASSIGNED', 'IN_PROGRESS'] },
+        status: { in: ['ASSIGNED', 'IN_PROGRESS'] },
         providersNeeded: { gt: 1 },
         AND: [
           { assignments: { some: { providerId: user1ProviderId } } },
@@ -144,7 +144,7 @@ const getConversationStatus = async (userId, otherUserId) => {
     }
   }
 
-  // Find active bookings
+  // Find active bookings (must be accepted or in progress, not pending)
   const bookingOrConditions = [
     { clientId: userId, providerId: otherUserId },
     { clientId: otherUserId, providerId: userId }
@@ -158,22 +158,11 @@ const getConversationStatus = async (userId, otherUserId) => {
 
   const activeBooking = await prisma.booking.findFirst({
     where: {
-      status: { in: ['PENDING', 'ACCEPTED', 'IN_PROGRESS', 'COUNTER_PROPOSED'] },
+      status: { in: ['ACCEPTED', 'IN_PROGRESS'] },
       OR: bookingOrConditions
     }
   });
   if (activeBooking) return { active: true, reason: 'ACTIVE_BOOKING' };
-
-  // Find existing conversation between the two users
-  const existingConv = await prisma.conversation.findFirst({
-    where: {
-      AND: [
-        { participants: { some: { userId } } },
-        { participants: { some: { userId: otherUserId } } }
-      ]
-    }
-  });
-  if (existingConv) return { active: true, reason: 'EXISTING_CONVERSATION' };
 
   // Find completed/cancelled jobs/bookings within the last 12 hours
   const cutoffDate = new Date(Date.now() - 12 * 60 * 60 * 1000);
