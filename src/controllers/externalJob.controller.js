@@ -628,7 +628,8 @@ const getActiveExternalJobs = async (req, res, next) => {
           currency: true,
           expiryDate: true,
           verifiedAt: true,
-          createdAt: true
+          createdAt: true,
+          applicationQuestions: true
         },
         orderBy: { createdAt: 'desc' },
         skip,
@@ -685,7 +686,8 @@ const getExternalJobById = async (req, res, next) => {
         expiryDate: true,
         verifiedAt: true,
         createdAt: true,
-        status: true
+        status: true,
+        applicationQuestions: true
       }
     });
 

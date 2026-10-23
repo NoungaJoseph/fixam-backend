@@ -594,30 +594,48 @@ const getDashboardStats = async (req, res, next) => {
 
 const getUsers = async (req, res, next) => {
   try {
-    const { search = '', role, status, page = 1, limit = 50, all = false } = req.query;
+    const { search = '', role, status, country, page = 1, limit = 50, all = false } = req.query;
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
     const take = (all === 'true' || all === true) ? undefined : Math.max(1, Math.min(100, parseInt(limit, 10) || 50));
     const skip = (all === 'true' || all === true) ? undefined : (pageNum - 1) * take;
 
-    const where = {};
+    const conditions = [];
 
     if (role && role !== 'ALL') {
-      where.role = role;
+      conditions.push({ role });
     }
 
     if (status) {
-      if (status === 'BLOCKED') where.isBlocked = true;
-      if (status === 'ACTIVE') where.isBlocked = false;
+      if (status === 'BLOCKED') conditions.push({ isBlocked: true });
+      if (status === 'ACTIVE') conditions.push({ isBlocked: false });
+    }
+
+    if (country && country !== 'ALL') {
+      if (country === 'Cameroon') {
+        conditions.push({
+          OR: [
+            { country: 'Cameroon' },
+            { country: null },
+            { country: '' }
+          ]
+        });
+      } else {
+        conditions.push({ country });
+      }
     }
 
     if (search && search.trim()) {
       const q = search.trim();
-      where.OR = [
-        { fullName: { contains: q, mode: 'insensitive' } },
-        { phone: { contains: q, mode: 'insensitive' } },
-        { email: { contains: q, mode: 'insensitive' } },
-      ];
+      conditions.push({
+        OR: [
+          { fullName: { contains: q, mode: 'insensitive' } },
+          { phone: { contains: q, mode: 'insensitive' } },
+          { email: { contains: q, mode: 'insensitive' } },
+        ]
+      });
     }
+
+    const where = conditions.length > 0 ? { AND: conditions } : {};
 
     const [total, users] = await Promise.all([
       prisma.user.count({ where }),
