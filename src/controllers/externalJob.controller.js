@@ -904,9 +904,25 @@ const applyForExternalJob = async (req, res, next) => {
     });
 
     if (!emailResult.success) {
-      return res.status(502).json({
+      if (isPriorityBoost && userWallet) {
+        await prisma.wallet.update({
+          where: { id: userWallet.id },
+          data: { balance: { increment: 2 } }
+        }).catch(() => {});
+        await prisma.transaction.create({
+          data: {
+            walletId: userWallet.id,
+            amount: 2,
+            type: 'REFUND',
+            status: 'SUCCESS',
+            description: `Refund priority boost: delivery failed for ${job.title}`
+          }
+        }).catch(() => {});
+      }
+
+      return res.status(400).json({
         success: false,
-        message: `Failed to deliver application to ${job.companyName}: ${emailResult.error || 'Email service error'}. Please check your connection and try again.`,
+        message: `Failed to deliver application to ${job.companyName}: ${emailResult.error || 'Email service error'}. Please try again.`,
         applicationId: applicationLog.id
       });
     }
