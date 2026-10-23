@@ -4,6 +4,35 @@ const bcrypt = require('bcrypt');
 const { calculateProviderStats } = require('../utils/providerStats');
 const { clearUserCache } = require('../middlewares/auth.middleware');
 const cacheMiddleware = require('../middlewares/cache.middleware');
+const { sendEmail } = require('../services/email.service');
+
+const contactSupport = async (req, res, next) => {
+  try {
+    const { name, email, phone, message } = req.body || {};
+    if (!name?.trim() || !email?.trim() || !phone?.trim() || !message?.trim()) {
+      return res.status(400).json({ success: false, message: 'Name, email, phone and message are required' });
+    }
+
+    const safeName = name.trim().slice(0, 120);
+    const safeEmail = email.trim().slice(0, 180);
+    const safePhone = phone.trim().slice(0, 40);
+    const safeMessage = message.trim().slice(0, 5000);
+    const result = await sendEmail({
+      to: process.env.SUPPORT_CONTACT_EMAIL || 'supportfixam@gmail.com',
+      from: process.env.EMAIL_SUPPORT_FROM || 'Fixam Support <support@mail.usefixam.com>',
+      replyTo: safeEmail,
+      subject: `Website support request from ${safeName}`,
+      message: `Name: ${safeName}\nEmail: ${safeEmail}\nPhone: ${safePhone}\n\nMessage:\n${safeMessage}`
+    });
+
+    if (!result.success) {
+      return res.status(503).json({ success: false, message: 'Support email service is temporarily unavailable' });
+    }
+    return res.status(200).json({ success: true, message: 'Support message sent' });
+  } catch (error) {
+    next(error);
+  }
+};
 
 const getMe = async (req, res, next) => {
   try {
@@ -434,6 +463,7 @@ const getReferralStats = async (req, res, next) => {
 };
 
 module.exports = {
+  contactSupport,
   getMe,
   updateProfile,
   submitFeedback,
